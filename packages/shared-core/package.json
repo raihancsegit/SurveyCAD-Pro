@@ -1,0 +1,14 @@
+{
+  "name": "@land-survey/shared-core",
+  "version": "1.0.0",
+  "description": "Shared 2D geometry, Bangladesh land unit math, scale calibration and validation engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

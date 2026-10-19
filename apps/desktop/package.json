@@ -1,0 +1,32 @@
+{
+  "name": "@land-survey/desktop",
+  "version": "1.0.0",
+  "description": "Land Survey CAD & Plot Management Desktop Application",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "@land-survey/shared-core": "*"
+  },
+  "devDependencies": {
+    "electron": "^30.0.9",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.technoleet.landsurveycad",
+    "productName": "Land Survey CAD",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    }
+  }
+}

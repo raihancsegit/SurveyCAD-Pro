@@ -1,0 +1,27 @@
+{
+  "name": "land-survey-cad-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Land Survey CAD & Plot Management Platform Monorepo",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:core": "npm run build --workspace=@land-survey/shared-core",
+    "test:core": "npm run test --workspace=@land-survey/shared-core",
+    "start": "node serve.js",
+    "dev:web": "node serve.js",
+    "dev:desktop": "npm run dev --workspace=@land-survey/desktop",
+    "dev:backend": "npm run dev --workspace=@land-survey/backend"
+  },
+  "keywords": [
+    "land-survey",
+    "cad",
+    "bangladesh",
+    "mouza",
+    "plot-management"
+  ],
+  "author": "Technoleet Engineering",
+  "license": "Proprietary"
+}

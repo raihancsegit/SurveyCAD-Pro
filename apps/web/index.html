@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Land Survey CAD & Plot Management Workspace</title>
+  <!-- Google Fonts: Inter & Noto Sans Bengali -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Bengali:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tailwind CSS Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans Bengali', 'sans-serif'],
+            mono: ['Fira Code', 'monospace']
+          },
+          colors: {
+            cad: {
+              bg: '#0c1017',
+              canvas: '#0f172a',
+              grid: '#1e293b',
+              gridMajor: '#334155',
+              crosshair: '#38bdf8',
+              snap: '#10b981',
+              plot: '#3b82f6',
+              plotFill: 'rgba(59, 130, 246, 0.18)',
+              selected: '#f59e0b',
+              selectedFill: 'rgba(245, 158, 11, 0.25)',
+              ui: '#1e293b',
+              uiBorder: '#334155',
+              accent: '#0284c7'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-cad-bg text-slate-100 font-sans antialiased overflow-hidden select-none h-screen flex flex-col">
+
+  <!-- 1. Top Navbar / Header Bar -->
+  <header class="h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between flex-shrink-0 z-30 shadow-md">
+    <!-- Logo & Project Info -->
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 flex-shrink-0">
+        <i data-lucide="compass" class="w-4 h-4 text-white"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-sm text-white tracking-tight">Land Survey CAD</span>
+          <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">v1.0 Pro</span>
+        </div>
+        <div class="text-[10px] text-slate-400 font-medium">মৌজা: খাজুরাদিয়া (১৬) • ফরিদগঞ্জ, চাঁদপুর • সিট নং: ১</div>
+      </div>
+    </div>
+
+    <!-- Active Mode & Preset Badge (Unified CAD Glass Pills) -->
+    <div class="flex items-center gap-2">
+      <!-- Scale Dropdown Pill -->
+      <div class="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-xl px-2.5 py-1 transition-all shadow-inner">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)] animate-pulse flex-shrink-0"></span>
+        <span class="text-[11px] font-bold text-slate-400">স্কেল:</span>
+        <select id="scaleSelect" class="bg-transparent text-cyan-300 font-extrabold text-xs focus:outline-none cursor-pointer">
+          <option value="16_inch">১৬ ইঞ্চি = ১ মাইল (CS/RS)</option>
+          <option value="32_inch">৩২ ইঞ্চি = ১ মাইল (Urban)</option>
+          <option value="64_inch">৬৪ ইঞ্চি = ১ মাইল (City)</option>
+          <option value="80_inch">৮০ ইঞ্চি = ১ মাইল (Detail)</option>
+          <option value="4_inch">৪ ইঞ্চি = ১ মাইল (Thana)</option>
+        </select>
+      </div>
+
+      <!-- Unit Dropdown Pill -->
+      <div class="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-xl px-2.5 py-1 transition-all shadow-inner">
+        <span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)] flex-shrink-0"></span>
+        <span class="text-[11px] font-bold text-slate-400">একক:</span>
+        <select id="unitSelect" class="bg-transparent text-amber-300 font-extrabold text-xs focus:outline-none cursor-pointer">
+          <option value="both" selected>উভয় একক (লিংক + ফুট-ইঞ্চি)</option>
+          <option value="feet_inch">ফুট ও ইঞ্চি (Feet & Inches)</option>
+          <option value="link">Link (লিংক)</option>
+          <option value="feet">Feet (দশমিক ফুট)</option>
+          <option value="meter">Meter (মিটার)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Header Right Actions (Action Center) -->
+    <div class="flex items-center gap-2">
+      <!-- Undo / Redo -->
+      <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-0.5 shadow-sm">
+        <button id="btnUndo" type="button" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all active:scale-95 cursor-pointer" title="পূর্বের অবস্থায় ফিরুন (Undo / Ctrl+Z)">
+          <i data-lucide="undo-2" class="w-3.5 h-3.5"></i>
+        </button>
+        <button id="btnRedo" type="button" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all active:scale-95 cursor-pointer" title="পরবর্তী অবস্থায় যান (Redo / Ctrl+Y)">
+          <i data-lucide="redo-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
+      <!-- Open Project -->
+      <button id="btnOpenProject" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 hover:border-sky-500/50 flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer" title="প্রজেক্ট ফাইল ওপেন করুন (.lscad)">
+        <i data-lucide="folder-open" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>ওপেন</span>
+      </button>
+
+      <!-- Save Project -->
+      <button id="btnSaveProject" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 hover:border-amber-500/50 flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer" title="প্রজেক্ট ফাইল সেভ করুন (.lscad)">
+        <i data-lucide="save" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>সেভ (.lscad)</span>
+      </button>
+
+      <!-- DXF Export -->
+      <button id="btnExportDXF" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 hover:border-teal-500/50 flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer" title="AutoCAD DXF ফরম্যাটে এক্সপোর্ট করুন">
+        <i data-lucide="download" class="w-3.5 h-3.5 text-teal-400"></i>
+        <span>DXF Export</span>
+      </button>
+
+      <!-- Primary CTA: Survey Report PDF -->
+      <button id="btnExportReport" type="button" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-extrabold shadow-md shadow-blue-600/30 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer">
+        <i data-lucide="file-text" class="w-4 h-4"></i>
+        <span>সার্ভে রিপোর্ট PDF</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- High-End CAD Ribbon & Tool Command Strip -->
+  <div class="h-11 bg-slate-900/95 border-b border-slate-800/90 px-3 flex items-center justify-between flex-shrink-0 z-30 overflow-x-auto scrollbar-none backdrop-blur-md shadow-sm">
+    <div class="flex items-center gap-2 flex-shrink-0">
+      
+      <!-- Group 1: Map Sheets & Multi-View -->
+      <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80 shadow-inner">
+        <button id="btnLoadMouza" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="যেকোনো মৌজা স্ক্যান বা ইমেজ ম্যাপ ওপেন করুন (JPG, PNG, PDF)">
+          <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
+          <span>নকশা ইমপোর্ট</span>
+        </button>
+
+        <button id="btnMapSheetsManager" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="মাল্টি-নকশা শিট ম্যানেজার (AutoCAD Multi-Sheet)">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span>নকশা শিট</span>
+          <span id="mapSheetCountBadge" class="px-1.5 py-0.2 rounded-md bg-sky-500/20 text-sky-300 font-bold font-mono text-[10px] border border-sky-500/30">১</span>
+        </button>
+
+        <button id="btnTileMaps" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="সব নকশা পাশাপাশি সাজান (AutoCAD Side-by-Side Tile)">
+          <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>পাশাপাশি সাজান</span>
+        </button>
+      </div>
+
+      <!-- Divider -->
+      <div class="h-5 w-px bg-slate-800 mx-0.5"></div>
+
+      <!-- Group 2: Survey Analysis & Intelligence -->
+      <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80 shadow-inner">
+        <button id="btnMapCompare" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="CS vs RS নকশা তুলনা স্লাইডার">
+          <i data-lucide="split" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span>CS vs RS তুলনা</span>
+        </button>
+
+        <button id="btnKhatianCalc" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="খতিয়ান হিস্যা ও বণ্টন ক্যালকুলেটর">
+          <i data-lucide="calculator" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>খতিয়ান বণ্টন</span>
+        </button>
+
+        <button id="btnLayerManager" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="লেয়ার ম্যানেজার (Layers)">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>লেয়ার</span>
+        </button>
+
+        <button id="btnImageFilter" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="নকশা ইমেজ ফিল্টার ও কনট্রাস্ট">
+          <i data-lucide="sliders" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span>ফিল্টার</span>
+        </button>
+      </div>
+
+      <!-- Divider -->
+      <div class="h-5 w-px bg-slate-800 mx-0.5"></div>
+
+      <!-- Group 3: Export & Output -->
+      <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80 shadow-inner">
+        <button id="btnPrintLayout" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="A4/A3 স্কেল প্রিন্ট লেআউট">
+          <i data-lucide="printer" class="w-3.5 h-3.5 text-rose-400"></i>
+          <span>ম্যাপ প্রিন্ট (A4/A3)</span>
+        </button>
+
+        <button id="btnExportKML" type="button" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Google Earth KML Export">
+          <i data-lucide="globe" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>Google Earth KML</span>
+        </button>
+      </div>
+
+      <!-- Group 4: Fast Search Daag -->
+      <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-700/80 focus-within:border-emerald-500 rounded-xl px-2.5 py-1 shadow-inner transition-colors">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <input id="daagSearchInput" type="text" placeholder="দাগ খুঁজুন (যেমন: ৫১৬)..." class="bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none w-36 font-medium">
+        <button id="btnSearchDaag" type="button" class="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold text-white shadow transition-all cursor-pointer active:scale-95">খুঁজুন</button>
+      </div>
+    </div>
+
+    <!-- Right Side: Clean Active Map Status Badge -->
+    <div class="flex items-center gap-2 pl-3 flex-shrink-0 hidden lg:flex">
+      <div class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] font-bold text-slate-300">
+        <span id="ribbonActiveMapDot" class="w-2 h-2 rounded-full bg-slate-500 flex-shrink-0"></span>
+        <span class="text-slate-400">নকশা:</span>
+        <span id="ribbonActiveMapName" class="text-slate-300 font-mono">নকশা অপেক্ষমাণ</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Main Workspace Layout -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- Left Toolbar (Photoshop-style 2-Column Tool Palette) -->
+    <aside id="leftToolbar" class="w-[92px] bg-slate-900/95 backdrop-blur-md border-r border-slate-800 flex flex-col flex-shrink-0 z-20 shadow-xl transition-all duration-200 select-none overflow-y-auto overflow-x-hidden">
+      <!-- Toolbar Header (Photoshop style Collapse / Expand Toggle) -->
+      <div class="h-7 px-2 border-b border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-bold tracking-wider">
+        <span class="toolbar-title flex items-center gap-1 text-slate-300">
+          <i data-lucide="wrench" class="w-3 h-3 text-sky-400"></i> TOOLS
+        </span>
+        <button id="btnToggleToolbarCols" type="button" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer" title="১ কলাম বা ২ কলাম টগল করুন (Toggle Columns)">
+          <i id="toolbarToggleIcon" data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
+      <!-- Tools Grid (Photoshop 2-column layout) -->
+      <div id="toolsGrid" class="grid grid-cols-2 gap-1.5 p-2 justify-items-center">
+        <!-- Pair 1: Select & Pan -->
+        <button class="tool-btn active" data-tool="select" title="Select / Pointer (V)">
+          <i data-lucide="mouse-pointer-2"></i>
+          <span class="tool-tooltip">Select (V)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="pan" title="Pan Canvas / ক্যানভাস ড্র্যাগ ও মুভ (H বা Space+Drag / Right Click Drag)">
+          <i data-lucide="hand" class="text-amber-400"></i>
+          <span class="tool-tooltip">প্যান / স্ক্রোল (H)</span>
+        </button>
+
+        <!-- Pair 2: Move Map & Polygon -->
+        <button class="tool-btn" data-tool="map-move" title="Move Map Sheet / নকশা স্থানান্তর ও ড্র্যাগ (M)">
+          <i data-lucide="move" class="text-sky-400"></i>
+          <span class="tool-tooltip">নকশা স্থানান্তর (M)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="polygon" title="Plot Boundary Polygon (P)">
+          <i data-lucide="pentagon"></i>
+          <span class="tool-tooltip">Plot / দাগ আঁকা (P)</span>
+        </button>
+
+        <!-- Pair 3: Magic Wand & Auto Number -->
+        <button class="tool-btn" data-tool="magic-wand" title="Magic Wand / অটো দাগ ডিটেক্ট (W)">
+          <i data-lucide="wand-2" class="text-purple-400"></i>
+          <span class="tool-tooltip">ম্যাজিক ওয়ান্ড (W)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="auto-number" title="Auto Plot Numbering / ক্রমানুসারে দাগ নম্বর (N)">
+          <i data-lucide="hash" class="text-emerald-400"></i>
+          <span class="tool-tooltip">দাগ নাম্বারিং (N)</span>
+        </button>
+
+        <!-- Pair 4: Split & Merge -->
+        <button class="tool-btn" data-tool="split" title="Cut / Slice Plot (S)">
+          <i data-lucide="scissors" class="text-amber-400"></i>
+          <span class="tool-tooltip">দাগ কর্তন (S)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="merge" title="Merge Plots / দাগ একত্রীকরণ (M)">
+          <i data-lucide="combine" class="text-fuchsia-400"></i>
+          <span class="tool-tooltip">দাগ একত্রীকরণ (M)</span>
+        </button>
+
+        <!-- Pair 5: Polyline & Pillar -->
+        <button class="tool-btn" data-tool="polyline" title="Polyline / Boundary Line (L)">
+          <i data-lucide="git-commit-horizontal"></i>
+          <span class="tool-tooltip">Polyline (L)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="point" title="Survey Benchmark / Pillar (K)">
+          <i data-lucide="map-pin"></i>
+          <span class="tool-tooltip">Pillar / পিলার (K)</span>
+        </button>
+
+        <!-- Pair 6: Text & Offset -->
+        <button class="tool-btn" data-tool="text" title="Text Note / বিবরণ (T)">
+          <i data-lucide="type"></i>
+          <span class="tool-tooltip">Text (T)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="offset" title="Offset / সীমানা অফসেট (O)">
+          <i data-lucide="copy-plus" class="text-indigo-400"></i>
+          <span class="tool-tooltip">অফসেট (O)</span>
+        </button>
+
+        <!-- Pair 7: Dimension & Calibrate -->
+        <button class="tool-btn" data-tool="dimension" title="Measure Dimension (D)">
+          <i data-lucide="ruler"></i>
+          <span class="tool-tooltip">Dimension (D)</span>
+        </button>
+
+        <button class="tool-btn" data-tool="calibrate" title="Scale Calibration (C)">
+          <i data-lucide="scaling"></i>
+          <span class="tool-tooltip">ক্যালিব্রেট (C)</span>
+        </button>
+
+        <!-- Pair 8: Diagonal & Gunia -->
+        <button class="tool-btn" data-tool="diagonal" title="Diagonal Measure / কর্ণ পরিমাপ">
+          <i data-lucide="move-diagonal" class="text-indigo-400"></i>
+          <span class="tool-tooltip">কর্ণ / ডায়াগোনাল</span>
+        </button>
+
+        <button id="btnToggleGunia" class="tool-btn" title="Virtual Gunia Scale / ভার্চুয়াল গুনিয়া স্কেল (G)">
+          <i data-lucide="ruler" class="text-amber-400"></i>
+          <span class="tool-tooltip">গুনিয়া স্কেল (G)</span>
+        </button>
+
+        <!-- Divider across 2 columns -->
+        <div class="col-span-2 w-full h-px bg-slate-800 my-0.5"></div>
+
+        <!-- Pair 9: Angles & Snap -->
+        <button id="btnToggleAngles" class="tool-btn" title="Toggle Corner Angles & Bearing (F8)">
+          <i data-lucide="compass" class="text-cyan-400"></i>
+          <span class="tool-tooltip">কোণ ও বিয়ারিং (F8)</span>
+        </button>
+
+        <button id="btnToggleSnap" class="tool-btn active" title="Object Snap (F3)">
+          <i data-lucide="magnet" class="text-emerald-400"></i>
+          <span class="tool-tooltip">Snap (F3)</span>
+        </button>
+
+        <!-- Pair 10: Grid & Fit View -->
+        <button id="btnToggleGrid" class="tool-btn active" title="Grid Display (F7)">
+          <i data-lucide="grid" class="text-sky-400"></i>
+          <span class="tool-tooltip">Grid (F7)</span>
+        </button>
+
+        <button id="btnResetView" class="tool-btn" title="Reset View / Fit to Screen (Home)">
+          <i data-lucide="maximize" class="text-slate-400"></i>
+          <span class="tool-tooltip">Fit View (Home)</span>
+        </button>
+
+        <!-- Row 11: Clear Canvas -->
+        <div class="col-span-2 w-full flex justify-center pt-1 border-t border-slate-800/80">
+          <button id="btnClearCanvas" class="tool-btn w-full text-rose-400 hover:bg-rose-500/20 hover:text-rose-300" title="Clear Canvas">
+            <i data-lucide="trash-2"></i>
+            <span class="tool-tooltip">Clear All</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Interactive Canvas Viewport -->
+    <main class="flex-1 relative overflow-hidden bg-slate-950">
+      <canvas id="cadCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+      <!-- Floating Quick Rename Pill for Detected / Selected Plot -->
+      <div id="floatingRenameBox" class="absolute hidden z-30 bg-slate-900/95 backdrop-blur-md border border-emerald-500/80 rounded-2xl p-2 shadow-2xl flex items-center gap-2 animate-in fade-in duration-200">
+        <span class="text-xs font-bold text-slate-300 pl-1 whitespace-nowrap">দাগ নং:</span>
+        <input id="floatingPlotNameInput" type="text" class="bg-slate-950 border border-slate-700 focus:border-emerald-400 text-emerald-300 font-extrabold text-xs px-2.5 py-1 rounded-xl w-28 focus:outline-none" placeholder="যেমন: ১০৫ বা ৫১৩">
+        <button id="btnFloatingSaveName" type="button" class="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer">সেভ</button>
+        <button id="btnFloatingCloseName" type="button" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs" title="বন্ধ করুন">✕</button>
+      </div>
+
+      <!-- Canvas Empty State: Professional Map Import Dropzone -->
+      <div id="canvasEmptyState" class="absolute inset-0 flex items-center justify-center p-6 pointer-events-none z-10 transition-opacity">
+        <div class="pointer-events-auto bg-slate-900/90 backdrop-blur-md border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-3xl p-8 max-w-lg text-center shadow-2xl space-y-4 transition-all">
+          <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto shadow-inner">
+            <i data-lucide="image" class="w-8 h-8"></i>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-base font-extrabold text-white">মৌজা নকশা ইমপোর্ট করুন</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">যেকোনো স্ক্যান করা নকশা ফাইল (JPG, PNG, PDF) নির্বাচন করুন অথবা সরাসরি ক্যানভাসে টেনে আনুন</p>
+          </div>
+          <div class="flex justify-center pt-2">
+            <button id="btnEmptyUpload" type="button" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-xl shadow-emerald-600/30 flex items-center gap-2.5 cursor-pointer transition-all active:scale-95">
+              <i data-lucide="folder-open" class="w-4 h-4"></i>
+              <span>কম্পিউটার থেকে নকশা ওপেন করুন</span>
+            </button>
+          </div>
+          <div class="text-[11px] text-slate-500 pt-3 border-t border-slate-800 flex items-center justify-center gap-4 font-medium">
+            <span>✓ ফুল অপটিক্যাল শার্পনেস</span>
+            <span>✓ AutoCAD ALIGN স্কেলিং</span>
+            <span>✓ ড্র্যাগ অ্যান্ড ড্রপ সাপোর্ট</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas Floating Overlay: Zoom Controls (Fixed bottom-left z-30, never overlaps status bar) -->
+      <div class="absolute bottom-4 left-4 flex items-center gap-1 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-1.5 shadow-2xl z-30">
+        <button id="btnZoomIn" class="w-9 h-9 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="জুম ইন (+)">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+        </button>
+        <span id="zoomLabel" class="text-xs font-mono font-bold text-sky-400 px-2 min-w-[55px] text-center select-none">100%</span>
+        <button id="btnZoomOut" class="w-9 h-9 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="জুম আউট (-)">
+          <i data-lucide="minus" class="w-4 h-4"></i>
+        </button>
+        <div class="w-px h-5 bg-slate-700 mx-1"></div>
+        <button id="btnZoomExtents" class="w-9 h-9 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="সম্পূর্ণ নকশা ফিট করুন (Zoom to Fit)">
+          <i data-lucide="scan" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Canvas Floating Overlay: Live Cursor Coordinates & Status (Centered bottom-center z-20) -->
+      <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3.5 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl px-4 py-2 text-xs font-mono text-slate-300 shadow-2xl z-20 pointer-events-none whitespace-nowrap">
+        <div class="flex items-center gap-1.5">
+          <span class="text-slate-500">X:</span>
+          <span id="coordX" class="text-emerald-400 font-bold min-w-[50px]">0.00</span>
+          <span id="coordXUnit" class="text-slate-500 text-[10px]">links</span>
+        </div>
+        <div class="h-3.5 w-px bg-slate-700"></div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-slate-500">Y:</span>
+          <span id="coordY" class="text-emerald-400 font-bold min-w-[50px]">0.00</span>
+          <span id="coordYUnit" class="text-slate-500 text-[10px]">links</span>
+        </div>
+        <div class="h-3.5 w-px bg-slate-700"></div>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span id="layerBadge">Layer: Plots</span>
+        </div>
+        <div class="h-3.5 w-px bg-slate-700"></div>
+        <button id="btnScaleStatus" class="pointer-events-auto flex items-center gap-1.5 text-[11px] text-amber-400 hover:text-amber-300 font-sans cursor-pointer transition-colors" title="মৌজা স্কেল ক্যালিব্রেশন (C)">
+          <i data-lucide="scaling" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span id="scaleStatusText">১৬" = ১ মাইল (আন-ক্যালিব্রেটেড)</span>
+        </button>
+      </div>
+
+      <!-- Canvas North Arrow -->
+      <div class="absolute top-6 left-6 flex flex-col items-center bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 shadow-lg pointer-events-none z-10">
+        <div class="w-8 h-8 rounded-full border border-slate-700 flex items-center justify-center relative">
+          <i data-lucide="navigation" class="w-5 h-5 text-rose-500 fill-rose-500 transform -rotate-45"></i>
+        </div>
+        <span class="text-[10px] font-extrabold text-slate-300 mt-1 font-mono tracking-widest">NORTH</span>
+      </div>
+
+      <!-- Live Drawing Hint Box with Interactive Cancel Button -->
+      <div id="drawHintBox" class="absolute top-6 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-xl border border-sky-500/40 rounded-2xl px-4 py-2 shadow-2xl flex items-center gap-3 text-xs text-slate-200 z-30 transition-opacity opacity-0 pointer-events-auto">
+        <div class="w-2 h-2 rounded-full bg-sky-400 animate-ping"></div>
+        <span id="drawHintText">পয়েন্ট ক্লিক করুন বাউন্ডারি আঁকার জন্য</span>
+        <button id="btnCancelActiveDrawing" type="button" class="ml-2 px-2.5 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 hover:text-white border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer" title="বর্তমান অঙ্কন বাতিল করুন (Esc)">
+          <i data-lucide="x" class="w-3 h-3"></i>
+          <span>বাতিল</span>
+        </button>
+      </div>
+    </main>
+
+    <!-- Right Sidebar: Inspector & Bangladesh Land Measurement Engine -->
+    <aside class="w-80 bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 z-20 shadow-xl overflow-y-auto">
+
+      <!-- Header with High-End Layout & Delete Button -->
+      <div class="px-3.5 py-3 border-b border-slate-800/90 flex items-center justify-between bg-slate-900/95 sticky top-0 backdrop-blur-md z-10">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+            <i data-lucide="calculator" class="w-3.5 h-3.5"></i>
+          </div>
+          <span class="text-xs font-extrabold text-white tracking-tight whitespace-nowrap">জরিপ ও দাগ হিসাব</span>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span id="selectedCountBadge" class="text-[10px] px-2 py-0.5 rounded-lg bg-slate-800/90 text-sky-400 font-mono font-bold border border-slate-700/60 shadow-sm">1 Plot</span>
+          <button id="btnDeleteSelectedPlot" type="button" class="px-2.5 py-1 rounded-xl bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 hover:border-rose-500 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 group" title="সিলেক্টেড দাগ মুছে ফেলুন (Delete বা Backspace)">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-400 group-hover:text-white transition-colors"></i>
+            <span>মুছুন</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 space-y-5 flex-1">
+
+        <!-- 1. Master Area Result Highlight Card with Quick Action Buttons -->
+        <div class="rounded-2xl p-4 bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-900 border border-emerald-500/30 shadow-lg relative overflow-hidden">
+          <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none"></div>
+          
+          <div class="flex items-center justify-between gap-1.5 mb-2">
+            <div class="flex items-center gap-1.5 flex-1 bg-slate-900/90 border border-emerald-500/50 rounded-xl px-2.5 py-1 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400/50 shadow-inner">
+              <span class="text-[11px] font-bold text-slate-400 whitespace-nowrap">দাগ:</span>
+              <input id="inputPlotName" type="text" class="bg-transparent text-emerald-300 font-extrabold text-xs focus:outline-none w-full" placeholder="যেমন: ৫১২ বা ১০৫" title="ম্যাপের সাথে মিলিয়ে দাগ নম্বর পরিবর্তন করুন">
+            </div>
+            <button id="btnDeletePlotSecondary" type="button" class="px-2 py-1 rounded-xl bg-rose-500/15 hover:bg-rose-600 hover:text-white text-rose-300 border border-rose-500/40 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0" title="এই দাগটি বাদ দিন বা মুছে ফেলুন (Delete)">
+              <i data-lucide="trash-2" class="w-3 h-3 text-rose-400"></i>
+              <span>বাদ দিন</span>
+            </button>
+            <button id="btnDrawNewPlot" type="button" class="px-2 py-1 rounded-xl bg-sky-500/15 hover:bg-sky-600 hover:text-white text-sky-300 border border-sky-500/40 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0" title="নতুন দাগ বা সীমানা আঁকুন (P)">
+              <i data-lucide="plus" class="w-3 h-3 text-sky-400"></i>
+              <span>নতুন দাগ</span>
+            </button>
+          </div>
+
+          <!-- Master Shotok / Decimal display -->
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="statShotok" class="text-3xl font-black text-white tracking-tight font-mono">10.000</span>
+            <span class="text-sm font-extrabold text-emerald-400">শতক (Decimal)</span>
+          </div>
+
+          <!-- Conversational Bangla Sentence -->
+          <div id="statBanglaSentence" class="mt-2 text-xs font-bold text-emerald-300/90 bg-emerald-900/30 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+            ১০ শতক (৬ কাঠা ১ ছটাক)
+          </div>
+        </div>
+
+        <!-- 1.5 Scale Map by Selected Plot / Line Card (AutoCAD Scale Reference) -->
+        <div id="scaleByPlotCard" class="rounded-2xl p-3.5 bg-gradient-to-br from-slate-900 via-slate-800/80 to-slate-900 border border-sky-500/40 shadow-lg space-y-3">
+          <div class="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
+            <span class="font-extrabold text-sky-400 flex items-center gap-1.5">
+              <i data-lucide="scaling" class="w-4 h-4 text-sky-400"></i> এই দাগ অনুযায়ী নকশা স্কেল
+            </span>
+            <span id="scaleByPlotCurrentLen" class="text-amber-300 font-bold font-mono text-xs">০' - ০" (০ লিংক)</span>
+          </div>
+
+          <!-- Dynamic Measurement Breakdown (Feet, Map Inches, Links) -->
+          <div class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] text-slate-400">বাস্তব গ্রাউন্ড মাপ:</span>
+              <span id="scaleByPlotGroundFeet" class="font-mono text-amber-300 font-extrabold text-xs">০' - ০" (০.০ ফুট)</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] text-slate-400">১৬" নকশায় সাইজ:</span>
+              <span id="scaleByPlotMapInches" class="font-mono text-emerald-400 font-extrabold text-xs">০.০০ ইঞ্চি (0.00")</span>
+            </div>
+            <div class="flex items-center justify-between border-t border-slate-800/80 pt-1">
+              <span class="text-[10px] text-slate-500">লিংক পরিমাপ:</span>
+              <span id="scaleByPlotLinks" class="font-mono text-sky-300 font-bold text-[11px]">০.০ লিংক</span>
+            </div>
+          </div>
+
+          <!-- Survey Math Box -->
+          <div class="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-slate-300 leading-relaxed space-y-1">
+            <div class="text-emerald-300 font-bold flex items-center justify-between">
+              <span>📐 সার্ভে হিসাব (১৬" = ১ মাইল):</span>
+              <span class="font-mono text-[10px] text-emerald-400">৫২৮০' ÷ ১৬ = ৩৩০'</span>
+            </div>
+            <p class="text-[10px] text-slate-400 leading-normal">
+              • ১ ইঞ্চি = <strong class="text-white">৩৩০ ফুট</strong> (৫ চেইন = ৫০০ লিংক)<br>
+              • ২ ইঞ্চি = <strong class="text-amber-300">৬৬০ ফুট</strong> (১০ চেইন = ১,০০০ লিংক)<br>
+              • স্কেল বারের ২ ইঞ্চি বা ১ ইঞ্চি রেখায় ক্লিক করে ১-ক্লিকেই নকশা স্কেল করুন:
+            </p>
+          </div>
+
+          <!-- Quick Scale Chips (Inches & Feet First Priority) -->
+          <div class="grid grid-cols-2 gap-1.5">
+            <button type="button" class="btn-quick-scale-chip py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-sky-600/90 text-sky-300 hover:text-white font-mono font-bold text-[11px] border border-slate-700 text-left transition-all cursor-pointer flex flex-col gap-0.5 shadow-sm" data-feet="660" data-links="1000" data-inches="2">
+              <span class="text-amber-300 font-extrabold text-xs">২" নকশায় = ৬৬০' - ০"</span>
+              <span class="text-[9.5px] text-slate-400">১০ চেইন (১,০০০ লিংক / ৬৬০ ফুট)</span>
+            </button>
+            <button type="button" class="btn-quick-scale-chip py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-sky-600/90 text-sky-300 hover:text-white font-mono font-bold text-[11px] border border-slate-700 text-left transition-all cursor-pointer flex flex-col gap-0.5 shadow-sm" data-feet="330" data-links="500" data-inches="1">
+              <span class="text-amber-300 font-extrabold text-xs">১" নকশায় = ৩৩০' - ০"</span>
+              <span class="text-[9.5px] text-slate-400">৫ চেইন (৫০০ লিংক / ৩৩০ ফুট)</span>
+            </button>
+            <button type="button" class="btn-quick-scale-chip py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-sky-600/90 text-sky-300 hover:text-white font-mono font-bold text-[11px] border border-slate-700 text-left transition-all cursor-pointer flex flex-col gap-0.5 shadow-sm" data-feet="1320" data-links="2000" data-inches="4">
+              <span class="text-amber-300 font-extrabold text-xs">৪" নকশায় = ১৩২০' - ০"</span>
+              <span class="text-[9.5px] text-slate-400">২০ চেইন (২,০০০ লিংক / ১৩২০ ফুট)</span>
+            </button>
+            <button type="button" class="btn-quick-scale-chip py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-sky-600/90 text-sky-300 hover:text-white font-mono font-bold text-[11px] border border-slate-700 text-left transition-all cursor-pointer flex flex-col gap-0.5 shadow-sm" data-feet="66" data-links="100" data-inches="0.2">
+              <span class="text-amber-300 font-extrabold text-xs">০.২" নকশায় = ৬৬' - ০"</span>
+              <span class="text-[9.5px] text-slate-400">১ চেইন (১০০ লিংক / ৬৬ ফুট)</span>
+            </button>
+          </div>
+
+          <!-- Custom Target Input (Inches, Feet, Links) -->
+          <div class="space-y-2 pt-1 border-t border-slate-800/80">
+            <div class="text-[11px] font-bold text-slate-400 flex items-center justify-between">
+              <span>কাস্টম মাপ ইনপুট দিয়ে স্কেল করুন:</span>
+              <span class="text-[10px] text-amber-400 font-mono">Custom Scale</span>
+            </div>
+
+            <div class="grid grid-cols-12 gap-1.5 items-center">
+              <div class="col-span-7 flex items-center bg-slate-950 border border-slate-700 focus-within:border-amber-400 rounded-xl px-2.5 py-1.5 transition-colors shadow-inner">
+                <input type="number" step="any" id="inputCustomScaleValue" placeholder="যেমন: ২ বা ৬৬০" class="w-full bg-transparent text-xs text-amber-300 font-mono font-bold focus:outline-none placeholder:text-slate-600">
+              </div>
+              <div class="col-span-5">
+                <select id="selectScaleUnit" class="w-full bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl px-2 py-1.5 text-xs text-sky-300 font-bold focus:outline-none cursor-pointer">
+                  <option value="inch">ইঞ্চি (Inch)</option>
+                  <option value="feet" selected>ফুট (Feet)</option>
+                  <option value="link">লিংক (Link)</option>
+                  <option value="chain">চেইন (Chain)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="button" id="btnApplyScaleByPlot" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-sky-600 via-sky-500 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-extrabold text-xs shadow-md shadow-sky-600/30 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]">
+              <i data-lucide="scaling" class="w-4 h-4"></i>
+              <span>স্কেল প্রয়োগ করুন (Apply Scale)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Multi-Unit Conversion Grid -->
+        <div class="space-y-2">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+            <span>এককভিত্তিক হিসাব (Units)</span>
+            <i data-lucide="arrow-right-left" class="w-3.5 h-3.5 text-slate-500"></i>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="unit-pill">
+              <span class="label">কাঠা (Katha)</span>
+              <span id="statKatha" class="value text-amber-400">6.050</span>
+            </div>
+
+            <div class="unit-pill">
+              <span class="label">বিঘা (Bigha)</span>
+              <span id="statBigha" class="value text-amber-400">0.3025</span>
+            </div>
+
+            <div class="unit-pill">
+              <span class="label">বর্গফুট (Sq.Ft)</span>
+              <span id="statSqft" class="value text-sky-400">4,356.0</span>
+            </div>
+
+            <div class="unit-pill">
+              <span class="label">বর্গলিংক (Sq.Links)</span>
+              <span id="statSqLinks" class="value text-sky-400">10,000</span>
+            </div>
+
+            <div class="unit-pill">
+              <span class="label">বর্গমিটার (Sq.M)</span>
+              <span id="statSqM" class="value text-indigo-400">404.68</span>
+            </div>
+
+            <div class="unit-pill">
+              <span class="label">একর (Acre)</span>
+              <span id="statAcre" class="value text-indigo-400">0.1000</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Perimeter & Side Dimensions Table -->
+        <div class="space-y-2">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+            <span>সীমানা ও আইল পরিমাপ (Sides)</span>
+            <span id="statPerimeter" class="text-amber-400 font-mono font-bold text-xs">২৬৪' - ০" (২৬৪ ফুট)</span>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 overflow-hidden text-xs">
+            <table class="w-full text-left">
+              <thead class="bg-slate-800/90 text-slate-400 font-mono text-[10px] uppercase">
+                <tr>
+                  <th class="py-2 px-2.5">আইল (Side)</th>
+                  <th class="py-2 px-2 text-emerald-400 text-center">লিংক</th>
+                  <th class="py-2 px-2 text-amber-300 font-bold text-center">ফুট - ইঞ্চি</th>
+                  <th class="py-2 px-2 text-right text-sky-400">দশমিক ফুট</th>
+                </tr>
+              </thead>
+              <tbody id="sideMeasurementsTable" class="divide-y divide-slate-800 bg-slate-900/50 font-mono text-slate-300 text-[11px]">
+                <tr>
+                  <td class="py-1.5 px-2.5 font-sans font-bold text-slate-300">উত্তর (North)</td>
+                  <td class="py-1.5 px-2 text-center text-emerald-400">১০০.০ lk</td>
+                  <td class="py-1.5 px-2 text-center text-amber-300 font-bold">৬৬' - ০" (৬৬ ফুট)</td>
+                  <td class="py-1.5 px-2 text-right text-sky-400 font-medium">66.0 ft</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. Automatic 4-Side Boundary Inspector (চৌহদ্দি) -->
+        <div class="rounded-2xl p-3.5 bg-slate-800/40 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-extrabold text-sky-400 flex items-center gap-1.5">
+              <i data-lucide="compass" class="w-4 h-4 text-sky-400"></i> দাগের ৪-পার্শ্বের চৌহদ্দি
+            </span>
+            <span class="text-[10px] text-slate-500 font-mono">Auto Detected</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase font-bold">উত্তর (North):</span>
+              <span id="chouhaddiNorth" class="font-bold text-slate-200 text-[11px] block mt-0.5">১২ ফুট সরকারি রাস্তা</span>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase font-bold">দক্ষিণ (South):</span>
+              <span id="chouhaddiSouth" class="font-bold text-slate-200 text-[11px] block mt-0.5">দাগ নং ৫১৮</span>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase font-bold">পূর্ব (East):</span>
+              <span id="chouhaddiEast" class="font-bold text-slate-200 text-[11px] block mt-0.5">দাগ নং ৫১৩</span>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase font-bold">পশ্চিম (West):</span>
+              <span id="chouhaddiWest" class="font-bold text-slate-200 text-[11px] block mt-0.5">দাগ নং ৫১১ (সীমানা)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Land Class & Valuation Estimator (জমির শ্রেণি ও বাজারমূল্য) -->
+        <div class="rounded-2xl p-3.5 bg-slate-800/40 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-extrabold text-emerald-400 flex items-center gap-1.5">
+              <i data-lucide="coins" class="w-4 h-4 text-emerald-400"></i> জমি শ্রেণি ও মূল্য এস্টিমেটর
+            </span>
+          </div>
+
+          <div class="space-y-2 text-xs">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-slate-400 text-[11px]">জমি শ্রেণি:</span>
+              <select id="landClassSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-emerald-400 font-bold focus:outline-none flex-1">
+                <option value="nal">নাল জমি (Agricultural)</option>
+                <option value="vita">ভিটা / বাড়ি (Residential)</option>
+                <option value="commercial">বাণিজ্যিক জমি (Commercial)</option>
+                <option value="pukur">পুকুর / জলাশয় (Pond)</option>
+                <option value="bagan">বাগান / ফলদ (Garden)</option>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-slate-400 text-[11px]">শতক প্রতি দর:</span>
+              <div class="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 flex-1">
+                <span class="text-slate-500 text-xs">৳</span>
+                <input id="ratePerShotokInput" type="number" value="350000" step="10000" class="w-full bg-transparent text-xs text-amber-400 font-mono font-bold focus:outline-none">
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+              <span class="text-[11px] text-slate-300 font-bold">মোট বাজারমূল্য:</span>
+              <span id="statTotalValuation" class="font-mono font-extrabold text-emerald-400 text-sm">৳ ৩৫,০০,০০০</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Plot Division & Partitioning Simulator -->
+        <div class="rounded-2xl p-3.5 bg-slate-800/40 border border-slate-800 space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-extrabold text-amber-400 flex items-center gap-1.5">
+              <i data-lucide="split" class="w-4 h-4"></i> দাগ বন্টন সিমুলেটর
+            </span>
+            <button id="btnApplySplit" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[10px] shadow transition-all">দাগ কর্তন করুন</button>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs text-slate-300">
+              <span>বন্টন অনুপাত (Ratio):</span>
+              <span id="splitRatioLabel" class="font-mono font-bold text-amber-400">50% : 50%</span>
+            </div>
+            <input type="range" id="splitSlider" min="10" max="90" value="50" class="w-full accent-amber-500 cursor-pointer">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-center text-xs">
+            <div class="p-2 rounded-xl bg-slate-900 border border-slate-700">
+              <div class="text-[10px] text-slate-400">অংশ ১ (Plot /ক)</div>
+              <div id="splitPlotA" class="font-bold text-amber-400 font-mono text-sm mt-0.5">5.00 শতক</div>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-900 border border-slate-700">
+              <div class="text-[10px] text-slate-400">অংশ ২ (Plot /খ)</div>
+              <div id="splitPlotB" class="font-bold text-sky-400 font-mono text-sm mt-0.5">5.00 শতক</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Info -->
+      <div class="p-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between bg-slate-900/80">
+        <span>Engine: Shoelace 2D</span>
+        <span class="text-emerald-400 font-bold">100% Precision</span>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Image Cleanup Filter Studio Modal -->
+  <div id="imageFilterModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="sliders" class="w-5 h-5 text-sky-400"></i>
+          <h3 class="text-base font-extrabold text-white">মৌজা নকশা ইমেজ ক্লিনআপ ও ফিল্টার স্টুডিও</h3>
+        </div>
+        <button id="btnCloseFilterModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-300">
+        স্ক্যান করা পুরনো মৌজা নকশার ঝাপসা কাগজ পরিষ্কার ও দাগগুলো কালো কালিতে স্পষ্ট করুন:
+      </p>
+
+      <div class="space-y-4 text-xs">
+        <!-- B&W Threshold Slider -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-slate-300">
+            <span class="font-bold text-emerald-400">সাদা-কালো থ্রেশহোল্ড (B&W Threshold):</span>
+            <span id="valThreshold" class="font-mono text-emerald-400 font-bold">0</span>
+          </div>
+          <input type="range" id="sliderThreshold" min="0" max="255" value="0" class="w-full accent-emerald-500 cursor-pointer">
+        </div>
+
+        <!-- Brightness -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-slate-300">
+            <span>উজ্জ্বলতা (Brightness):</span>
+            <span id="valBrightness" class="font-mono text-sky-400 font-bold">0</span>
+          </div>
+          <input type="range" id="sliderBrightness" min="-100" max="100" value="0" class="w-full accent-sky-500 cursor-pointer">
+        </div>
+
+        <!-- Contrast -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-slate-300">
+            <span>কন্ট্রাস্ট (Contrast):</span>
+            <span id="valContrast" class="font-mono text-sky-400 font-bold">0</span>
+          </div>
+          <input type="range" id="sliderContrast" min="-100" max="100" value="0" class="w-full accent-sky-500 cursor-pointer">
+        </div>
+
+        <!-- Opacity -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-slate-300">
+            <span>নকশার স্বচ্ছতা (Layer Opacity):</span>
+            <span id="valOpacity" class="font-mono text-amber-400 font-bold">95%</span>
+          </div>
+          <input type="range" id="sliderOpacity" min="10" max="100" value="95" class="w-full accent-amber-500 cursor-pointer">
+        </div>
+
+        <!-- Rotate & Deskew -->
+        <div class="flex items-center gap-2 pt-2">
+          <button id="btnRotate90" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 flex items-center justify-center gap-1.5">
+            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Rotate 90°
+          </button>
+          <button id="btnResetFilters" class="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold border border-slate-700">
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button id="btnApplyFilters" class="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg shadow-sky-600/30 transition-all">
+          ফিল্টার প্রয়োগ করুন
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scale Calibration Modal -->
+  <div id="calibrationModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="scaling" class="w-5 h-5 text-emerald-400"></i>
+          <div>
+            <h3 class="text-base font-extrabold text-white">মৌজা নকশা স্কেল ক্যালিব্রেশন</h3>
+            <p class="text-[11px] text-slate-400">২-পয়েন্ট রেফারেন্স বা প্রিসেট স্কেল দিয়ে নকশা ১০০% নিখুঁত করুন</p>
+          </div>
+        </div>
+        <button id="btnCloseCalModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Mode Tabs -->
+      <div class="flex bg-slate-800/80 p-1 rounded-xl text-xs font-semibold">
+        <button id="calTab2Point" type="button" class="flex-1 py-1.5 rounded-lg bg-emerald-600 text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="ruler" class="w-3.5 h-3.5"></i>
+          <span>২-পয়েন্ট রেফারেন্স স্কেল</span>
+        </button>
+        <button id="calTabPreset" type="button" class="flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+          <span>প্রিসেট স্কেল ও স্ক্যানার DPI</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: 2-Point Reference Mode -->
+      <div id="calMode2Point" class="space-y-3.5">
+        <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-3 text-xs text-slate-300 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400">নকশায় চিহ্নিত পিক্সেল দূরত্ব:</span>
+            <span id="calPixelDist" class="font-mono text-amber-400 font-bold text-sm">250.0 px</span>
+          </div>
+          <div class="text-[11px] text-slate-400 flex items-center gap-1">
+            <i data-lucide="info" class="w-3 h-3 text-sky-400"></i>
+            <span>স্কেল বারের ০ থেকে ১০/২০ চেইন বা সীমানার ২টি পয়েন্ট নির্দেশিত।</span>
+          </div>
+          <button id="btnStartCanvasMeasure" type="button" class="mt-2 w-full py-1.5 px-3 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-sky-400 hover:text-sky-300 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-1.5 transition-all cursor-pointer">
+            <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+            <span>ক্যানভাস স্কেল বারে ২টি পয়েন্ট মেপে নিন</span>
+          </button>
+        </div>
+
+        <div>
+          <label class="text-xs font-bold text-slate-300 block mb-1.5">বাস্তব গ্রাউন্ড দূরত্ব (AutoCAD Ground Distance):</label>
+          <div class="flex gap-2">
+            <input type="number" id="calDistanceInput" value="10" min="0.1" step="any" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono flex-1 focus:outline-none focus:border-emerald-500 font-bold">
+            <select id="calUnitSelect" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold focus:outline-none">
+              <option value="chain" selected>Chains (গান্টার চেইন)</option>
+              <option value="link">Links (লিংক)</option>
+              <option value="feet">Feet (দশমিক ফুট)</option>
+              <option value="feet_inch">Feet & Inches (ফুট ও ইঞ্চি)</option>
+              <option value="meter">Meter (মিটার)</option>
+            </select>
+          </div>
+          <!-- Feet and Inches Dual Inputs (Shown when feet_inch selected) -->
+          <div id="calFeetInchRow" style="display: none;" class="gap-2 mt-2">
+            <div class="flex-1">
+              <span class="text-[10px] font-bold text-slate-300">ফুট (Feet):</span>
+              <input type="number" id="calFeetPartInput" value="660" min="0" step="1" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-sm text-amber-300 font-mono font-bold focus:outline-none focus:border-amber-400">
+            </div>
+            <div class="flex-1">
+              <span class="text-[10px] font-bold text-slate-300">ইঞ্চি (Inches):</span>
+              <input type="number" id="calInchPartInput" value="0" min="0" max="11.9" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-sm text-amber-300 font-mono font-bold focus:outline-none focus:border-amber-400">
+            </div>
+          </div>
+          <div id="calEquivGroundHint" class="text-[11px] font-mono font-bold text-amber-300 mt-1.5 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>বাস্তব গ্রাউন্ড মাপ: ৬৬০ ফুট ০ ইঞ্চি (১,০০০ লিংক)</span>
+          </div>
+          <!-- Quick Distance Chips -->
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <button type="button" class="cal-quick-chip px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-emerald-400 border border-slate-700 cursor-pointer font-mono font-bold" data-val="10" data-unit="chain">১০ চেইন (১,০০০ লিংক / ৬৬০')</button>
+            <button type="button" class="cal-quick-chip px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-emerald-400 border border-slate-700 cursor-pointer font-mono font-bold" data-val="20" data-unit="chain">২০ চেইন (২,০০০ লিংক / ১৩২০')</button>
+            <button type="button" class="cal-quick-chip px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-amber-300 border border-slate-700 cursor-pointer font-mono font-bold" data-val="100" data-unit="link">১ চেইন (১০০ লিংক / ৬৬')</button>
+            <button type="button" class="cal-quick-chip px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-sky-300 border border-slate-700 cursor-pointer font-mono font-bold" data-val="660" data-unit="feet">৬৬০ ফুট ০ ইঞ্চি</button>
+            <button type="button" class="cal-quick-chip px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-sky-300 border border-slate-700 cursor-pointer font-mono font-bold" data-val="100" data-unit="feet">১০০ ফুট ০ ইঞ্চি</button>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-1">টিপস: স্কেল বারে ০ থেকে ১০ চেইনের পরিমাপ = ১০ চেইন = ১,০০০ লিংক = ৬৬০ ফুট ০ ইঞ্চি।</p>
+        </div>
+
+        <!-- Calculated ratio live preview -->
+        <div class="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/50 text-xs space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="text-emerald-300 font-semibold">হিসাবকৃত স্কেল অনুপাত:</span>
+            <span id="calCalculatedScale" class="font-mono text-emerald-400 font-bold text-sm">১ px = ৪.০ লিংক</span>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-400">
+            <span>সমতুল্য মৌজা স্কেল:</span>
+            <span id="calEquivalentScale" class="text-sky-300 font-medium">১৬ ইঞ্চি = ১ মাইল</span>
+          </div>
+        </div>
+
+        <!-- Scope -->
+        <div class="space-y-1.5 pt-1">
+          <label class="text-xs font-semibold text-slate-300 block">স্কেলিংয়ের প্রভাব (Scope):</label>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700 cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="calScope" value="map_only" checked class="text-emerald-500 focus:ring-0">
+              <span class="text-slate-200 text-[11px]">শুধু মৌজা ম্যাপ রিস্কেল</span>
+            </label>
+            <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700 cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="calScope" value="all" class="text-emerald-500 focus:ring-0">
+              <span class="text-slate-200 text-[11px]">ম্যাপ ও সমস্ত আঁকা দাগ</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Preset & DPI Mode -->
+      <div id="calModePreset" class="space-y-3.5 hidden">
+        <div>
+          <label class="text-xs font-bold text-slate-300 block mb-1">মৌজা ম্যাপের মুদ্রিত স্কেল:</label>
+          <select id="calPresetScaleSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-emerald-500">
+            <option value="16">১৬ ইঞ্চি = ১ মাইল (CS / RS / SA)</option>
+            <option value="32">৩২ ইঞ্চি = ১ মাইল (পৌর / দিয়ারা জরিপ)</option>
+            <option value="64">৬৪ ইঞ্চি = ১ মাইল (শহর / ঘন এলাকা)</option>
+            <option value="80">৮০ ইঞ্চি = ১ মাইল (বিশেষ নকশা)</option>
+            <option value="4">৪ ইঞ্চি = ১ মাইল (থানা নকশা)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-bold text-slate-300 block mb-1">স্ক্যানার রেজোলিউশন (Scanner DPI):</label>
+          <select id="calPresetDpiSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-emerald-500">
+            <option value="300">৩০০ DPI (স্ট্যান্ডার্ড অফিস ও প্রেস স্ক্যানার)</option>
+            <option value="200">২০০ DPI (লো-রেজোলিউশন স্ক্যান)</option>
+            <option value="400">৪০০ DPI (হাই কোয়ালিটি স্ক্যান)</option>
+            <option value="600">৬০০ DPI (আল্ট্রা হাই-রেজ অপটিক্যাল)</option>
+            <option value="150">১৫০ DPI (ওয়েব ড্রাফট)</option>
+          </select>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700 text-xs space-y-1">
+          <div class="flex justify-between">
+            <span class="text-slate-400">১ ইঞ্চিতে জমির দূরত্ব:</span>
+            <span id="calPresetInchGround" class="font-mono text-emerald-400 font-bold">৫০০ লিংক (৩৩০ ফুট)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">১ পিক্সেলে জমির দূরত্ব:</span>
+            <span id="calPresetPixelGround" class="font-mono text-sky-400 font-bold">১.৬৭ লিংক (১.১০ ফুট)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex gap-2.5 pt-2">
+        <button id="btnCancelCalModal" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-all cursor-pointer">
+          বাতিল
+        </button>
+        <button id="btnApplyCalibration" type="button" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+          <i data-lucide="check-circle" class="w-4 h-4"></i>
+          <span>ক্যালিব্রেশন প্রয়োগ করুন</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Survey Report PDF Preview Modal -->
+  <div id="reportModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="file-check" class="w-5 h-5 text-sky-400"></i>
+          <h3 class="text-base font-extrabold text-white">বাংলাদেশ ল্যান্ড সার্ভে অফিশিয়াল রিপোর্ট</h3>
+        </div>
+        <button id="btnCloseReportModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Printable Report Sheet -->
+      <div id="printableReport" class="bg-white text-slate-900 rounded-2xl p-6 space-y-5 border border-slate-200 text-xs shadow-inner">
+        <!-- Header -->
+        <div class="text-center border-b pb-4 space-y-1">
+          <h2 class="text-lg font-black text-slate-900">জমির পরিমাপ ও বাউন্ডারি সীমানা নির্ধারণ রিপোর্ট</h2>
+          <p class="text-xs text-slate-600">মৌজা: রূপনগর • জেএল নং: ৪২ • থানা: মিরপুর • জেলা: ঢাকা</p>
+          <div class="text-[11px] text-slate-500 font-mono">তারিখ: ২৬ আগস্ট, ২০২৬ • রিপোর্ট নং: LSCAD-2026-0826</div>
+        </div>
+
+        <!-- Survey Details Table -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <div><span class="font-bold text-slate-700">জরিপকারীর নাম:</span> মোঃ আমিনুল ইসলাম (সার্টিফাইড সার্ভেয়ার)</div>
+            <div><span class="font-bold text-slate-700">খতিয়ান নং:</span> ১২৮/এ</div>
+            <div><span class="font-bold text-slate-700">দাগ নং:</span> ৫১২</div>
+          </div>
+          <div class="space-y-1">
+            <div><span class="font-bold text-slate-700">মালিকের নাম:</span> জনাব রহিম আহমেদ</div>
+            <div><span class="font-bold text-slate-700">জরিপ পদ্ধতি:</span> 2D Cadastral Coordinate Polygon</div>
+            <div><span class="font-bold text-slate-700">স্কেল:</span> ১৬ ইঞ্চি = ১ মাইল</div>
+          </div>
+        </div>
+
+        <!-- Area Breakdown Highlight -->
+        <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+          <div>
+            <div class="text-[10px] font-bold text-emerald-800 uppercase">মোট পরিমাপকৃত ক্ষেত্রফল (Total Land Area)</div>
+            <div id="reportTotalShotok" class="text-xl font-black text-emerald-900 font-mono">১০.০০০ শতক (Decimal)</div>
+          </div>
+          <div class="text-right font-bold text-emerald-800 text-xs">
+            <div id="reportBanglaKatha">৬ কাঠা ১ ছটাক</div>
+            <div id="reportTotalSqft" class="text-[11px] text-emerald-700 font-mono">৪,৩৫৬.০ বর্গফুট (Sq.ft)</div>
+          </div>
+        </div>
+
+        <!-- Boundary Distances -->
+        <div>
+          <div class="font-bold text-slate-800 mb-1">চারদিকের সীমানা ও আইল পরিমাপ:</div>
+          <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="p-2 rounded bg-slate-50 border">
+              <div class="text-[10px] text-slate-500">উত্তর বাহু</div>
+              <div class="font-bold font-mono">১০০.০ লিংক (৬৬.০ ফুট)</div>
+            </div>
+            <div class="p-2 rounded bg-slate-50 border">
+              <div class="text-[10px] text-slate-500">পূর্ব বাহু</div>
+              <div class="font-bold font-mono">১০০.০ লিংক (৬৬.০ ফুট)</div>
+            </div>
+            <div class="p-2 rounded bg-slate-50 border">
+              <div class="text-[10px] text-slate-500">দক্ষিণ বাহু</div>
+              <div class="font-bold font-mono">১০০.০ লিংক (৬৬.০ ফুট)</div>
+            </div>
+            <div class="p-2 rounded bg-slate-50 border">
+              <div class="text-[10px] text-slate-500">পশ্চিম বাহু</div>
+              <div class="font-bold font-mono">১০০.০ লিংক (৬৬.০ ফুট)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Signature Block -->
+        <div class="pt-6 flex items-end justify-between text-center">
+          <div class="space-y-1">
+            <div class="w-36 border-b border-slate-400"></div>
+            <div class="text-[10px] text-slate-500">জমির মালিকের স্বাক্ষর</div>
+          </div>
+          <div class="space-y-1">
+            <div class="w-36 border-b border-slate-900"></div>
+            <div class="text-[10px] font-bold text-slate-900">সার্ভেয়ার / আমিনের স্বাক্ষর ও সিল</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex gap-3">
+        <button onclick="window.print()" class="flex-1 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2">
+          <i data-lucide="printer" class="w-4 h-4"></i> প্রিন্ট ও PDF ডাউনলোড
+        </button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- Layer Manager Modal -->
+  <div id="layerModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="layers" class="w-5 h-5 text-amber-400"></i>
+          <h3 class="text-base font-extrabold text-white">CAD লেয়ার ম্যানেজার (Layer Manager)</h3>
+        </div>
+        <button id="btnCloseLayerModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3.5 h-3.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
+            <div>
+              <div class="font-bold text-white">দাগ বাউন্ডারি (Plots)</div>
+              <div class="text-[10px] text-slate-400">২টি দাগ সক্রিয়</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="togglePlotsVisibility" class="p-1.5 rounded-lg bg-slate-900 text-emerald-400 hover:bg-slate-700" title="Toggle Visibility">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+            <div>
+              <div class="font-bold text-white">পিলার ও বেঞ্চমার্ক (Pillars)</div>
+              <div class="text-[10px] text-slate-400">৬টি পিলার পয়েন্ট</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="togglePillarsVisibility" class="p-1.5 rounded-lg bg-slate-900 text-emerald-400 hover:bg-slate-700" title="Toggle Visibility">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3.5 h-3.5 rounded-full bg-sky-400 shadow-sm shadow-sky-400/50"></span>
+            <div>
+              <div class="font-bold text-white">সীমানা পরিমাপ (Dimensions)</div>
+              <div class="text-[10px] text-slate-400">আইল ও দূরত্বের মাপ</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="toggleDimensionsVisibility" class="p-1.5 rounded-lg bg-slate-900 text-emerald-400 hover:bg-slate-700" title="Toggle Visibility">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3.5 h-3.5 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50"></span>
+            <div>
+              <div class="font-bold text-white">বিবরণ ও টেক্সট (Annotations)</div>
+              <div class="text-[10px] text-slate-400">মালিকের নাম ও রাস্তা</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="toggleTextsVisibility" class="p-1.5 rounded-lg bg-slate-900 text-emerald-400 hover:bg-slate-700" title="Toggle Visibility">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button id="btnNewLayer" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400"></i> নতুন লেয়ার তৈরি করুন
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Khatian & Owner Share Calculator Modal -->
+  <div id="khatianModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="calculator" class="w-5 h-5 text-indigo-400"></i>
+          <div>
+            <h3 class="text-base font-extrabold text-white">খতিয়ান হিস্যা ও জমি বন্টন ক্যালকুলেটর</h3>
+            <p class="text-[11px] text-slate-400">দাগের মোট জমি থেকে সহ-শরিকদের অংশ ও শতক হিসাব</p>
+          </div>
+        </div>
+        <button id="btnCloseKhatianModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Plot Total Summary -->
+      <div class="grid grid-cols-3 gap-3 bg-slate-800/60 p-3.5 rounded-2xl border border-slate-700 text-xs">
+        <div>
+          <span class="text-slate-400 block text-[10px] uppercase font-bold">নির্বাচিত দাগ</span>
+          <span id="khatianPlotName" class="font-extrabold text-white text-sm font-mono">দাগ নং ৫১২</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block text-[10px] uppercase font-bold">মোট জমি (শতক)</span>
+          <input id="khatianTotalShotok" type="number" step="0.001" value="10.000" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-emerald-400 font-bold font-mono text-sm focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <span class="text-slate-400 block text-[10px] uppercase font-bold">মোট হিস্যা যোগফল</span>
+          <span id="khatianTotalShareSum" class="font-extrabold text-sky-400 text-sm font-mono">1.000 (১৬ আনা)</span>
+        </div>
+      </div>
+
+      <!-- Owner List Table -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-300">শরিক ও অংশীদারদের তালিকা:</span>
+          <button id="btnAddKhatianOwner" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 transition-all">
+            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> শরিক যোগ করুন
+          </button>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 overflow-hidden text-xs">
+          <table class="w-full text-left">
+            <thead class="bg-slate-800/80 text-slate-400 font-mono text-[10px] uppercase">
+              <tr>
+                <th class="py-2 px-3">নাম</th>
+                <th class="py-2 px-3">হিস্যা / অংশ (১.০০০)</th>
+                <th class="py-2 px-3 text-emerald-400">প্রাপ্য শতক</th>
+                <th class="py-2 px-3 text-sky-400">কাঠা-ছটাক</th>
+                <th class="py-2 px-2 text-center">মুছুন</th>
+              </tr>
+            </thead>
+            <tbody id="khatianOwnersTable" class="divide-y divide-slate-800 bg-slate-900/50 font-mono text-slate-300 text-[11px]">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button id="btnApplyKhatianDivision" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-1.5">
+          <i data-lucide="scissors" class="w-4 h-4"></i> হিস্যা অনুযায়ী দাগে অটো পার্টিশন করুন
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Era CS vs RS Map Comparison Modal -->
+  <div id="mapCompareModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-4xl w-full shadow-2xl space-y-4 max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="split-square-vertical" class="w-5 h-5 text-cyan-400"></i>
+          <div>
+            <h3 class="text-base font-extrabold text-white">CS বনাম RS মৌজা নকশা সোয়াইপ কম্প্যারিজন</h3>
+            <p class="text-[11px] text-slate-400">ঐতিহাসিক CS নকশার সাথে বর্তমান RS/BS নকশা মিলিয়ে সীমানা যাচাই</p>
+          </div>
+        </div>
+        <button id="btnCloseMapCompareModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Controls -->
+      <div class="flex items-center justify-between gap-4 bg-slate-800/60 p-3 rounded-2xl border border-slate-700 text-xs">
+        <div class="flex items-center gap-3">
+          <span class="font-bold text-slate-300">সোয়াইপ ডিভাইডার:</span>
+          <input id="compareSplitSlider" type="range" min="0" max="100" value="50" class="w-48 accent-cyan-400">
+          <span id="compareSplitVal" class="font-mono text-cyan-400 font-bold">50%</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="font-bold text-slate-300">CS লেয়ার অপাসিটি:</span>
+          <input id="compareOpacitySlider" type="range" min="10" max="100" value="70" class="w-32 accent-amber-400">
+        </div>
+      </div>
+
+      <!-- Compare Canvas Container -->
+      <div class="flex-1 min-h-[350px] relative bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden flex items-center justify-center">
+        <canvas id="compareCanvas" class="w-full h-full block"></canvas>
+        <div class="absolute top-3 left-3 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold px-2 py-1 rounded-md">
+          📜 বাম দিক: সিএস (CS-১৯৪০) নকশা
+        </div>
+        <div class="absolute top-3 right-3 bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold px-2 py-1 rounded-md">
+          🗺️ ডান দিক: আরএস (RS-১৯৬২) নকশা
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cartographic Scaled Map Print Layout Modal -->
+  <div id="printLayoutModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-4xl w-full shadow-2xl space-y-4 max-h-[95vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="printer" class="w-5 h-5 text-rose-400"></i>
+          <div>
+            <h3 class="text-base font-extrabold text-white">কার্টোগ্রাফিক A4/A3 স্কেল ম্যাপ লেআউট</h3>
+            <p class="text-[11px] text-slate-400">অফিসিয়াল প্রিন্ট-রেডি নকশা শিট উইথ টাইটেল ব্লক ও স্কেলবার</p>
+          </div>
+        </div>
+        <button id="btnClosePrintLayoutModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Printable Sheet Preview Container -->
+      <div id="printableSheet" class="bg-white text-slate-900 p-8 rounded-2xl border-4 border-slate-900 shadow-xl space-y-4 font-sans text-xs">
+        <!-- Sheet Header -->
+        <div class="border-b-2 border-slate-900 pb-3 flex justify-between items-center text-center">
+          <div class="text-left space-y-0.5">
+            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">গণপ্রজাতন্ত্রী বাংলাদেশ সরকার</div>
+            <div class="text-base font-black text-slate-900 font-heading">জমি জরিপ ও সীমানা সীমানাঙ্কন নকশা</div>
+            <div class="text-[11px] text-slate-600">মৌজা: কাশিমপুর • জেএল নং: ০৪ • আরএস খতিয়ান: ১২৮</div>
+          </div>
+          <div class="border border-slate-900 p-2 rounded-lg text-center bg-slate-50">
+            <div class="text-[10px] font-bold text-slate-600">স্কেল (Scale)</div>
+            <div class="font-extrabold text-sm font-mono">১৬ ইঞ্চি = ১ মাইল</div>
+            <div class="text-[9px] text-slate-500">(১:৩৯৬০ গান্টার স্কেল)</div>
+          </div>
+        </div>
+
+        <!-- Middle: Plot Map Drawing & North Arrow -->
+        <div class="relative h-64 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center overflow-hidden">
+          <canvas id="printSheetCanvas" width="650" height="250" class="block"></canvas>
+          <!-- Graphic Scale Bar -->
+          <div class="absolute bottom-2 left-3 bg-white/90 border border-slate-300 p-1.5 rounded text-[9px] font-mono">
+            <div class="font-bold text-slate-700">স্কেলবার (Gunter Links)</div>
+            <div class="w-36 h-2 bg-slate-900 flex">
+              <div class="w-1/2 h-full bg-slate-900 border-r border-white"></div>
+              <div class="w-1/2 h-full bg-slate-400"></div>
+            </div>
+            <div class="flex justify-between text-[8px] text-slate-600 mt-0.5">
+              <span>০</span>
+              <span>৫০ লিংক</span>
+              <span>১০০ লিংক</span>
+            </div>
+          </div>
+          <!-- North Arrow Badge -->
+          <div class="absolute top-2 right-3 bg-white/90 border border-slate-300 p-1.5 rounded-full flex flex-col items-center">
+            <span class="text-[10px] font-black text-rose-600">▲ N</span>
+            <span class="text-[8px] font-bold text-slate-700">উত্তর</span>
+          </div>
+        </div>
+
+        <!-- Plot Information & Boundary Table -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <div class="font-bold text-slate-800 text-[11px] uppercase border-b pb-1">জমি ও পরিমাপ বিবরণ:</div>
+            <table class="w-full text-[11px]">
+              <tr><td class="text-slate-600 py-0.5">দাগ নম্বর:</td><td id="printDaagNum" class="font-bold font-mono">দাগ নং ৫১২</td></tr>
+              <tr><td class="text-slate-600 py-0.5">মোট পরিমাপ:</td><td id="printAreaShotok" class="font-bold text-emerald-700 font-mono">১০.০০ শতক (৬ কাঠা ১ ছটাক)</td></tr>
+              <tr><td class="text-slate-600 py-0.5">বর্গফুট:</td><td id="printAreaSqft" class="font-mono">৪,৩৫৬.০ বর্গফুট</td></tr>
+              <tr><td class="text-slate-600 py-0.5">মোট পরিসীমা:</td><td id="printPerimeter" class="font-mono">২৬৪.০ ফুট</td></tr>
+            </table>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="font-bold text-slate-800 text-[11px] uppercase border-b pb-1">চতুঃসীমা বিবরণ (Boundaries):</div>
+            <table class="w-full text-[11px]">
+              <tr><td class="text-slate-600 py-0.5">উত্তরে:</td><td class="font-bold">১২ ফুট চওড়া সরকারি পাকা রাস্তা</td></tr>
+              <tr><td class="text-slate-600 py-0.5">পূর্বে:</td><td class="font-bold">দাগ নং ৫১৩ (রহিম মিয়ার জমি)</td></tr>
+              <tr><td class="text-slate-600 py-0.5">দক্ষিণে:</td><td class="font-bold">দাগ নং ৫১৮ (আব্দুল করিম)</td></tr>
+              <tr><td class="text-slate-600 py-0.5">পশ্চিমে:</td><td class="font-bold">পাকা সীমানা প্রাচীর ও পুকুর</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- Signature Block -->
+        <div class="pt-6 border-t flex justify-between text-center text-[10px]">
+          <div class="space-y-1">
+            <div class="w-32 border-b border-slate-400"></div>
+            <div class="text-slate-600">জমির মালিকের স্বাক্ষর</div>
+          </div>
+          <div class="space-y-1">
+            <div class="w-32 border-b border-slate-400"></div>
+            <div class="text-slate-600">সহ-শরিকগণের স্বাক্ষর</div>
+          </div>
+          <div class="space-y-1">
+            <div class="w-40 border-b-2 border-slate-900"></div>
+            <div class="font-bold text-slate-900">সরকারি রেজিস্টার্ড সার্ভেয়ার / আমিনের সিল ও স্বাক্ষর</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Print Action -->
+      <div class="flex gap-3">
+        <button onclick="window.print()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-2">
+          <i data-lucide="printer" class="w-4 h-4"></i> A4 স্কেল ম্যাপ প্রিন্ট ও PDF ডাউনলোড করুন
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Map Sheets Manager Modal (AutoCAD Multi-Sheet) -->
+  <div id="mapSheetsModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="layers" class="w-5 h-5 text-sky-400"></i>
+          <div>
+            <h3 class="text-base font-extrabold text-white">নকশা শিট ম্যানেজার (AutoCAD Multi-Sheet)</h3>
+            <p class="text-[11px] text-slate-400">একাধিক মৌজা নকশা পাশাপাশি সাজান, টেনে ডানে/বামে নিন এবং নিখুঁত স্কেল করুন</p>
+          </div>
+        </div>
+        <button id="btnCloseMapSheetsModal" class="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-400 flex items-center justify-center cursor-pointer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Actions Bar -->
+      <div class="flex gap-2">
+        <button id="btnModalAddSheet" class="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>➕ আরেকটি নকশা যোগ করুন (ডানে পাশে রাখুন)</span>
+        </button>
+        <button id="btnModalTileSideBySide" class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold text-xs border border-slate-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer" title="সব নকশা পাশাপাশি সাজান">
+          <i data-lucide="layout-grid" class="w-4 h-4"></i>
+          <span>সব পাশাপাশি সাজান</span>
+        </button>
+      </div>
+
+      <!-- Sheet List Container -->
+      <div id="mapSheetsListContainer" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+        <!-- Dynamically rendered by updateMapSheetsUI() in app.js -->
+      </div>
+
+      <!-- Helper note -->
+      <div class="p-3 bg-slate-800/40 border border-slate-800 rounded-xl text-[11px] text-slate-400 leading-relaxed">
+        💡 <strong class="text-slate-200">টিপস:</strong> বাম পাশের টুলবার থেকে <strong class="text-sky-300">"নকশা স্থানান্তর (M)"</strong> টুল সিলেক্ট করে ক্যানভাসে সরাসরি যেকোনো নকশা ক্লিক করে ডানে/বামে/উপরে/নিচে টেনে পাশাপাশি রাখতে পারেন।
+      </div>
+    </div>
+  </div>
+
+  <!-- Mouza Import Choice Dialog (Add beside vs Replace) -->
+  <div id="mouzaImportChoiceModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+      <div class="flex items-center gap-2.5 text-sky-400">
+        <i data-lucide="layers" class="w-6 h-6"></i>
+        <h3 class="text-base font-extrabold text-white">নকশা কীভাবে যুক্ত করতে চান?</h3>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        ক্যানভাসে ইতিমধ্যে নকশা লোড করা রয়েছে। AutoCAD-এর মতো আপনি একাধিক নকশা পাশাপাশি রেখে সীমানা মেলাতে পারেন।
+      </p>
+      <div class="space-y-2 pt-1">
+        <button id="btnImportAsNewSheet" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>➕ ডানে পাশে নতুন শিট হিসেবে রাখুন (AutoCAD Multi-Sheet)</span>
+        </button>
+        <button id="btnImportReplace" class="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-all cursor-pointer">
+          <i data-lucide="refresh-cw" class="w-4 h-4 text-amber-400"></i>
+          <span>🔄 বর্তমান নকশা প্রতিস্থাপন করুন (Replace)</span>
+        </button>
+        <button id="btnImportCancel" class="w-full py-2 px-4 rounded-xl bg-transparent hover:bg-slate-800 text-slate-400 text-xs font-semibold transition-all cursor-pointer">
+          বাতিল
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulletproof Built-in SVG Icon Engine & Script -->
+  <script>
+    (function() {
+      const ICONS = {
+        'compass': '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+        'undo-2': '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>',
+        'redo-2': '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>',
+        'image': '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+        'split': '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
+        'split-square-vertical': '<rect width="18" height="18" x="3" y="3" rx="2"/><line x1="12" x2="12" y1="3" y2="21"/>',
+        'layers': '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+        'calculator': '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+        'sliders': '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
+        'folder-open': '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+        'save': '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+        'download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+        'globe': '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+        'printer': '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
+        'file-text': '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+        'mouse-pointer-2': '<path d="m4.037 4.688 12.38 5.484a1 1 0 0 1 .09 1.815l-4.5 2.126a1 1 0 0 0-.53.53l-2.126 4.5a1 1 0 0 1-1.815-.09L1.952 6.673a1 1 0 0 1 1.085-1.985Z"/>',
+        'pentagon': '<path d="M10.83 2.38a2 2 0 0 1 2.34 0l8 5.82a2 2 0 0 1 .72 2.21l-3.05 9.42A2 2 0 0 1 16.94 21H7.06a2 2 0 0 1-1.9-1.17L2.11 10.41a2 2 0 0 1 .72-2.21l8-5.82Z"/>',
+        'wand-2': '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+        'hash': '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+        'scissors': '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>',
+        'combine': '<rect width="8" height="8" x="2" y="2" rx="2"/><path d="M14 2c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2"/><path d="M20 2c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2"/><path d="M10 18H5a3 3 0 0 1-3-3v-1"/><polyline points="7 21 10 18 7 15"/><rect width="8" height="8" x="14" y="14" rx="2"/>',
+        'git-commit-horizontal': '<circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/>',
+        'map-pin': '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+        'type': '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>',
+        'copy-plus': '<line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        'ruler': '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+        'scaling': '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/>',
+        'magnet': '<path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/><path d="m5 8 4 4"/><path d="m12 15 4 4"/>',
+        'grid': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>',
+        'grid-3x3': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>',
+        'maximize': '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+        'trash-2': '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+        'plus': '<path d="M5 12h14"/><path d="M12 5v14"/>',
+        'minus': '<path d="M5 12h14"/>',
+        'x': '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
+        'check': '<path d="M20 6 9 17l-5-5"/>',
+        'eye': '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+        'move': '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/>',
+        'layout-grid': '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+        'lock': '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        'unlock': '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+        'refresh-cw': '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+        'hand': '<path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'
+      };
+
+      function renderIcons() {
+        document.querySelectorAll('i[data-lucide]').forEach(el => {
+          const iconName = el.getAttribute('data-lucide');
+          const innerSvg = ICONS[iconName];
+          if (innerSvg) {
+            const classes = el.getAttribute('class') || 'w-4 h-4';
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+            svg.setAttribute('stroke-linecap', 'round');
+            svg.setAttribute('stroke-linejoin', 'round');
+            svg.setAttribute('class', classes);
+            svg.innerHTML = innerSvg;
+            el.parentNode.replaceChild(svg, el);
+          }
+        });
+      }
+
+      window.lucide = window.lucide || {};
+      window.lucide.createIcons = renderIcons;
+      document.addEventListener('DOMContentLoaded', renderIcons);
+      renderIcons();
+    })();
+  </script>
+
+  <!-- Land Survey CAD Core Modular Engines -->
+  <script src="js/constants.js"></script>
+  <script src="js/geometry.js"></script>
+  <script src="js/plot-ops.js"></script>
+  <script src="js/dialogs.js"></script>
+  <script src="js/exporters.js"></script>
+  <script src="js/khatian.js"></script>
+
+  <!-- Main CAD Application Engine -->
+  <script src="app.js"></script>
+</body>
+</html>

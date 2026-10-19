@@ -1,0 +1,15 @@
+{
+  "name": "@land-survey/mobile",
+  "version": "1.0.0",
+  "description": "Land Survey CAD Mobile Companion (React Native / Expo)",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
+  },
+  "dependencies": {
+    "@land-survey/shared-core": "*"
+  },
+  "private": true
+}
