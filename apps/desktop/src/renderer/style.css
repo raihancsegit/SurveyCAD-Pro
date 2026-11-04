@@ -1,31 +1,77 @@
-/* Custom CAD Styles */
+/* Core CAD Layout Defaults */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #0c1017;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  height: 3.5rem;
+  flex-shrink: 0;
+}
+
+main {
+  position: relative;
+  flex: 1 1 0%;
+  overflow: hidden;
+  background-color: #020617;
+  width: 100%;
+  height: 100%;
+}
+
+#cadCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Custom CAD Styles - Photoshop-style 2-Column Tool Palette */
 .tool-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #94a3b8;
   background: transparent;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .tool-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .tool-btn.active {
   background: #0284c7;
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.45);
+}
+
+.tool-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2px;
+  display: block;
 }
 
 .tool-tooltip {
   position: absolute;
   left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
   background: #0f172a;
   color: #ffffff;
   font-size: 11px;
@@ -36,14 +82,19 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transform: translateX(-4px);
   transition: all 0.15s ease;
-  z-index: 50;
+  z-index: 100;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .tool-btn:hover .tool-tooltip {
   opacity: 1;
-  transform: translateX(0);
+  transform: translateY(-50%) translateX(0);
+}
+
+/* For left-column buttons in 2-column grid, push tooltip past the right column */
+#toolsGrid.grid-cols-2 .tool-btn:nth-child(odd) .tool-tooltip {
+  left: calc(200% + 16px);
 }
 
 .unit-pill {
@@ -68,4 +119,145 @@
   font-size: 14px;
   font-weight: 800;
   font-family: 'Fira Code', monospace;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ==========================================================================
+   Module 14: Dedicated Print & PDF Map Sheet Styles
+   ========================================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+  body > *:not(#reportModal) {
+    display: none !important;
+  }
+  #reportModal {
+    display: block !important;
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: 99999 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    backdrop-filter: none !important;
+  }
+  #reportModal > div {
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #reportModalHeader, #reportConfigSidebar, #reportModalFooter {
+    display: none !important;
+  }
+  #reportSheetContainer {
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #printableReport {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: 2px solid #0f172a !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}
+
+
+/* ==========================================================================
+   Universal CAD Modal Architecture - Zero Overflow & Taskbar Protection
+   ========================================================================== */
+
+/* Outer modal backdrops: center content with safe margins */
+.fixed.inset-0.z-50 {
+  padding: clamp(0.5rem, 2.5vh, 1.25rem) !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Inner modal dialog cards: never exceed 86vh or push into bottom taskbar */
+.fixed.inset-0.z-50 > div {
+  max-height: min(86vh, 620px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Full-scale preview modals can use up to 92vh */
+#reportModal > div,
+#printLayoutModal > div,
+#mapCompareModal > div {
+  max-height: 92vh !important;
+}
+
+/* Modal Headers: always sticky at top, never scroll away */
+.fixed.inset-0.z-50 > div > div:first-child {
+  flex-shrink: 0 !important;
+}
+
+/* Modal Footers: always sticky at bottom, action buttons NEVER cut off */
+.fixed.inset-0.z-50 > div > div:last-child {
+  flex-shrink: 0 !important;
+}
+
+/* Modal Bodies / Inner scrollable zones: smooth internal scrolling */
+.modal-scrollable-body,
+.custom-scrollbar,
+.fixed.inset-0.z-50 > div > div.overflow-y-auto,
+.fixed.inset-0.z-50 > div > div[class*="overflow-y-auto"] {
+  overflow-y: auto !important;
+  flex: 1 1 auto !important;
+  overscroll-behavior: contain !important;
+}
+
+/* Sleek modern dark scrollbars for all modals */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
 }

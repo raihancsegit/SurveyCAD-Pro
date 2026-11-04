@@ -18,7 +18,9 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
   '.dxf': 'application/dxf',
-  '.lscad': 'application/json'
+  '.lscad': 'application/json',
+  '.kml': 'application/vnd.google-earth.kml+xml',
+  '.kmz': 'application/vnd.google-earth.kmz'
 };
 
 const server = http.createServer((req, res) => {

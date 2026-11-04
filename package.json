@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "build": "echo Web build ready",
     "build:core": "npm run build --workspace=@land-survey/shared-core",
     "test:core": "npm run test --workspace=@land-survey/shared-core",
     "start": "node serve.js",

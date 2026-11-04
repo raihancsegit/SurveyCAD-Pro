@@ -122,7 +122,7 @@
   // State Management
   const state = {
     tool: 'select', // select, polygon, polyline, point, dimension, calibrate, split, text, offset
-    unit: 'link', // link, feet, meter
+    unit: 'feet_inch', // feet_inch, inch, feet, meter (Link removed)
     scalePreset: '16_inch',
     scaleFactor: 1.0, // World units per pixel
     snapEnabled: true,
@@ -154,15 +154,18 @@
       worldY: 0
     },
 
-    // Vertex Dragging State
+    // AutoCAD Glowing Green Grip Dragging State
     dragVertex: {
       isDragging: false,
       plotId: null,
       vertexIndex: -1
     },
+    hoveredVertex: null,
+    liveDragTooltip: null,
 
     // Active Drawing buffer
     activePolyline: [],
+    activeTracedLineId: null,
     
     // Calibration points buffer
     calibrationPoints: [],
@@ -182,6 +185,12 @@
     splitRatio: 0.5,
     showAngles: false,
     nextPlotNumber: 1,
+    autoNumberSettings: {
+      start: 501,
+      current: 501,
+      prefix: 'দাগ নং ',
+      step: 1
+    },
     mergeSelectedPlots: [],
     history: [],
     historyIndex: -1,
@@ -209,6 +218,22 @@
 
     // Diagonal Tie-Line Measurement Points
     diagonalPoints: [],
+
+    // Satellite Imagery & GPS Benchmark State (Google Satellite + Hybrid Engine)
+    satellite: {
+      enabled: false,
+      opacity: 0.65,
+      source: 'google_hybrid', // 'google_hybrid', 'google_sat', 'esri'
+      layerPosition: 'top', // 'top' (overlaid on top of map) or 'bottom' (underneath map)
+      blendMode: 'normal', // 'normal' or 'multiply'
+      imageObj: null,
+      originGPS: { lat: 23.127500, lng: 90.750900 }, // Faridganj, Chandpur
+      anchorWorld: { x: 800, y: 550 },
+      pinPlaced: true
+    },
+
+    // Highlighted Vertex on Canvas (Module 16)
+    highlightedVertex: null,
 
     // Multi-Map Sheets Engine & Layer Architecture (AutoCAD Multi-Sheet Support)
     mouzaMaps: [],
@@ -396,6 +421,15 @@
   function findSnapPoint(worldX, worldY) {
     if (!state.snapEnabled) return null;
     const snapTolerance = 16 / state.camera.zoom; // 16 screen pixels
+
+    // 0. High-Priority Magnetic Snap to First Point of In-Progress Polyline
+    if ((state.tool === 'polygon' || state.tool === 'polyline') && state.activePolyline && state.activePolyline.length >= 3) {
+      const first = state.activePolyline[0];
+      const distToFirst = Math.hypot(first.x - worldX, first.y - worldY);
+      if (distToFirst < snapTolerance * 1.6) {
+        return { x: first.x, y: first.y, type: 'firstpoint' };
+      }
+    }
 
     // 1. Check all plot vertices
     if (state.layers.plots) {
@@ -651,18 +685,23 @@
     return convertFeetToFeetInches(totalFeet, bangla);
   }
 
-  // Cadastral Survey Scale Math: 5280 ft = 1 mile
-  // 16" = 1 mile -> 5280 / 16 = 330 ft per map inch (5 chains = 500 links)
-  // 32" = 1 mile -> 5280 / 32 = 165 ft per map inch
-  // 64" = 1 mile -> 5280 / 64 = 82.5 ft per map inch
-  // 80" = 1 mile -> 5280 / 80 = 66 ft per map inch
-  // 4"  = 1 mile -> 5280 / 4  = 1320 ft per map inch
+  // Official Bangladesh Cadastral Survey Scale Math: 1 Mile = 5280 ft = 63,360 inches
+  // ১৬ ইঞ্চি = ১ মাইল: ৫২৮০ / ১৬ * ১২ = ৩৯৬০ ইঞ্চি মাটিতে (৩৩০ ফুট)
+  // ৩২ ইঞ্চি = ১ মাইল: ৫২৮০ / ৩২ * ১২ = ১৯৮০ ইঞ্চি মাটিতে (১৬৫ ফুট)
+  // ৬৪ ইঞ্চি = ১ মাইল: ৫২৮০ / ৬৪ * ১২ = ৯৯০ ইঞ্চি মাটিতে (৮২.৫ ফুট / ৮২' ৬")
+  // ৮০ ইঞ্চি = ১ মাইল: ৫২৮০ / ৮০ * ১২ = ৭৯২ ইঞ্চি মাটিতে (৬৬ ফুট)
+  // ৪ ইঞ্চি  = ১ মাইল: ৫২৮০ / ৪  * ১২ = ১৫৮৪০ ইঞ্চি মাটিতে (১৩২০ ফুট)
+  function getInchesPerMapInch() {
+    if (state.customScaleInchesPerMapInch) return state.customScaleInchesPerMapInch;
+    if (state.scalePreset === '32_inch') return 1980; // 5280 / 32 * 12 = 1980
+    if (state.scalePreset === '64_inch') return 990;  // 5280 / 64 * 12 = 990
+    if (state.scalePreset === '80_inch') return 792;  // 5280 / 80 * 12 = 792
+    if (state.scalePreset === '4_inch') return 15840; // 5280 / 4 * 12 = 15840
+    return 3960; // default 16_inch: 5280 / 16 * 12 = 3960
+  }
+
   function getFeetPerMapInch() {
-    if (state.scalePreset === '32_inch') return 165;
-    if (state.scalePreset === '64_inch') return 82.5;
-    if (state.scalePreset === '80_inch') return 66;
-    if (state.scalePreset === '4_inch') return 1320;
-    return 330; // default 16_inch: 5280 / 16 = 330
+    return getInchesPerMapInch() / 12.0;
   }
 
   function formatBanglaDaagName(input) {
@@ -808,6 +847,63 @@
     if (relX < 0 || relX > 1 || relY < 0 || relY > 1) {
       showToast('দয়া করে মৌজা নকশার সীমানার ভেতরে ক্লিক করুন', 'info');
       return;
+    }
+
+    // Immediate Precision Detection for Demo Cadastral Sheet if applicable
+    if (mm.demoPlots && mm.demoPlots.length > 0) {
+      const imgX = relX * (mm.baseWidth || 900);
+      const imgY = relY * (mm.baseHeight || 650);
+      const matchedDemo = mm.demoPlots.find(dp => {
+        const pts = dp.poly.map(p => ({ x: p[0], y: p[1] }));
+        return isPointInPolygon({ x: imgX, y: imgY }, pts);
+      });
+
+      if (matchedDemo) {
+        const worldVertices = matchedDemo.poly.map(p => {
+          let wx = mm.x + (p[0] / (mm.baseWidth || 900)) * mm.width;
+          let wy = mm.y + (p[1] / (mm.baseHeight || 650)) * mm.height;
+          return { x: wx, y: wy };
+        });
+
+        const newPlotNumber = state.nextPlotNumber || (101 + state.plots.length);
+        state.nextPlotNumber = newPlotNumber + 1;
+        const newPlotId = 'plot-magic-' + newPlotNumber + '-' + Date.now();
+        const bnLabel = matchedDemo.label ? `দাগ নং ${matchedDemo.label}` : ('দাগ নং ' + toBanglaDigits(newPlotNumber));
+
+        const palette = [
+          { fill: 'rgba(168, 85, 247, 0.22)', stroke: '#a855f7' },
+          { fill: 'rgba(236, 72, 153, 0.22)', stroke: '#ec4899' },
+          { fill: 'rgba(56, 189, 248, 0.22)', stroke: '#38bdf8' },
+          { fill: 'rgba(245, 158, 11, 0.22)', stroke: '#f59e0b' },
+          { fill: 'rgba(16, 185, 129, 0.22)', stroke: '#10b981' }
+        ];
+        const colorStyle = palette[state.plots.length % palette.length];
+
+        const newPlot = {
+          id: newPlotId,
+          name: bnLabel,
+          layer: 'plots',
+          mapSheetId: mm.id,
+          fillColor: colorStyle.fill,
+          strokeColor: colorStyle.stroke,
+          vertices: worldVertices
+        };
+
+        state.plots.push(newPlot);
+        state.selectedPlotId = newPlotId;
+        pushHistory();
+        updateInspector();
+        render();
+
+        flashPlotDetected(worldVertices);
+        playCadSound('snap');
+
+        const areaSqLk = calculatePolygonArea(worldVertices);
+        const sqFt = areaSqLk * (FEET_PER_LINK * FEET_PER_LINK);
+        const decimal = sqFt / 435.6;
+        showToast(`🪄 ${bnLabel} চিহ্নিত হয়েছে: ${decimal.toFixed(2)} শতক (${sqFt.toFixed(0)} বর্গফুট)`, 'success');
+        return;
+      }
     }
 
     let seedX = Math.round(relX * origW);
@@ -1269,6 +1365,697 @@
     showFloatingRenameBox(newPlotId, sc.x, sc.y);
   }
 
+  // Point to finite segment distance
+  function pointToSegmentDistance(pt, p1, p2) {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const l2 = dx * dx + dy * dy;
+    if (l2 === 0) return Math.hypot(pt.x - p1.x, pt.y - p1.y);
+    let t = ((pt.x - p1.x) * dx + (pt.y - p1.y) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(pt.x - (p1.x + t * dx), pt.y - (p1.y + t * dy));
+  }
+
+  // MinHeap implementation for ultra-fast A* pathfinding on mouza ink raster
+  class AStarMinHeap {
+    constructor() {
+      this.heap = [];
+    }
+    push(node) {
+      this.heap.push(node);
+      this._bubbleUp(this.heap.length - 1);
+    }
+    pop() {
+      if (this.heap.length === 0) return null;
+      const top = this.heap[0];
+      const bottom = this.heap.pop();
+      if (this.heap.length > 0) {
+        this.heap[0] = bottom;
+        this._sinkDown(0);
+      }
+      return top;
+    }
+    get size() {
+      return this.heap.length;
+    }
+    _bubbleUp(idx) {
+      const element = this.heap[idx];
+      while (idx > 0) {
+        const parentIdx = (idx - 1) >> 1;
+        const parent = this.heap[parentIdx];
+        if (element.f >= parent.f) break;
+        this.heap[idx] = parent;
+        idx = parentIdx;
+      }
+      this.heap[idx] = element;
+    }
+    _sinkDown(idx) {
+      const length = this.heap.length;
+      const element = this.heap[idx];
+      while (true) {
+        let leftChildIdx = (idx << 1) + 1;
+        let rightChildIdx = leftChildIdx + 1;
+        let swapIdx = -1;
+        if (leftChildIdx < length && this.heap[leftChildIdx].f < element.f) {
+          swapIdx = leftChildIdx;
+        }
+        if (rightChildIdx < length) {
+          if (
+            (swapIdx === -1 && this.heap[rightChildIdx].f < element.f) ||
+            (swapIdx !== -1 && this.heap[rightChildIdx].f < this.heap[leftChildIdx].f)
+          ) {
+            swapIdx = rightChildIdx;
+          }
+        }
+        if (swapIdx === -1) break;
+        this.heap[idx] = this.heap[swapIdx];
+        idx = swapIdx;
+      }
+      this.heap[idx] = element;
+    }
+  }
+
+  // Find projected point and distance info along polygon perimeter
+  function getPerimeterInfo(poly, pt) {
+    let totalPerimeter = 0;
+    const segLengths = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+      segLengths.push(len);
+      totalPerimeter += len;
+    }
+
+    let bestDist = Infinity;
+    let bestT = 0;
+    let bestProj = null;
+    let bestSegIdx = 0;
+    let currentAccum = 0;
+
+    for (let i = 0; i < poly.length; i++) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      const d = pointToSegmentDistance({ x: pt[0], y: pt[1] }, { x: p1[0], y: p1[1] }, { x: p2[0], y: p2[1] });
+      if (d < bestDist) {
+        bestDist = d;
+        const dx = p2[0] - p1[0];
+        const dy = p2[1] - p1[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((pt[0] - p1[0]) * dx + (pt[1] - p1[1]) * dy) / l2));
+        bestProj = [p1[0] + t * dx, p1[1] + t * dy];
+        bestSegIdx = i;
+        bestT = currentAccum + Math.hypot(bestProj[0] - p1[0], bestProj[1] - p1[1]);
+      }
+      currentAccum += segLengths[i];
+    }
+
+    return { dist: bestDist, t: bestT, proj: bestProj, segIdx: bestSegIdx, totalPerimeter };
+  }
+
+  // Find intermediate ink / perimeter path between two world points on map
+  function findInkPathBetweenPoints(ptA, ptB, mm) {
+    if (!mm || !mm.loaded) {
+      return [ptA, ptB];
+    }
+
+    // 1. Vector Demo Plots: Walk along polygon boundary perimeter
+    if (mm.demoPlots && mm.demoPlots.length > 0) {
+      const bW = mm.baseWidth || 900;
+      const bH = mm.baseHeight || 650;
+      const imgAX = ((ptA.x - mm.x) / mm.width) * bW;
+      const imgAY = ((ptA.y - mm.y) / mm.height) * bH;
+      const imgBX = ((ptB.x - mm.x) / mm.width) * bW;
+      const imgBY = ((ptB.y - mm.y) / mm.height) * bH;
+
+      for (const dp of mm.demoPlots) {
+        const infoA = getPerimeterInfo(dp.poly, [imgAX, imgAY]);
+        const infoB = getPerimeterInfo(dp.poly, [imgBX, imgBY]);
+        if (infoA.dist <= 50 && infoB.dist <= 50) {
+          const total = infoA.totalPerimeter;
+          const fwdDist = (infoB.t - infoA.t + total) % total;
+          const bwdDist = (infoA.t - infoB.t + total) % total;
+
+          const imgPath = [infoA.proj];
+          const n = dp.poly.length;
+
+          if (fwdDist <= bwdDist) {
+            let seg = infoA.segIdx;
+            while (seg !== infoB.segIdx) {
+              const corner = dp.poly[(seg + 1) % n];
+              imgPath.push(corner);
+              seg = (seg + 1) % n;
+            }
+          } else {
+            let seg = infoA.segIdx;
+            while (seg !== infoB.segIdx) {
+              const corner = dp.poly[seg];
+              imgPath.push(corner);
+              seg = (seg - 1 + n) % n;
+            }
+          }
+          imgPath.push(infoB.proj);
+
+          // Convert imgPath back to world coordinates
+          const worldPath = imgPath.map(p => ({
+            x: mm.x + (p[0] / bW) * mm.width,
+            y: mm.y + (p[1] / bH) * mm.height
+          }));
+          return worldPath;
+        }
+      }
+    }
+
+    // 2. Scanned Mouza Map Raster Sheet: A* Ink Ridge Pathfinder
+    const srcCanvas = mm.filteredCanvas || mm.imageObj;
+    if (!srcCanvas) return [ptA, ptB];
+
+    const origW = srcCanvas.naturalWidth || srcCanvas.width;
+    const origH = srcCanvas.naturalHeight || srcCanvas.height;
+    if (!origW || !origH) return [ptA, ptB];
+
+    const pxA = Math.max(0, Math.min(origW - 1, Math.round(((ptA.x - mm.x) / mm.width) * origW)));
+    const pyA = Math.max(0, Math.min(origH - 1, Math.round(((ptA.y - mm.y) / mm.height) * origH)));
+    let pxB = Math.max(0, Math.min(origW - 1, Math.round(((ptB.x - mm.x) / mm.width) * origW)));
+    let pyB = Math.max(0, Math.min(origH - 1, Math.round(((ptB.y - mm.y) / mm.height) * origH)));
+
+    // Bounding box with generous padding around the segment
+    const pad = 65;
+    const minX = Math.max(0, Math.min(pxA, pxB) - pad);
+    const minY = Math.max(0, Math.min(pyA, pyB) - pad);
+    const maxX = Math.min(origW - 1, Math.max(pxA, pxB) + pad);
+    const maxY = Math.min(origH - 1, Math.max(pyA, pyB) + pad);
+    const cropW = maxX - minX + 1;
+    const cropH = maxY - minY + 1;
+
+    if (cropW <= 2 || cropH <= 2) return [ptA, ptB];
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    cropCtx.drawImage(srcCanvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+    const imgData = cropCtx.getImageData(0, 0, cropW, cropH);
+    const pixels = imgData.data;
+
+    function getLum(lx, ly) {
+      if (lx < 0 || lx >= cropW || ly < 0 || ly >= cropH) return 255;
+      const idx = (ly * cropW + lx) * 4;
+      return 0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2];
+    }
+
+    let startX = pxA - minX;
+    let startY = pyA - minY;
+    let targetX = pxB - minX;
+    let targetY = pyB - minY;
+
+    // Snap target to local dark ink ridge within 25px
+    let bestDistTarget = 255;
+    let snappedTargetX = targetX, snappedTargetY = targetY;
+    for (let r = 0; r <= 25; r += 2) {
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+        const tx = Math.round(targetX + Math.cos(a) * r);
+        const ty = Math.round(targetY + Math.sin(a) * r);
+        const l = getLum(tx, ty);
+        if (l < bestDistTarget) {
+          bestDistTarget = l;
+          snappedTargetX = tx;
+          snappedTargetY = ty;
+        }
+      }
+    }
+    if (bestDistTarget < 190) {
+      targetX = snappedTargetX;
+      targetY = snappedTargetY;
+    }
+
+    // A* Pathfinding along ink ridge
+    const heap = new AStarMinHeap();
+    const totalCells = cropW * cropH;
+    const cameFrom = new Int32Array(totalCells).fill(-1);
+    const gScore = new Float32Array(totalCells).fill(1e9);
+    const closed = new Uint8Array(totalCells);
+
+    const startIdx = startY * cropW + startX;
+    gScore[startIdx] = 0;
+    heap.push({
+      x: startX,
+      y: startY,
+      idx: startIdx,
+      f: Math.hypot(targetX - startX, targetY - startY)
+    });
+
+    const neighbors = [
+      [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
+      [-1, -1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [1, 1, 1.414]
+    ];
+
+    let foundTarget = false;
+    let finalIdx = -1;
+    let iterations = 0;
+    const maxIterations = Math.min(totalCells * 2, 70000);
+
+    while (heap.size > 0 && iterations++ < maxIterations) {
+      const current = heap.pop();
+      const cx = current.x;
+      const cy = current.y;
+      const cIdx = current.idx;
+
+      if (closed[cIdx]) continue;
+      closed[cIdx] = 1;
+
+      if (Math.abs(cx - targetX) <= 1 && Math.abs(cy - targetY) <= 1) {
+        foundTarget = true;
+        finalIdx = cIdx;
+        break;
+      }
+
+      const currentG = gScore[cIdx];
+
+      for (const [dx, dy, stepDist] of neighbors) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || nx >= cropW || ny < 0 || ny >= cropH) continue;
+
+        const nIdx = ny * cropW + nx;
+        if (closed[nIdx]) continue;
+
+        const lum = getLum(nx, ny);
+        let inkCost;
+        if (lum <= 165) {
+          inkCost = 1.0 + (lum / 165) * 1.5;
+        } else {
+          inkCost = 22.0 + ((lum - 165) / 90) * 65.0;
+        }
+
+        const tentativeG = currentG + stepDist * inkCost;
+
+        if (tentativeG < gScore[nIdx]) {
+          cameFrom[nIdx] = cIdx;
+          gScore[nIdx] = tentativeG;
+          const h = Math.hypot(targetX - nx, targetY - ny);
+          heap.push({
+            x: nx,
+            y: ny,
+            idx: nIdx,
+            f: tentativeG + h * 1.05
+          });
+        }
+      }
+    }
+
+    if (foundTarget && finalIdx !== -1) {
+      const pixelPath = [{ x: targetX, y: targetY }];
+      let curr = finalIdx;
+      while (curr !== startIdx && curr !== -1) {
+        pixelPath.push({ x: curr % cropW, y: Math.floor(curr / cropW) });
+        curr = cameFrom[curr];
+      }
+      pixelPath.push({ x: startX, y: startY });
+      pixelPath.reverse();
+
+      // Convert to world coordinates
+      const worldPts = pixelPath.map(p => ({
+        x: mm.x + ((minX + p.x) / origW) * mm.width,
+        y: mm.y + ((minY + p.y) / origH) * mm.height
+      }));
+
+      // Simplify to smooth natural CAD polyline
+      const simplified = simplifyRDP(worldPts, 4.0);
+      return simplified;
+    }
+
+    // Fallback: direct connection
+    return [ptA, ptB];
+  }
+
+  // Closes an active traced boundary line and converts it into a full Plot entity
+  function closeActiveTracedLineAsDag(activeLine) {
+    if (!activeLine || !activeLine.vertices || activeLine.vertices.length < 2) return;
+
+    activeLine.isLine = true;
+    activeLine.layer = 'measurements';
+
+    let totalLengthFt = 0;
+    for (let i = 0; i < activeLine.vertices.length - 1; i++) {
+      totalLengthFt += Math.hypot(
+        activeLine.vertices[i + 1].x - activeLine.vertices[i].x,
+        activeLine.vertices[i + 1].y - activeLine.vertices[i].y
+      ) * FEET_PER_LINK;
+    }
+    const ftIn = convertFeetToFeetInches(totalLengthFt);
+    const groundInches = Math.round(totalLengthFt * 12);
+    const mapInches = totalLengthFt / getFeetPerMapInch();
+
+    playCadSound('snap');
+    showToast(`✅ সীমানা আইল সম্পন্ন: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি)`, 'success');
+
+    state.activeTracedLineId = null;
+    state.selectedPlotId = activeLine.id;
+    if (drawHintBox) {
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.textContent = `✅ সীমানা আইল সম্পন্ন (${ftIn.formattedShortBengali})! নতুন আইল মাপতে যেকোনো আইলে ক্লিক করুন`;
+    }
+    pushHistory();
+    updateInspector();
+    render();
+  }
+
+  // Helper: Detect full aisle/boundary line segment under click
+  function detectAisleSegmentAtClick(worldX, worldY, mm) {
+    // 1. Vector edges check (existing plots/lines)
+    const clickCoord = { x: worldX, y: worldY };
+    const hitTol = 25 / state.camera.zoom;
+    let bestPlotEdge = null;
+    let bestDist = Infinity;
+
+    for (const plot of state.plots) {
+      if (plot.vertices && plot.vertices.length >= 2) {
+        const edgeCount = plot.isLine ? (plot.vertices.length - 1) : plot.vertices.length;
+        for (let i = 0; i < edgeCount; i++) {
+          const p1 = plot.vertices[i];
+          const p2 = plot.vertices[(i + 1) % plot.vertices.length];
+          const dist = pointToSegmentDistance(clickCoord, p1, p2);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestPlotEdge = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }];
+          }
+        }
+      }
+    }
+    if (bestPlotEdge && bestDist <= hitTol) {
+      return bestPlotEdge;
+    }
+
+    if (!mm || !mm.loaded) {
+      return [{ x: worldX - 20, y: worldY }, { x: worldX + 20, y: worldY }];
+    }
+
+    // 2. Demo Plots edge detection
+    if (mm.demoPlots && mm.demoPlots.length > 0) {
+      const bW = mm.baseWidth || 900;
+      const bH = mm.baseHeight || 650;
+      const imgX = ((worldX - mm.x) / mm.width) * bW;
+      const imgY = ((worldY - mm.y) / mm.height) * bH;
+      let closestEdge = null;
+      let minDist = Infinity;
+
+      for (const dp of mm.demoPlots) {
+        for (let i = 0; i < dp.poly.length; i++) {
+          const ptA = dp.poly[i];
+          const ptB = dp.poly[(i + 1) % dp.poly.length];
+          const dist = pointToSegmentDistance({ x: imgX, y: imgY }, { x: ptA[0], y: ptA[1] }, { x: ptB[0], y: ptB[1] });
+          if (dist < minDist) {
+            minDist = dist;
+            closestEdge = { ptA, ptB };
+          }
+        }
+      }
+
+      if (closestEdge && minDist < 45) {
+        return [
+          { x: mm.x + (closestEdge.ptA[0] / bW) * mm.width, y: mm.y + (closestEdge.ptA[1] / bH) * mm.height },
+          { x: mm.x + (closestEdge.ptB[0] / bW) * mm.width, y: mm.y + (closestEdge.ptB[1] / bH) * mm.height }
+        ];
+      }
+    }
+
+    // 3. Raster Mouza Ink Ridge Tracer (traces full aisle line under click)
+    const srcCanvas = mm.filteredCanvas || mm.imageObj;
+    if (srcCanvas) {
+      const origW = srcCanvas.naturalWidth || srcCanvas.width;
+      const origH = srcCanvas.naturalHeight || srcCanvas.height;
+      if (origW && origH) {
+        const relX = (worldX - mm.x) / mm.width;
+        const relY = (worldY - mm.y) / mm.height;
+        const seedX = Math.max(0, Math.min(origW - 1, Math.round(relX * origW)));
+        const seedY = Math.max(0, Math.min(origH - 1, Math.round(relY * origH)));
+
+        const cropR = 300;
+        const cropX0 = Math.max(0, seedX - cropR);
+        const cropY0 = Math.max(0, seedY - cropR);
+        const cropX1 = Math.min(origW - 1, seedX + cropR);
+        const cropY1 = Math.min(origH - 1, seedY + cropR);
+        const cropW = cropX1 - cropX0 + 1;
+        const cropH = cropY1 - cropY0 + 1;
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+        cropCtx.drawImage(srcCanvas, cropX0, cropY0, cropW, cropH, 0, 0, cropW, cropH);
+        const imgData = cropCtx.getImageData(0, 0, cropW, cropH);
+        const pixels = imgData.data;
+
+        function getLum(lx, ly) {
+          if (lx < 0 || lx >= cropW || ly < 0 || ly >= cropH) return 255;
+          const idx = (ly * cropW + lx) * 4;
+          return 0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2];
+        }
+
+        let localX = seedX - cropX0;
+        let localY = seedY - cropY0;
+
+        // Darkest ink point within 25px
+        let bestX = localX, bestY = localY, minLum = 255;
+        for (let r = 0; r <= 25; r += 2) {
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+            const tx = Math.round(localX + Math.cos(a) * r);
+            const ty = Math.round(localY + Math.sin(a) * r);
+            const l = getLum(tx, ty);
+            if (l < minLum) {
+              minLum = l;
+              bestX = tx;
+              bestY = ty;
+            }
+          }
+        }
+        localX = bestX;
+        localY = bestY;
+
+        if (minLum < 190) {
+          // Sample background
+          let bgSamples = [];
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+            bgSamples.push(getLum(Math.round(localX + Math.cos(a) * 35), Math.round(localY + Math.sin(a) * 35)));
+          }
+          bgSamples.sort((a, b) => a - b);
+          const bgLum = bgSamples[Math.floor(bgSamples.length * 0.75)] || 240;
+          const inkThreshold = Math.min(185, minLum + (bgLum - minLum) * 0.65);
+
+          // Find principal orientation
+          let bestAngle = 0;
+          let maxContrast = 0;
+          for (let a = 0; a < Math.PI; a += Math.PI / 16) {
+            const p1x = Math.round(localX + Math.cos(a) * 8);
+            const p1y = Math.round(localY + Math.sin(a) * 8);
+            const p2x = Math.round(localX - Math.cos(a) * 8);
+            const p2y = Math.round(localY - Math.sin(a) * 8);
+            const alongLum = (getLum(p1x, p1y) + getLum(p2x, p2y)) / 2;
+
+            const perpA = a + Math.PI / 2;
+            const q1x = Math.round(localX + Math.cos(perpA) * 8);
+            const q1y = Math.round(localY + Math.sin(perpA) * 8);
+            const q2x = Math.round(localX - Math.cos(perpA) * 8);
+            const q2y = Math.round(localY - Math.sin(perpA) * 8);
+            const acrossLum = (getLum(q1x, q1y) + getLum(q2x, q2y)) / 2;
+
+            const contrast = acrossLum - alongLum;
+            if (contrast > maxContrast) {
+              maxContrast = contrast;
+              bestAngle = a;
+            }
+          }
+
+          function traceInDirection(initAngle) {
+            let cx = localX, cy = localY;
+            let angle = initAngle;
+            const pts = [{ x: cx, y: cy }];
+            for (let step = 0; step < 260; step++) {
+              let forwardMinLum = 255;
+              let nextX = cx, nextY = cy;
+              let chosenAngle = angle;
+
+              for (let da of [-0.35, -0.18, 0, 0.18, 0.35]) {
+                const testA = angle + da;
+                const tx = Math.round(cx + Math.cos(testA) * 3);
+                const ty = Math.round(cy + Math.sin(testA) * 3);
+                const l = getLum(tx, ty);
+                if (l < forwardMinLum) {
+                  forwardMinLum = l;
+                  nextX = tx;
+                  nextY = ty;
+                  chosenAngle = testA;
+                }
+              }
+
+              if (forwardMinLum > inkThreshold) break;
+              if (nextX <= 3 || nextX >= cropW - 4 || nextY <= 3 || nextY >= cropH - 4) break;
+
+              cx = nextX;
+              cy = nextY;
+              angle = chosenAngle;
+              pts.push({ x: cx, y: cy });
+            }
+            return pts;
+          }
+
+          const fwd = traceInDirection(bestAngle);
+          const bwd = traceInDirection(bestAngle + Math.PI);
+          bwd.reverse();
+          const fullLineCrop = [...bwd, ...fwd.slice(1)];
+
+          if (fullLineCrop.length >= 6) {
+            const simplified = simplifyRDP(fullLineCrop, 2.8);
+            return simplified.map(p => ({
+              x: mm.x + ((cropX0 + p.x) / origW) * mm.width,
+              y: mm.y + ((cropY0 + p.y) / origH) * mm.height
+            }));
+          }
+        }
+      }
+    }
+
+    return [{ x: worldX - 15, y: worldY }, { x: worldX + 15, y: worldY }];
+  }
+
+  // Chaining & connecting boundary line segments in continuous Line Wand mode
+  function applyDetectedBoundarySegment(newVertices, sourceName = 'সীমানা আইল') {
+    if (!newVertices || newVertices.length < 2) return;
+
+    const snapThreshold = 65 / state.camera.zoom;
+    let activeLine = state.plots.find(p => (p.id === state.activeTracedLineId || p.id === state.selectedPlotId) && p.isLine);
+
+    let isConnected = false;
+    const mm = state.mouzaMap;
+
+    if (activeLine && activeLine.vertices && activeLine.vertices.length >= 2) {
+      const actStart = activeLine.vertices[0];
+      const actEnd = activeLine.vertices[activeLine.vertices.length - 1];
+      const newStart = newVertices[0];
+      const newEnd = newVertices[newVertices.length - 1];
+
+      const dEndStart = Math.hypot(actEnd.x - newStart.x, actEnd.y - newStart.y);
+      const dEndEnd = Math.hypot(actEnd.x - newEnd.x, actEnd.y - newEnd.y);
+      const dStartEnd = Math.hypot(actStart.x - newEnd.x, actStart.y - newEnd.y);
+      const dStartStart = Math.hypot(actStart.x - newStart.x, actStart.y - newStart.y);
+
+      if (dEndStart <= snapThreshold) {
+        newVertices[0] = { x: actEnd.x, y: actEnd.y };
+        activeLine.vertices.push(...newVertices.slice(1));
+        isConnected = true;
+      } else if (dEndEnd <= snapThreshold) {
+        const rev = [...newVertices].reverse();
+        rev[0] = { x: actEnd.x, y: actEnd.y };
+        activeLine.vertices.push(...rev.slice(1));
+        isConnected = true;
+      } else if (dStartEnd <= snapThreshold) {
+        newVertices[newVertices.length - 1] = { x: actStart.x, y: actStart.y };
+        activeLine.vertices = [...newVertices.slice(0, -1), ...activeLine.vertices];
+        isConnected = true;
+      } else if (dStartStart <= snapThreshold) {
+        const rev = [...newVertices].reverse();
+        rev[rev.length - 1] = { x: actStart.x, y: actStart.y };
+        activeLine.vertices = [...rev.slice(0, -1), ...activeLine.vertices];
+        isConnected = true;
+      } else {
+        // User clicked another aisle with a gap! Connect between the lines!
+        const pA = actEnd;
+        const pB = (dEndStart <= dEndEnd) ? newStart : newEnd;
+        const isReversed = (pB === newEnd);
+        const connecting = findInkPathBetweenPoints(pA, pB, mm);
+        const toAdd = isReversed ? [...newVertices].reverse() : newVertices;
+
+        if (connecting && connecting.length >= 2) {
+          activeLine.vertices.push(...connecting.slice(1), ...toAdd.slice(1));
+          isConnected = true;
+        }
+      }
+    }
+
+    if (!isConnected) {
+      // Start a new line entity
+      const lineId = 'line-edge-' + Date.now();
+      const lineCount = state.plots.filter(p => p.isLine).length + 1;
+      activeLine = {
+        id: lineId,
+        name: `${sourceName} ${toBanglaDigits(lineCount)}`,
+        layer: 'measurements',
+        isLine: true,
+        fillColor: 'transparent',
+        strokeColor: '#ec4899',
+        strokeWidth: 2.8,
+        vertices: newVertices
+      };
+      state.plots.push(activeLine);
+      state.selectedPlotId = lineId;
+      state.activeTracedLineId = lineId;
+    }
+
+    // Cumulative length along all polyline segments in Links & Feet
+    let totalLengthLinks = 0;
+    for (let i = 0; i < activeLine.vertices.length - 1; i++) {
+      totalLengthLinks += Math.hypot(
+        activeLine.vertices[i + 1].x - activeLine.vertices[i].x,
+        activeLine.vertices[i + 1].y - activeLine.vertices[i].y
+      );
+    }
+    const totalFt = totalLengthLinks * FEET_PER_LINK;
+    const ftIn = convertFeetToFeetInches(totalFt);
+    const groundInches = Math.round(totalFt * 12);
+    const mapInches = totalFt / getFeetPerMapInch();
+
+    // Check if loop closure formed
+    const vStart = activeLine.vertices[0];
+    const vEnd = activeLine.vertices[activeLine.vertices.length - 1];
+    const isLoopClosed = activeLine.vertices.length >= 4 && Math.hypot(vStart.x - vEnd.x, vStart.y - vEnd.y) <= snapThreshold;
+
+    state.tool = 'line-wand';
+    updateToolUI();
+    updateInspector();
+    pushHistory();
+    render();
+    playCadSound('snap');
+
+    if (isLoopClosed) {
+      showToast(`🎉 সম্পূর্ণ বাউন্ডারি সংযুক্ত হয়েছে: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি)`, 'success');
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.textContent = `🎉 সম্পূর্ণ বাউন্ডারি সংযুক্ত: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি)`;
+    } else if (isConnected) {
+      showToast(`🔗 আইল সংযুক্ত হয়েছে: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি • নকশায় ${toBanglaDigits(mapInches.toFixed(2))} ইঞ্চি)`, 'success');
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.textContent = `⚡ চিহ্নিত আইল: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি) | পরবর্তী আইলে ক্লিক করুন (মাঝের অংশ অটো কানেক্ট হবে)`;
+    } else {
+      showToast(`📍 আইল চিহ্নিত হয়েছে: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি)`, 'success');
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.textContent = `⚡ চিহ্নিত আইল: ${ftIn.formattedBengali} (মাটিতে ${toBanglaDigits(groundInches)} ইঞ্চি) | পরবর্তী আইলে ক্লিক করুন (মাঝের অংশ অটো কানেক্ট হবে)`;
+    }
+  }
+
+  // Boundary Line Tracer (Click on any line to detect it, and chain with other lines)
+  function detectBoundaryLineFromClick(worldX, worldY) {
+    const mm = getMapAtWorldCoord(worldX, worldY) || state.mouzaMap;
+    const snapCloseRadius = 50 / state.camera.zoom;
+
+    let activeLine = state.plots.find(p => (p.id === state.activeTracedLineId || p.id === state.selectedPlotId) && p.isLine);
+
+    // If user clicks near the starting vertex of an active line, close the loop!
+    if (activeLine && activeLine.vertices && activeLine.vertices.length >= 3) {
+      const firstPt = activeLine.vertices[0];
+      const distToFirst = Math.hypot(worldX - firstPt.x, worldY - firstPt.y);
+      if (distToFirst <= snapCloseRadius) {
+        closeActiveTracedLineAsDag(activeLine);
+        return;
+      }
+    }
+
+    // Detect the aisle line under the click!
+    const detectedSegment = detectAisleSegmentAtClick(worldX, worldY, mm);
+    if (detectedSegment && detectedSegment.length >= 2) {
+      applyDetectedBoundarySegment(detectedSegment, 'সীমানা আইল');
+    }
+  }
+
   // Utility: Draw crisp rounded rectangle
   function drawRoundedRect(context, x, y, width, height, radius) {
     context.beginPath();
@@ -1560,6 +2347,9 @@
     state.mouzaMap.y = 0;
     state.mouzaMap.width = 900;
     state.mouzaMap.height = 650;
+    state.mouzaMap.baseWidth = 900;
+    state.mouzaMap.baseHeight = 650;
+    state.mouzaMap.demoPlots = sheetPlots;
     state.mouzaMap.opacity = 0.95;
     state.mouzaMap.loaded = true;
   }
@@ -1905,6 +2695,11 @@
       drawGrid();
     }
 
+    // 1.5 Draw Satellite as Background if layerPosition === 'bottom'
+    if (state.satellite && state.satellite.enabled && state.satellite.layerPosition === 'bottom') {
+      drawSatelliteOverlay();
+    }
+
     // 2. Draw Mouza Background Map (Vector CAD Sheet or Scanned Raster)
     if (state.mouzaMap.loaded) {
       if (state.mouzaMap.isVector) {
@@ -1914,15 +2709,27 @@
       }
     }
 
+    // 2.5 Draw Satellite ON TOP of Mouza Map (Default: layerPosition === 'top')
+    if (state.satellite && state.satellite.enabled && state.satellite.layerPosition !== 'bottom') {
+      drawSatelliteOverlay();
+    }
+
     // 3. Draw Polygons & Plots
     if (state.layers.plots) {
       drawPlots();
+    }
+
+    // 3.5 Draw Highlighted Vertex Ring (Module 16)
+    if (state.highlightedVertex) {
+      drawHighlightedVertex();
     }
 
     // 4. Draw Active In-Progress Polyline
     if (state.activePolyline.length > 0) {
       drawActivePolyline();
     }
+
+    // (drawActiveTracedLinePreview disabled to keep view clean without elastic rubberband line)
 
     // 5. Draw Slice Line
     if (state.slicePoints.length > 0) {
@@ -1958,6 +2765,9 @@
     if (state.gunia.enabled) {
       drawGuniaScale();
     }
+
+    // 11.5 Draw AutoCAD Geographic Location Marker / GPS Pin
+    drawAutoCadGpsPin();
 
     // 12. Draw Fullscreen Crosshair
     drawCrosshair();
@@ -2012,6 +2822,406 @@
     }
   }
 
+  // Draw Procedural High-Res Satellite Aerial Imagery Layer (Module 17)
+  let _satellitePatternCache = null;
+  function getSatellitePatternCanvas() {
+    if (_satellitePatternCache) return _satellitePatternCache;
+    const patCanvas = document.createElement('canvas');
+    patCanvas.width = 400;
+    patCanvas.height = 400;
+    const pCtx = patCanvas.getContext('2d');
+
+    // Rich Bengali landscape: paddy green, earthen dikes, subtle canal water and foliage
+    pCtx.fillStyle = '#1c301e';
+    pCtx.fillRect(0, 0, 400, 400);
+
+    // Sub-plot agricultural textures
+    const fieldColors = ['#233d26', '#2d4d2f', '#1e3821', '#28462a', '#1a331c', '#345233'];
+    const fields = [
+      { x: 0, y: 0, w: 180, h: 120, c: fieldColors[0] },
+      { x: 180, y: 0, w: 220, h: 160, c: fieldColors[1] },
+      { x: 0, y: 120, w: 130, h: 180, c: fieldColors[2] },
+      { x: 130, y: 120, w: 150, h: 150, c: fieldColors[3] },
+      { x: 280, y: 160, w: 120, h: 140, c: fieldColors[4] },
+      { x: 0, y: 300, w: 200, h: 100, c: fieldColors[5] },
+      { x: 200, y: 300, w: 200, h: 100, c: fieldColors[1] }
+    ];
+
+    fields.forEach(f => {
+      pCtx.fillStyle = f.c;
+      pCtx.fillRect(f.x, f.y, f.w, f.h);
+      pCtx.strokeStyle = 'rgba(74, 120, 80, 0.35)';
+      pCtx.lineWidth = 1.5;
+      pCtx.strokeRect(f.x, f.y, f.w, f.h);
+    });
+
+    // Natural canal / water body
+    pCtx.strokeStyle = 'rgba(25, 75, 95, 0.75)';
+    pCtx.lineWidth = 14;
+    pCtx.beginPath();
+    pCtx.moveTo(0, 60);
+    pCtx.bezierCurveTo(120, 80, 240, 40, 400, 90);
+    pCtx.stroke();
+
+    // Winding village path
+    pCtx.strokeStyle = 'rgba(160, 140, 110, 0.45)';
+    pCtx.lineWidth = 4;
+    pCtx.beginPath();
+    pCtx.moveTo(70, 0);
+    pCtx.bezierCurveTo(90, 150, 160, 250, 220, 400);
+    pCtx.stroke();
+
+    _satellitePatternCache = patCanvas;
+    return patCanvas;
+  }
+
+  // Multi-Provider High-Definition Satellite Tile Engine
+  // Supports: Google Hybrid (Satellite + Roads/Labels), Google Pure Satellite, and Esri
+  const _satelliteTileCache = {};
+
+  function fetchSatelliteTile(source, z, x, y) {
+    const key = `${source}/${z}/${y}/${x}`;
+    if (_satelliteTileCache[key]) return _satelliteTileCache[key];
+
+    let tileUrl = '';
+    const sub = Math.abs((x + y) % 4);
+
+    if (source === 'google_sat') {
+      tileUrl = `https://mt${sub}.google.com/vt/lyrs=s&x=${x}&y=${y}&z=${z}`;
+    } else if (source === 'esri') {
+      tileUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+    } else {
+      // Default: Google Hybrid (Satellite + Roads, Waterways & Boundaries)
+      tileUrl = `https://mt${sub}.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = tileUrl;
+    _satelliteTileCache[key] = { img, loaded: false, error: false };
+
+    img.onload = () => {
+      _satelliteTileCache[key].loaded = true;
+      render();
+    };
+    img.onerror = () => {
+      _satelliteTileCache[key].error = true;
+      // Graceful fallback to Esri if Google tile network hiccups
+      if (source !== 'esri') {
+        const fbImg = new Image();
+        fbImg.crossOrigin = 'anonymous';
+        fbImg.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+        fbImg.onload = () => {
+          _satelliteTileCache[key].img = fbImg;
+          _satelliteTileCache[key].loaded = true;
+          render();
+        };
+      }
+    };
+
+    return _satelliteTileCache[key];
+  }
+
+  function drawSatelliteOverlay() {
+    if (!state.satellite || !state.satellite.enabled) return;
+
+    ctx.save();
+    const isUnder = state.satellite.layerPosition === 'bottom';
+    const satOpacity = state.satellite.opacity !== undefined ? state.satellite.opacity : 0.65;
+
+    if (isUnder) {
+      // When satellite is underneath as background, draw full crisp 100% color
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      // When satellite is on top, slider controls transparency directly
+      ctx.globalAlpha = Math.min(1.0, Math.max(0.05, satOpacity));
+      if (state.satellite.blendMode === 'multiply') {
+        ctx.globalCompositeOperation = 'multiply';
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    }
+
+    // Default to Faridganj, Chandpur (where the default Mouza sheet belongs!)
+    const originGPS = state.satellite.originGPS || { lat: 23.127500, lng: 90.750900 };
+    const source = state.satellite.source || 'google_hybrid';
+
+    // Adaptive zoom level based on camera zoom:
+    // When zooming in, automatically load Level 17, 18, or 19 for crisp high-definition aerial detail
+    let zoomLvl = 16;
+    if (state.camera.zoom >= 2.0) zoomLvl = 19;
+    else if (state.camera.zoom >= 1.0) zoomLvl = 18;
+    else if (state.camera.zoom >= 0.45) zoomLvl = 17;
+    else if (state.camera.zoom >= 0.20) zoomLvl = 16;
+    else zoomLvl = 15;
+
+    const n = Math.pow(2, zoomLvl);
+    const centerTileX = Math.floor(((originGPS.lng + 180) / 360) * n);
+    const latRad = (originGPS.lat * Math.PI) / 180;
+    const centerTileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+
+    // Exact Web Mercator tile size in CAD units (links) at this latitude:
+    // Earth circ = 40,075,016.686m; 1 link = 0.201168m -> 4.97097 links per meter
+    const metersPerTile = (40075016.686 * Math.cos(latRad)) / n;
+    const tileWorldSize = metersPerTile * 4.97097;
+
+    const anchorX = state.satellite.anchorWorld ? state.satellite.anchorWorld.x : 800;
+    const anchorY = state.satellite.anchorWorld ? state.satellite.anchorWorld.y : 550;
+
+    // Viewport-based tile bounds calculation (Dynamically covers 100% of the visible screen)
+    const topLeftWorld = screenToWorld(0, 0);
+    const btmRightWorld = screenToWorld(logicalW, logicalH);
+
+    const minDx = Math.floor((topLeftWorld.x - anchorX) / tileWorldSize) - 1;
+    const maxDx = Math.ceil((btmRightWorld.x - anchorX) / tileWorldSize) + 1;
+    const minDy = Math.floor((topLeftWorld.y - anchorY) / tileWorldSize) - 1;
+    const maxDy = Math.ceil((btmRightWorld.y - anchorY) / tileWorldSize) + 1;
+
+    // Guard against excessive tile requests when zoomed out extremely
+    const cMinDx = Math.max(-12, minDx);
+    const cMaxDx = Math.min(12, maxDx);
+    const cMinDy = Math.max(-10, minDy);
+    const cMaxDy = Math.min(10, maxDy);
+
+    for (let dx = cMinDx; dx <= cMaxDx; dx++) {
+      for (let dy = cMinDy; dy <= cMaxDy; dy++) {
+        const tx = centerTileX + dx;
+        const ty = centerTileY + dy;
+        const tileData = fetchSatelliteTile(source, zoomLvl, tx, ty);
+        if (tileData && tileData.loaded && tileData.img) {
+          const twX = anchorX + dx * tileWorldSize;
+          const twY = anchorY + dy * tileWorldSize;
+          const spTopLeft = worldToScreen(twX, twY);
+          const spBottomRight = worldToScreen(twX + tileWorldSize, twY + tileWorldSize);
+          ctx.drawImage(tileData.img, spTopLeft.x, spTopLeft.y, spBottomRight.x - spTopLeft.x, spBottomRight.y - spTopLeft.y);
+        }
+      }
+    }
+
+    // 3. AutoCAD GPS Coordinate Graticule Grid (WGS84 Lat/Long Lines in subtle cyan)
+    if (state.camera.zoom > 0.35) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+
+      const topLeft = screenToWorld(0, 0);
+      const btmRight = screenToWorld(logicalW, logicalH);
+      const step = 500;
+      const startX = Math.floor(topLeft.x / step) * step;
+      const startY = Math.floor(topLeft.y / step) * step;
+
+      for (let gx = startX; gx <= btmRight.x; gx += step) {
+        const sx = worldToScreen(gx, 0).x;
+        ctx.beginPath();
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, logicalH);
+        ctx.stroke();
+
+        const gpsAtX = window.LSCAD?.PlotOps?.canvasToGPS ? window.LSCAD.PlotOps.canvasToGPS(gx, 0, originGPS) : null;
+        if (gpsAtX) {
+          ctx.fillStyle = '#22d3ee';
+          ctx.font = '9px monospace';
+          ctx.fillText(`${gpsAtX.lng.toFixed(4)}°E`, sx + 4, logicalH - 12);
+        }
+      }
+
+      for (let gy = startY; gy <= btmRight.y; gy += step) {
+        const sy = worldToScreen(0, gy).y;
+        ctx.beginPath();
+        ctx.moveTo(0, sy);
+        ctx.lineTo(logicalW, sy);
+        ctx.stroke();
+
+        const gpsAtY = window.LSCAD?.PlotOps?.canvasToGPS ? window.LSCAD.PlotOps.canvasToGPS(0, gy, originGPS) : null;
+        if (gpsAtY) {
+          ctx.fillStyle = '#22d3ee';
+          ctx.font = '9px monospace';
+          ctx.fillText(`${gpsAtY.lat.toFixed(4)}°N`, 8, sy - 4);
+        }
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // 4. AutoCAD Satellite HUD Watermark Badge
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
+    ctx.lineWidth = 1.2;
+    const badgeX = logicalW - 280;
+    const badgeY = 16;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, 265, 42, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 11px "Noto Sans Bengali", sans-serif';
+    ctx.fillText('🛰️ লাইভ স্যাটেলাইট GPS ওভারলে (AutoCAD Datum)', badgeX + 12, badgeY + 17);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    const gpsLat = originGPS.lat.toFixed(5);
+    const gpsLng = originGPS.lng.toFixed(5);
+    ctx.fillText(`GPS: ${gpsLat}°N, ${gpsLng}°E | BTM: 90°E WGS84`, badgeX + 12, badgeY + 33);
+    ctx.restore();
+  }
+
+  // AutoCAD Geographic Location Pin Placement Engine
+  function setGpsLocationPin(worldX, worldY, customLat, customLng) {
+    if (!state.satellite) {
+      state.satellite = { enabled: true, opacity: 0.7, originGPS: { lat: 23.3167, lng: 90.7500 } };
+    }
+    state.satellite.anchorWorld = { x: worldX, y: worldY };
+    state.satellite.pinPlaced = true;
+    state.satellite.enabled = true;
+
+    if (customLat !== undefined && customLng !== undefined) {
+      state.satellite.originGPS = { lat: customLat, lng: customLng };
+    }
+
+    const lat = state.satellite.originGPS.lat;
+    const lng = state.satellite.originGPS.lng;
+
+    const inpGeoLat = document.getElementById('inpGeoLat');
+    const inpGeoLng = document.getElementById('inpGeoLng');
+    if (inpGeoLat) inpGeoLat.value = lat.toFixed(6);
+    if (inpGeoLng) inpGeoLng.value = lng.toFixed(6);
+
+    updateSatelliteUIState();
+    playCadSound('snap');
+    showToast(`📍 AutoCAD GPS পিন বসানো হয়েছে (${lat.toFixed(5)}°N, ${lng.toFixed(5)}°E) ও স্যাটেলাইট চালু হয়েছে!`, 'success');
+    pushHistory();
+    render();
+  }
+  window.setGpsLocationPin = setGpsLocationPin;
+
+  // Draw AutoCAD Geographic Location Marker / GPS Pin on Canvas
+  function drawAutoCadGpsPin() {
+    if (!state.satellite || !state.satellite.anchorWorld || !state.satellite.pinPlaced) return;
+
+    const anchor = state.satellite.anchorWorld;
+    const sp = worldToScreen(anchor.x, anchor.y);
+    const originGPS = state.satellite.originGPS || { lat: 23.3167, lng: 90.7500 };
+
+    ctx.save();
+
+    // 1. Pulsing Target Bullseye Rings (AutoCAD Datum Pin)
+    const time = Date.now() / 400;
+    const pulseR = 14 + Math.sin(time) * 3;
+
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, pulseR + 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, pulseR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Crosshair target
+    ctx.beginPath();
+    ctx.moveTo(sp.x - pulseR - 6, sp.y);
+    ctx.lineTo(sp.x + pulseR + 6, sp.y);
+    ctx.moveTo(sp.x, sp.y - pulseR - 6);
+    ctx.lineTo(sp.x, sp.y + pulseR + 6);
+    ctx.stroke();
+
+    // 2. Central Pin Head
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 3. Iconic AutoCAD Location Label Badge
+    const labelText = `📍 AutoCAD GPS: ${originGPS.lat.toFixed(5)}°N, ${originGPS.lng.toFixed(5)}°E`;
+    ctx.font = 'bold 11px "Noto Sans Bengali", monospace';
+    const tw = ctx.measureText(labelText).width;
+    const bw = tw + 20;
+    const bh = 24;
+    const bx = sp.x + 14;
+    const by = sp.y - 12;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#34d399';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labelText, bx + 10, by + bh / 2);
+
+    ctx.restore();
+  }
+
+
+  // Draw Highlighted Vertex Target Reticle & Tooltip (Module 16)
+  function drawHighlightedVertex() {
+    if (!state.highlightedVertex) return;
+    const hv = state.highlightedVertex;
+    const sp = worldToScreen(hv.x, hv.y);
+
+    ctx.save();
+    // Outer dashed pulsing reticle ring
+    ctx.strokeStyle = '#06b6d4';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Crosshairs
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sp.x - 26, sp.y); ctx.lineTo(sp.x - 8, sp.y);
+    ctx.moveTo(sp.x + 8, sp.y); ctx.lineTo(sp.x + 26, sp.y);
+    ctx.moveTo(sp.x, sp.y - 26); ctx.lineTo(sp.x, sp.y - 8);
+    ctx.moveTo(sp.x, sp.y + 8); ctx.lineTo(sp.x, sp.y + 26);
+    ctx.stroke();
+
+    // Solid inner bullseye
+    ctx.fillStyle = '#06b6d4';
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Floating Tooltip Badge
+    const tag = `P${(hv.index ?? 0) + 1}: (${hv.x.toFixed(1)} lk, ${hv.y.toFixed(1)} lk)`;
+    ctx.font = 'bold 11px monospace';
+    const tw = ctx.measureText(tag).width;
+    const bx = sp.x - tw / 2 - 8;
+    const by = sp.y - 38;
+
+    ctx.fillStyle = 'rgba(8, 145, 178, 0.95)';
+    ctx.beginPath();
+    ctx.roundRect(bx, by, tw + 16, 22, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#67e8f9';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(tag, bx + 8, by + 15);
+    ctx.restore();
+  }
+
   // Helper: Draw a single Mouza Map Sheet on Canvas
   function drawSingleMouzaSheet(sheet, isActive, idx) {
     if (!sheet || !sheet.loaded) return;
@@ -2028,7 +3238,24 @@
     const sourceImg = sheet.filteredCanvas || sheet.imageObj;
 
     if (sourceImg) {
-      ctx.globalAlpha = sheet.opacity ?? 0.95;
+      const isSatelliteActive = state.satellite && state.satellite.enabled;
+      const isSatelliteUnder = isSatelliteActive && state.satellite.layerPosition === 'bottom';
+      const isMultiplyMode = state.satellite?.blendMode === 'multiply' || sheet.blendMode === 'multiply';
+
+      if (isSatelliteUnder && isMultiplyMode) {
+        // Satellite is underneath, so Mouza map on top in Multiply mode makes white paper transparent!
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.globalAlpha = state.satellite.opacity !== undefined ? state.satellite.opacity : 1.0;
+      } else if (isSatelliteUnder && !isMultiplyMode) {
+        // Satellite is underneath, Mouza map on top with opacity slider
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = state.satellite.opacity !== undefined ? state.satellite.opacity : 0.65;
+      } else {
+        // Satellite is on top or inactive: Mouza map is drawn 100% solid & crisp
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = sheet.opacity ?? 1.0;
+      }
+
       if (sheet.rotation && sheet.rotation !== 0) {
         ctx.translate(p1.x + width / 2, p1.y + height / 2);
         ctx.rotate((sheet.rotation * Math.PI) / 180);
@@ -2036,6 +3263,7 @@
       } else {
         ctx.drawImage(sourceImg, p1.x, p1.y, width, height);
       }
+      ctx.globalCompositeOperation = 'source-over';
     } else {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
       ctx.lineWidth = 1.5;
@@ -2104,6 +3332,76 @@
     });
   }
 
+  // Extracts major boundary arms (sides) for clean CAD dimensioning and eliminates micro-edge clutter
+  function getSimplifiedBoundaryArms(vertices, isClosed, tolerance = 14) {
+    if (!vertices || vertices.length < 2) return [];
+    if (vertices.length <= 4) {
+      const arms = [];
+      const count = isClosed ? vertices.length : (vertices.length - 1);
+      for (let i = 0; i < count; i++) {
+        const p1 = vertices[i];
+        const p2 = vertices[(i + 1) % vertices.length];
+        const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        arms.push({ p1, p2, startIndex: i, endIndex: (i + 1) % vertices.length, cumulativeLength: length });
+      }
+      return arms;
+    }
+
+    const closedPts = isClosed ? [...vertices, vertices[0]] : [...vertices];
+    const corners = simplifyRDP(closedPts, tolerance);
+
+    const cornerIndices = [];
+    let searchStart = 0;
+    for (let c = 0; c < (isClosed ? corners.length - 1 : corners.length); c++) {
+      const target = corners[c];
+      let bestIdx = searchStart;
+      let minD = Infinity;
+      for (let i = searchStart; i < vertices.length; i++) {
+        const d = Math.hypot(vertices[i].x - target.x, vertices[i].y - target.y);
+        if (d < minD) {
+          minD = d;
+          bestIdx = i;
+        }
+      }
+      cornerIndices.push(bestIdx);
+      searchStart = bestIdx + 1;
+    }
+
+    if (cornerIndices.length < 2) {
+      cornerIndices.length = 0;
+      cornerIndices.push(0, Math.floor(vertices.length / 2));
+      if (isClosed) cornerIndices.push(vertices.length - 1);
+    }
+
+    const arms = [];
+    const numCorners = cornerIndices.length;
+    const numArms = isClosed ? numCorners : (numCorners - 1);
+
+    for (let k = 0; k < numArms; k++) {
+      const idxA = cornerIndices[k];
+      const idxB = cornerIndices[(k + 1) % numCorners];
+
+      let cumLen = 0;
+      let curr = idxA;
+      while (curr !== idxB) {
+        const next = (curr + 1) % vertices.length;
+        cumLen += Math.hypot(vertices[next].x - vertices[curr].x, vertices[next].y - vertices[curr].y);
+        curr = next;
+        if (curr === idxA) break;
+      }
+
+      arms.push({
+        p1: vertices[idxA],
+        p2: vertices[idxB],
+        startIndex: idxA,
+        endIndex: idxB,
+        cumulativeLength: cumLen
+      });
+    }
+
+    return arms;
+  }
+
   // Draw Polygons, Dimension Badges & Draggable Vertex Grips (With Collision Avoidance)
   function drawPlots() {
     state.plots.forEach(plot => {
@@ -2111,7 +3409,7 @@
 
       const isSelected = plot.id === state.selectedPlotId;
       const rawArea = calculateShoelaceArea(plot.vertices);
-      const isEffectiveLine = plot.vertices.length <= 2 || rawArea < 0.15;
+      const isEffectiveLine = Boolean(plot.isLine) || plot.vertices.length <= 2 || rawArea < 0.15;
 
       ctx.beginPath();
       const first = worldToScreen(plot.vertices[0].x, plot.vertices[0].y);
@@ -2127,8 +3425,20 @@
         ctx.closePath();
       }
 
-      // 1. Draw Selected Entity
-      if (isSelected) {
+      // 1. Draw Selected / Merge Highlighted Entity
+      const isMergeSelected = state.mergeSelectedPlots && state.mergeSelectedPlots.includes(plot.id);
+      if (isMergeSelected) {
+        if (!isEffectiveLine) {
+          ctx.fillStyle = 'rgba(217, 70, 239, 0.28)';
+          ctx.fill();
+        }
+        ctx.strokeStyle = '#d946ef';
+        ctx.lineWidth = 3.5;
+        ctx.save();
+        ctx.setLineDash([8, 4]);
+        ctx.stroke();
+        ctx.restore();
+      } else if (isSelected) {
         if (!isEffectiveLine) {
           ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
           ctx.fill();
@@ -2141,7 +3451,7 @@
         let centroidScreen = null;
 
         // Centroid Badge ONLY for true closed polygons with area > 0.05 decimal
-        if (!isEffectiveLine && rawArea > 0.05) {
+        if (!isEffectiveLine && !plot.isLine && rawArea > 0.05) {
           const centroid = calculateCentroid(plot.vertices);
           centroidScreen = worldToScreen(centroid.x, centroid.y);
           const shotok = (rawArea * SQFT_PER_SQLINK / SQFT_PER_SHOTOK).toFixed(2);
@@ -2171,82 +3481,149 @@
           ctx.textAlign = 'left';
         }
 
-        // Edge Dimension Badges (Smart Collision Avoidance & Clear Floating Badges)
+        // Edge Dimension Badges (Smart Boundary Arms & Clean Line Measurement)
         if (state.layers.dimensions) {
-          const edgeCount = isEffectiveLine ? (plot.vertices.length - 1) : plot.vertices.length;
+          if (isEffectiveLine) {
+            // Aisle Line: Draw ONE single clean badge showing total length in Feet & Inches (NO LINK)
+            let totalLk = 0;
+            for (let i = 0; i < plot.vertices.length - 1; i++) {
+              totalLk += Math.hypot(plot.vertices[i + 1].x - plot.vertices[i].x, plot.vertices[i + 1].y - plot.vertices[i].y);
+            }
+            if (totalLk > 0.001) {
+              const totalFt = totalLk * FEET_PER_LINK;
+              const ftIn = convertFeetToFeetInches(totalFt);
+              const mapInches = totalFt / getFeetPerMapInch();
+              const groundInches = Math.round(totalFt * 12);
 
-          for (let i = 0; i < edgeCount; i++) {
-            const p1 = plot.vertices[i];
-            const p2 = plot.vertices[(i + 1) % plot.vertices.length];
-            const edgeLength = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            if (edgeLength <= 0.001) continue;
+              const midIdx = Math.floor(plot.vertices.length / 2);
+              const pA = plot.vertices[midIdx] || plot.vertices[0];
+              const pB = plot.vertices[Math.min(plot.vertices.length - 1, midIdx + 1)] || pA;
+              const spA = worldToScreen(pA.x, pA.y);
+              const spB = worldToScreen(pB.x, pB.y);
+              const sp = { x: (spA.x + spB.x) / 2, y: (spA.y + spB.y) / 2 };
 
-            const edgeFeet = edgeLength * FEET_PER_LINK;
-            const ftIn = convertFeetToFeetInches(edgeFeet);
-            // Survey scale calculation (16" = 330 ft/in, 32" = 165 ft/in, etc.)
-            const mapInches = edgeFeet / getFeetPerMapInch();
+              const dimText = `📏 ${ftIn.formattedShortBengali} [নকশায় ${toBanglaDigits(mapInches.toFixed(2))}" • মাটিতে ${toBanglaDigits(groundInches)}" ]`;
 
-            const s1 = worldToScreen(p1.x, p1.y);
-            const s2 = worldToScreen(p2.x, p2.y);
+              ctx.save();
+              ctx.font = 'bold 11px "Noto Sans Bengali", "Fira Code", monospace';
+              const tw = ctx.measureText(dimText).width;
+              const bw = tw + 22;
+              const bh = 25;
+              const br = 6;
 
-            const midX = (s1.x + s2.x) / 2;
-            const midY = (s1.y + s2.y) / 2;
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+              ctx.strokeStyle = plot.strokeColor || '#ec4899';
+              ctx.lineWidth = 1.4;
+              drawRoundedRect(ctx, sp.x - bw / 2, sp.y - bh - 8, bw, bh, br);
+              ctx.fill();
+              ctx.stroke();
 
-            // Calculate perpendicular normal to float badge off the line
-            const dx = s2.x - s1.x;
-            const dy = s2.y - s1.y;
-            const segLen = Math.hypot(dx, dy) || 1;
-            let nx = -dy / segLen;
-            let ny = dx / segLen;
-            // Prefer floating above the line (ny < 0)
-            if (ny > 0) { nx = -nx; ny = -ny; }
+              ctx.fillStyle = '#38bdf8';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(dimText, sp.x, sp.y - bh / 2 - 8);
+              ctx.restore();
+            }
+          } else {
+            // True Closed Plot Polygon: Clean major boundary arms
+            const arms = getSimplifiedBoundaryArms(plot.vertices, true, 12);
+            const placedPlotBadges = [];
 
-            let badgeX = midX + nx * 20;
-            let badgeY = midY + ny * 20;
+            for (const arm of arms) {
+              const edgeLength = arm.cumulativeLength;
+              if (edgeLength <= 0.001) continue;
 
-            // Anti-Collision: If near centroid badge, push outward
-            if (centroidScreen) {
-              const distToCentroid = Math.hypot(badgeX - centroidScreen.x, badgeY - centroidScreen.y);
-              if (distToCentroid < 42) {
-                const angle = Math.atan2(badgeY - centroidScreen.y, badgeX - centroidScreen.x);
-                badgeX += Math.cos(angle) * 24;
-                badgeY += Math.sin(angle) * 24;
+              const edgeFeet = edgeLength * FEET_PER_LINK;
+              const ftIn = convertFeetToFeetInches(edgeFeet);
+
+              const s1 = worldToScreen(arm.p1.x, arm.p1.y);
+              const s2 = worldToScreen(arm.p2.x, arm.p2.y);
+
+              const dx = s2.x - s1.x;
+              const dy = s2.y - s1.y;
+              const segLen = Math.hypot(dx, dy) || 1;
+
+              if (segLen < 28 && arms.length > 2) continue;
+
+              const midX = (s1.x + s2.x) / 2;
+              const midY = (s1.y + s2.y) / 2;
+
+              let nx = -dy / segLen;
+              let ny = dx / segLen;
+              if (ny > 0) { nx = -nx; ny = -ny; }
+
+              let badgeX = midX + nx * 22;
+              let badgeY = midY + ny * 22;
+
+              if (centroidScreen) {
+                const distToCentroid = Math.hypot(badgeX - centroidScreen.x, badgeY - centroidScreen.y);
+                if (distToCentroid < 42) {
+                  const angle = Math.atan2(badgeY - centroidScreen.y, badgeX - centroidScreen.x);
+                  badgeX += Math.cos(angle) * 26;
+                  badgeY += Math.sin(angle) * 26;
+                }
               }
+
+              const edgeInches = edgeFeet * 12;
+              let dimText = '';
+              if (state.unit === 'inch') {
+                dimText = `${toBanglaDigits(edgeInches.toFixed(1))}" (${ftIn.formattedShortBengali})`;
+              } else if (state.unit === 'feet') {
+                dimText = `${toBanglaDigits(edgeFeet.toFixed(2))} ft (${ftIn.formattedShortBengali})`;
+              } else if (state.unit === 'meter') {
+                dimText = `${toBanglaDigits((edgeFeet / 3.28084).toFixed(2))} m (${ftIn.formattedShortBengali})`;
+              } else {
+                dimText = `${ftIn.formattedShortBengali} [${toBanglaDigits(edgeInches.toFixed(0))}" ]`;
+              }
+
+              ctx.save();
+              ctx.font = 'bold 11px "Noto Sans Bengali", "Fira Code", monospace';
+              const tw = ctx.measureText(dimText).width;
+              const bw = Math.max(56, tw + 20);
+              const bh = 25;
+              const br = 6;
+
+              let collides = false;
+              for (const b of placedPlotBadges) {
+                if (Math.abs(badgeX - b.x) < (bw + b.w) / 2 + 6 && Math.abs(badgeY - b.y) < (bh + b.h) / 2 + 6) {
+                  collides = true;
+                  break;
+                }
+              }
+              if (collides) {
+                const altX = badgeX + nx * 22;
+                const altY = badgeY + ny * 22;
+                let altCollides = false;
+                for (const b of placedPlotBadges) {
+                  if (Math.abs(altX - b.x) < (bw + b.w) / 2 + 6 && Math.abs(altY - b.y) < (bh + b.h) / 2 + 6) {
+                    altCollides = true;
+                    break;
+                  }
+                }
+                if (!altCollides) {
+                  badgeX = altX;
+                  badgeY = altY;
+                  collides = false;
+                }
+              }
+
+              if (!collides) {
+                placedPlotBadges.push({ x: badgeX, y: badgeY, w: bw, h: bh });
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 1.4;
+                drawRoundedRect(ctx, badgeX - bw / 2, badgeY - bh / 2, bw, bh, br);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(dimText, badgeX, badgeY);
+              }
+              ctx.restore();
             }
-
-            // Dimension text with Feet-Inches & Map Inches
-            let dimText = '';
-            if (isEffectiveLine) {
-              // High priority for reference/measurement line: show Feet-Inches, Map Inches, and Links
-              dimText = `${ftIn.formattedShortBengali} [${toBanglaDigits(mapInches.toFixed(2))}" নকশায় • ${toBanglaDigits(edgeLength.toFixed(1))} lk]`;
-            } else if (state.unit === 'link') {
-              dimText = `${toBanglaDigits(edgeLength.toFixed(1))} lk (${ftIn.formattedShortBengali})`;
-            } else if (state.unit === 'feet') {
-              dimText = `${toBanglaDigits(edgeFeet.toFixed(1))} ft (${toBanglaDigits(edgeLength.toFixed(1))} lk)`;
-            } else {
-              // Feet-Inches First Priority
-              dimText = `${ftIn.formattedShortBengali} (${toBanglaDigits(edgeLength.toFixed(1))} lk)`;
-            }
-
-            ctx.save();
-            ctx.font = 'bold 11px "Noto Sans Bengali", "Fira Code", monospace';
-            const tw = ctx.measureText(dimText).width;
-            const bw = Math.max(64, tw + 22);
-            const bh = 26; // Generous height prevents Bengali vowel clipping!
-            const br = 6;
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-            ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = 1.4;
-            drawRoundedRect(ctx, badgeX - bw / 2, badgeY - bh / 2, bw, bh, br);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = '#38bdf8';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(dimText, badgeX, badgeY);
-            ctx.restore();
           }
         }
       } else {
@@ -2260,27 +3637,37 @@
         ctx.lineWidth = isEffectiveLine ? 2.5 : 2.0;
         ctx.stroke();
 
-        if (!isEffectiveLine) {
+        if (!isEffectiveLine && !plot.isLine) {
           const centroid = calculateCentroid(plot.vertices);
           const sc = worldToScreen(centroid.x, centroid.y);
 
           ctx.save();
-          ctx.font = 'bold 11px "Noto Sans Bengali", sans-serif';
-          const nameW = ctx.measureText(plot.name).width;
-          const badgeW = nameW + 18;
-          const badgeH = 24;
+          const zoom = state.camera.zoom;
+          if (zoom < 0.28) {
+            // Very zoomed out: draw clean mini dot marker to avoid clutter
+            ctx.fillStyle = plot.strokeColor || '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            const fontPx = Math.max(9, Math.min(12, Math.round(11 * Math.min(zoom * 1.4, 1.0))));
+            ctx.font = `bold ${fontPx}px "Noto Sans Bengali", sans-serif`;
+            const nameW = ctx.measureText(plot.name).width;
+            const badgeW = nameW + (zoom < 0.5 ? 10 : 16);
+            const badgeH = zoom < 0.5 ? 18 : 22;
 
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-          ctx.strokeStyle = plot.strokeColor || '#38bdf8';
-          ctx.lineWidth = 1.2;
-          drawRoundedRect(ctx, sc.x - badgeW / 2, sc.y - badgeH / 2, badgeW, badgeH, 5);
-          ctx.fill();
-          ctx.stroke();
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+            ctx.strokeStyle = plot.strokeColor || '#38bdf8';
+            ctx.lineWidth = 1.2;
+            drawRoundedRect(ctx, sc.x - badgeW / 2, sc.y - badgeH / 2, badgeW, badgeH, 5);
+            ctx.fill();
+            ctx.stroke();
 
-          ctx.fillStyle = '#f1f5f9';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(plot.name, sc.x, sc.y);
+            ctx.fillStyle = '#f1f5f9';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(plot.name, sc.x, sc.y);
+          }
           ctx.restore();
         } else {
           // Unselected 2-point or effective line: draw clean dimension badge floating above line
@@ -2304,7 +3691,7 @@
           const badgeX = midX + nx * 18;
           const badgeY = midY + ny * 18;
 
-          const dimText = `${ftIn.formattedShortBengali} [${toBanglaDigits(mapInches.toFixed(2))}" নকশায় • ${toBanglaDigits(lk.toFixed(1))} lk]`;
+          const dimText = `${ftIn.formattedShortBengali} [নকশায় ${toBanglaDigits(mapInches.toFixed(2))}" • মাটিতে ${toBanglaDigits((ft * 12).toFixed(0))}" ]`;
           ctx.save();
           ctx.font = 'bold 10px "Noto Sans Bengali", "Fira Code", monospace';
           const tw = ctx.measureText(dimText).width;
@@ -2376,18 +3763,95 @@
         }
       }
 
-      // Draggable Vertex Grips (Blue Squares) when Selected
-      if (isSelected && state.tool === 'select') {
+      // AutoCAD-Style Glowing Green Grip Boxes (Decimated on dense curves to prevent clutter)
+      const isPlotHovered = state.hoveredVertex && state.hoveredVertex.plotId === plot.id;
+      if (isSelected || isPlotHovered) {
+        let lastGripScreen = null;
+        const cornerIndicesSet = new Set();
+        if (plot.vertices.length > 8) {
+          const arms = getSimplifiedBoundaryArms(plot.vertices, !isEffectiveLine, 12);
+          arms.forEach(a => {
+            cornerIndicesSet.add(a.startIndex);
+            cornerIndicesSet.add(a.endIndex);
+          });
+        }
+
         plot.vertices.forEach((v, idx) => {
+          if (isEffectiveLine && idx !== 0 && idx !== plot.vertices.length - 1) return;
           const sp = worldToScreen(v.x, v.y);
-          ctx.fillStyle = '#0284c7';
-          ctx.fillRect(sp.x - 5, sp.y - 5, 10, 10);
+          const isCorner = cornerIndicesSet.size === 0 || cornerIndicesSet.has(idx) || idx === 0 || idx === plot.vertices.length - 1;
+
+          if (!isCorner && lastGripScreen) {
+            const distToLast = Math.hypot(sp.x - lastGripScreen.x, sp.y - lastGripScreen.y);
+            if (distToLast < 24) {
+              return; // Decimate dense intermediate grip handles to eliminate green clutter
+            }
+          }
+          lastGripScreen = sp;
+
+          const isDraggingThis = state.dragVertex && state.dragVertex.isDragging && state.dragVertex.plotId === plot.id && state.dragVertex.vertexIndex === idx;
+          const isHovered = (state.hoveredVertex && state.hoveredVertex.plotId === plot.id && state.hoveredVertex.vertexIndex === idx) || isDraggingThis;
+          const boxSize = isDraggingThis ? 18 : (isHovered ? 16 : 12);
+
+          ctx.save();
+          // Vibrant Green Glowing Aura (উজ্জ্বল সবুজ আলো)
+          ctx.shadowColor = isDraggingThis ? '#00ff88' : '#10b981';
+          ctx.shadowBlur = isDraggingThis ? 26 : (isHovered ? 20 : 14);
+
+          // Outer green pulse halo on hover or drag
+          if (isHovered || isDraggingThis) {
+            ctx.fillStyle = isDraggingThis ? 'rgba(0, 255, 136, 0.40)' : 'rgba(16, 185, 129, 0.28)';
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, boxSize + 6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // AutoCAD Solid Green Square Grip Box
+          ctx.fillStyle = isDraggingThis ? '#00ff88' : '#10b981';
+          ctx.fillRect(sp.x - boxSize / 2, sp.y - boxSize / 2, boxSize, boxSize);
+
+          // Crisp White Precision Border
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(sp.x - 5, sp.y - 5, 10, 10);
+          ctx.lineWidth = isDraggingThis ? 2.5 : 2.0;
+          ctx.strokeRect(sp.x - boxSize / 2, sp.y - boxSize / 2, boxSize, boxSize);
+
+          // Inner white pinpoint dot for millimeter accuracy
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(sp.x - 2, sp.y - 2, 4, 4);
+          ctx.restore();
         });
       }
     });
+
+    // 4. Live AutoCAD Floating Dimension Tooltip while dragging a Green Grip Point (tene boro korar somoy map dekhabe)
+    if (state.dragVertex && state.dragVertex.isDragging && state.liveDragTooltip) {
+      const tip = state.liveDragTooltip;
+      ctx.save();
+      ctx.font = 'bold 11px "Noto Sans Bengali", "Fira Code", monospace';
+      const txt1 = `📐 দৈর্ঘ্য: ${tip.ftIn}`;
+      const txt2 = `🗺️ নকশায়: ${tip.mapInches}" • মাটিতে: ${tip.inches}"`;
+      const tw = Math.max(ctx.measureText(txt1).width, ctx.measureText(txt2).width);
+      const bx = tip.screenX + 18;
+      const by = tip.screenY - 50;
+      const bw = tw + 22;
+      const bh = 42;
+
+      ctx.shadowColor = '#10b981';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 1.8;
+      drawRoundedRect(ctx, bx, by, bw, bh, 7);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fef08a';
+      ctx.fillText(txt1, bx + 11, by + 16);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(txt2, bx + 11, by + 32);
+      ctx.restore();
+    }
   }
 
   // Draw Bangla Text Annotations
@@ -2412,8 +3876,12 @@
     });
   }
 
-  // Draw Active Drawing Polyline
+  // Draw Active Drawing Polyline (Supports Tool Switching & Pause/Resume)
   function drawActivePolyline() {
+    if (!state.activePolyline || state.activePolyline.length === 0) return;
+    const isPolyTool = state.tool === 'polygon' || state.tool === 'polyline';
+
+    ctx.save();
     ctx.beginPath();
     const first = worldToScreen(state.activePolyline[0].x, state.activePolyline[0].y);
     ctx.moveTo(first.x, first.y);
@@ -2423,15 +3891,111 @@
       ctx.lineTo(pt.x, pt.y);
     }
 
-    // Connect to current mouse
-    const currentMouse = state.activeSnapPoint ? worldToScreen(state.activeSnapPoint.x, state.activeSnapPoint.y) : { x: state.mouse.screenX, y: state.mouse.screenY };
-    ctx.lineTo(currentMouse.x, currentMouse.y);
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
+    if (isPolyTool) {
+      // Connect to current mouse or snapped point
+      const currentMouse = state.activeSnapPoint ? worldToScreen(state.activeSnapPoint.x, state.activeSnapPoint.y) : { x: state.mouse.screenX, y: state.mouse.screenY };
+      ctx.lineTo(currentMouse.x, currentMouse.y);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([5, 5]);
+    } else {
+      // Paused / resting track while in other tools (e.g. Pan, Select, Gunia)
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Draw vertex pins along the active line
+    for (let i = 0; i < state.activePolyline.length; i++) {
+      const sp = worldToScreen(state.activePolyline[i].x, state.activePolyline[i].y);
+      const isFirst = i === 0;
+      const isLast = i === state.activePolyline.length - 1;
+
+      ctx.fillStyle = isFirst ? '#f59e0b' : (isLast ? '#10b981' : '#38bdf8');
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, isFirst ? 6.5 : 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // If active and has 3+ points, draw magnetic guide circle around first point
+      if (isPolyTool && isFirst && state.activePolyline.length >= 3) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // If in another tool, show vertex labels P1, P2.. Pn
+      if (!isPolyTool) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.font = 'bold 9.5px monospace';
+        if (isFirst) {
+          ctx.fillText(`P1 (শুরু)`, sp.x + 8, sp.y - 7);
+        } else if (isLast) {
+          ctx.fillText(`P${i + 1} (শেষ)`, sp.x + 8, sp.y - 7);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Draw Active Traced Dag Boundary Preview (Rubberband line & snap-to-close guide)
+  function drawActiveTracedLinePreview() {
+    if (state.tool !== 'line-wand' || !state.activeTracedLineId) return;
+    const activeLine = state.plots.find(p => p.id === state.activeTracedLineId && p.isLine);
+    if (!activeLine || !activeLine.vertices || activeLine.vertices.length === 0) return;
+
+    const lastPt = activeLine.vertices[activeLine.vertices.length - 1];
+    const firstPt = activeLine.vertices[0];
+    const mouseWorld = { x: state.mouse.worldX, y: state.mouse.worldY };
+
+    ctx.save();
+    // Glowing pink rubberband line to current mouse position
+    const sLast = worldToScreen(lastPt.x, lastPt.y);
+    const sMouse = worldToScreen(mouseWorld.x, mouseWorld.y);
+
+    ctx.beginPath();
+    ctx.moveTo(sLast.x, sLast.y);
+    ctx.lineTo(sMouse.x, sMouse.y);
+    ctx.strokeStyle = '#ec4899';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Snapping guide circle on the start vertex if 2+ points exist
+    if (activeLine.vertices.length >= 2) {
+      const sFirst = worldToScreen(firstPt.x, firstPt.y);
+      const distToFirst = Math.hypot(mouseWorld.x - firstPt.x, mouseWorld.y - firstPt.y);
+      const snapCloseRadius = 45 / state.camera.zoom;
+      const isHoveringStart = distToFirst <= snapCloseRadius;
+
+      ctx.beginPath();
+      ctx.arc(sFirst.x, sFirst.y, isHoveringStart ? 16 : 10, 0, Math.PI * 2);
+      ctx.strokeStyle = isHoveringStart ? '#00ff88' : '#ec4899';
+      ctx.lineWidth = isHoveringStart ? 2.5 : 1.5;
+      ctx.stroke();
+
+      if (isHoveringStart) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 1;
+        drawRoundedRect(ctx, sFirst.x + 18, sFirst.y - 14, 135, 24, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#00ff88';
+        ctx.font = 'bold 10px "Noto Sans Bengali", sans-serif';
+        ctx.fillText('দাগ সম্পন্ন করুন (ক্লিক)', sFirst.x + 24, sFirst.y + 2);
+      }
+    }
+
+    ctx.restore();
   }
 
   // Draw Interactive Slice Cut Line
@@ -2467,6 +4031,34 @@
   // Draw Snap Glyph
   function drawSnapGlyph(snap) {
     const sp = worldToScreen(snap.x, snap.y);
+
+    if (snap.type === 'firstpoint') {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(sp.x - 8, sp.y - 8, 16, 16);
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+
+      // Tooltip label on first point snap
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      const text = '🎯 ১ম পয়েন্ট (ক্লিক করে দাগ বন্ধ করুন)';
+      ctx.font = 'bold 11px "Noto Sans Bengali", sans-serif';
+      const tw = ctx.measureText(text).width;
+      ctx.beginPath();
+      ctx.roundRect(sp.x + 12, sp.y - 12, tw + 16, 24, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fef08a';
+      ctx.fillText(text, sp.x + 20, sp.y + 4);
+      ctx.restore();
+      return;
+    }
+
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 2;
 
@@ -2770,7 +4362,7 @@
     }
 
     const rawArea = calculateShoelaceArea(activePlot.vertices);
-    const isEffectiveLine = !activePlot.vertices || activePlot.vertices.length <= 2 || rawArea < 0.15;
+    const isEffectiveLine = Boolean(activePlot.isLine) || !activePlot.vertices || activePlot.vertices.length <= 2 || rawArea < 0.15;
 
     if (selectedCountBadge) {
       selectedCountBadge.textContent = isEffectiveLine ? 'রেখা' : '১টি দাগ';
@@ -2791,15 +4383,21 @@
     const scaleByPlotMapInches = document.getElementById('scaleByPlotMapInches');
     const scaleByPlotLinks = document.getElementById('scaleByPlotLinks');
 
-    let p1 = activePlot.vertices && activePlot.vertices.length > 0 ? activePlot.vertices[0] : null;
-    let p2 = activePlot.vertices && activePlot.vertices.length > 1 ? activePlot.vertices[activePlot.vertices.length - 1] : null;
-    let lineDist = (p1 && p2) ? Math.hypot(p2.x - p1.x, p2.y - p1.y) : 0;
+    let lineDist = 0;
+    if (activePlot.vertices && activePlot.vertices.length > 1) {
+      for (let s = 0; s < activePlot.vertices.length - 1; s++) {
+        lineDist += Math.hypot(
+          activePlot.vertices[s + 1].x - activePlot.vertices[s].x,
+          activePlot.vertices[s + 1].y - activePlot.vertices[s].y
+        );
+      }
+    }
     let lineFt = lineDist * FEET_PER_LINK;
     let ftIn = convertFeetToFeetInches(lineFt);
     let mapInches = lineFt / getFeetPerMapInch();
 
     if (scaleByPlotCurrentLen) {
-      scaleByPlotCurrentLen.textContent = `${ftIn.formattedBengali} (${toBanglaDigits(lineDist.toFixed(1))} লিংক)`;
+      scaleByPlotCurrentLen.textContent = `${ftIn.formattedBengali} (${ftIn.formattedShortBengali})`;
     }
     if (scaleByPlotGroundFeet) {
       scaleByPlotGroundFeet.textContent = `${ftIn.formattedBengali} (${toBanglaDigits(lineFt.toFixed(1))} ফুট)`;
@@ -2808,7 +4406,8 @@
       scaleByPlotMapInches.textContent = `${toBanglaDigits(mapInches.toFixed(2))} ইঞ্চি (${mapInches.toFixed(2)}")`;
     }
     if (scaleByPlotLinks) {
-      scaleByPlotLinks.textContent = `${toBanglaDigits(lineDist.toFixed(1))} লিংক (${toBanglaDigits((lineDist / 100).toFixed(2))} চেইন)`;
+      const groundInches = Math.round(lineFt * 12);
+      scaleByPlotLinks.textContent = `${toBanglaDigits(groundInches)} ইঞ্চি (${toBanglaDigits((lineFt / 3).toFixed(1))} গজ)`;
     }
 
     if (isEffectiveLine) {
@@ -2819,18 +4418,46 @@
       statSqft.textContent = '০.০';
       statSqLinks.textContent = '০';
       statSqM.textContent = '০.০০';
-      statPerimeter.textContent = 'রেখার দৈর্ঘ্য: ' + ftIn.formattedShortBengali + ' (' + toBanglaDigits(lineFt.toFixed(1)) + ' ft / ' + toBanglaDigits(lineDist.toFixed(1)) + ' lk)';
-      statBanglaSentence.textContent = `স্কেল রেফারেন্স রেখা: ${ftIn.formattedBengali} (নকশায় ${toBanglaDigits(mapInches.toFixed(2))} ইঞ্চি • ${toBanglaDigits(lineDist.toFixed(1))} লিংক)`;
+      const segCount = activePlot.vertices ? activePlot.vertices.length - 1 : 1;
+      statPerimeter.textContent = (segCount > 1 ? `মোট আইলের দৈর্ঘ্য (${toBanglaDigits(segCount)}টি খণ্ড): ` : 'রেখার দৈর্ঘ্য: ') + ftIn.formattedShortBengali + ' (' + toBanglaDigits(lineFt.toFixed(1)) + ' ft)';
+      statBanglaSentence.textContent = `সীমানা আইল রেখা: ${ftIn.formattedBengali} (নকশায় ${toBanglaDigits(mapInches.toFixed(2))} ইঞ্চি • মাটিতে ${toBanglaDigits(Math.round(lineFt * 12))} ইঞ্চি)`;
 
       if (sideMeasurementsTable) {
-        sideMeasurementsTable.innerHTML = `
-          <tr class="hover:bg-slate-800/60 transition-colors">
-            <td class="py-1.5 px-2.5 font-sans font-bold text-sky-300 text-left">স্কেল বার / রেখা</td>
-            <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(lineDist.toFixed(1))} lk</td>
-            <td class="py-1.5 px-2 text-center text-amber-300 font-mono font-bold">${ftIn.formattedShortBengali}</td>
-            <td class="py-1.5 px-2 text-right text-sky-400 font-mono">${toBanglaDigits(lineFt.toFixed(1))} ft</td>
-          </tr>
-        `;
+        if (activePlot.vertices && activePlot.vertices.length > 2) {
+          let rowsHtml = '';
+          for (let s = 0; s < activePlot.vertices.length - 1; s++) {
+            const segA = activePlot.vertices[s];
+            const segB = activePlot.vertices[s + 1];
+            const segFt = Math.hypot(segB.x - segA.x, segB.y - segA.y) * FEET_PER_LINK;
+            const segFtIn = convertFeetToFeetInches(segFt);
+            rowsHtml += `
+              <tr class="hover:bg-slate-800/60 transition-colors">
+                <td class="py-1.5 px-2.5 font-sans font-bold text-sky-300 text-left">আইল খণ্ড ${toBanglaDigits(s + 1)}</td>
+                <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(Math.round(segFt * 12))}"</td>
+                <td class="py-1.5 px-2 text-center text-amber-300 font-mono font-bold">${segFtIn.formattedShortBengali}</td>
+                <td class="py-1.5 px-2 text-right text-sky-400 font-mono">${toBanglaDigits(segFt.toFixed(1))} ft</td>
+              </tr>
+            `;
+          }
+          rowsHtml += `
+            <tr class="bg-sky-950/50 border-t-2 border-sky-500/40 font-bold">
+              <td class="py-1.5 px-2.5 font-sans text-amber-300 text-left">মোট দৈর্ঘ্য</td>
+              <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(Math.round(lineFt * 12))}"</td>
+              <td class="py-1.5 px-2 text-center text-amber-300 font-mono">${ftIn.formattedShortBengali}</td>
+              <td class="py-1.5 px-2 text-right text-sky-400 font-mono">${toBanglaDigits(lineFt.toFixed(1))} ft</td>
+            </tr>
+          `;
+          sideMeasurementsTable.innerHTML = rowsHtml;
+        } else {
+          sideMeasurementsTable.innerHTML = `
+            <tr class="hover:bg-slate-800/60 transition-colors">
+              <td class="py-1.5 px-2.5 font-sans font-bold text-sky-300 text-left">আইল রেখা</td>
+              <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(Math.round(lineFt * 12))}" ইঞ্চি</td>
+              <td class="py-1.5 px-2 text-center text-amber-300 font-mono font-bold">${ftIn.formattedShortBengali}</td>
+              <td class="py-1.5 px-2 text-right text-sky-400 font-mono">${toBanglaDigits(lineFt.toFixed(1))} ft</td>
+            </tr>
+          `;
+        }
       }
       return;
     }
@@ -2851,16 +4478,16 @@
     statBigha.textContent = toBanglaDigits(bigha.toFixed(4));
     statAcre.textContent = toBanglaDigits(acre.toFixed(4));
     statSqft.textContent = toBanglaDigits(sqft.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
-    statSqLinks.textContent = toBanglaDigits(sqLinks.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
+    statSqLinks.textContent = toBanglaDigits((sqft * 144).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
     statSqM.textContent = toBanglaDigits(sqM.toFixed(2));
-    statPerimeter.textContent = 'পরিসীমা: ' + perimFtIn.formattedShortBengali + ' (' + toBanglaDigits(perimeterFeet.toFixed(1)) + ' ft / ' + toBanglaDigits(perimLinks.toFixed(1)) + ' lk)';
+    statPerimeter.textContent = 'পরিসীমা: ' + perimFtIn.formattedShortBengali + ' (' + toBanglaDigits(perimeterFeet.toFixed(1)) + ' ft)';
 
     // Bangla sentence formatter
     const kathaPart = Math.floor(katha);
     const shotokRemaining = (shotok % 1.652893).toFixed(1);
     statBanglaSentence.textContent = toBanglaDigits(shotok.toFixed(2)) + ' শতক (' + toBanglaDigits(kathaPart) + ' কাঠা ' + toBanglaDigits(shotokRemaining) + ' শতক)';
 
-    // Dynamic Side Measurements Table in Inspector (4 columns: আইল, লিংক, ফুট-ইঞ্চি, দশমিক ফুট)
+    // Dynamic Side Measurements Table in Inspector (4 columns: আইল, ইঞ্চি, ফুট-ইঞ্চি, দশমিক ফুট)
     if (sideMeasurementsTable) {
       let rowsHtml = '';
       const sideNames = ['উত্তর আইল (North)', 'পূর্ব আইল (East)', 'দক্ষিণ আইল (South)', 'পশ্চিম আইল (West)', 'আইল ৫', 'আইল ৬', 'আইল ৭', 'আইল ৮', 'আইল ৯', 'আইল ১০'];
@@ -2871,10 +4498,11 @@
         const ft = lk * FEET_PER_LINK;
         const ftInSide = convertFeetToFeetInches(ft);
         const name = sideNames[i] || `আইল ${toBanglaDigits(i + 1)}`;
+        const groundInchesSide = Math.round(ft * 12);
         rowsHtml += `
           <tr class="hover:bg-slate-800/60 transition-colors">
             <td class="py-1.5 px-2.5 font-sans font-bold text-slate-300 text-left">${name}</td>
-            <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(lk.toFixed(1))} lk</td>
+            <td class="py-1.5 px-2 text-center text-emerald-400 font-mono">${toBanglaDigits(groundInchesSide)}" ইঞ্চি</td>
             <td class="py-1.5 px-2 text-center text-amber-300 font-mono font-bold">${ftInSide.formattedShortBengali}</td>
             <td class="py-1.5 px-2 text-right text-sky-400 font-mono">${toBanglaDigits(ft.toFixed(1))} ft</td>
           </tr>
@@ -2911,15 +4539,18 @@
     if (unit === 'inch') {
       targetFeet = val * getFeetPerMapInch();
       targetLinks = targetFeet / FEET_PER_LINK;
+    } else if (unit === 'ground_inch') {
+      targetFeet = val / 12.0;
+      targetLinks = targetFeet / FEET_PER_LINK;
     } else if (unit === 'feet') {
       targetFeet = val;
-      targetLinks = targetFeet / FEET_PER_LINK; // 660 ft / 0.66 = 1000 links
+      targetLinks = targetFeet / FEET_PER_LINK; // 660 ft / 0.66 = 1000 units
     } else if (unit === 'chain') {
       targetLinks = val * 100;
       targetFeet = targetLinks * FEET_PER_LINK;
     } else {
-      targetLinks = val;
-      targetFeet = targetLinks * FEET_PER_LINK;
+      targetFeet = val;
+      targetLinks = targetFeet / FEET_PER_LINK;
     }
 
     const p1 = plot.vertices[0];
@@ -2984,7 +4615,8 @@
     pushHistory();
     render();
 
-    showToast(`✓ নকশা নিখুঁতভাবে স্কেল হয়েছে! রেখাটি এখন ${ftInRes.formattedBengali} [নকশায় ${toBanglaDigits(mapInchesRes.toFixed(2))} ইঞ্চি • ${toBanglaDigits(targetLinks.toFixed(1))} লিংক]`, 'success');
+    const groundInchesTotal = Math.round(targetFeet * 12);
+    showToast(`✓ নকশা নিখুঁতভাবে স্কেল হয়েছে! রেখাটি এখন ${ftInRes.formattedBengali} (নকশায় ${toBanglaDigits(mapInchesRes.toFixed(2))} ইঞ্চি • মাটিতে ${toBanglaDigits(groundInchesTotal)} ইঞ্চি)`, 'success');
   }
 
   // Wire Scale-by-Plot Quick Chips and Apply Button (Feet-Inches First Priority & Map Inches)
@@ -3429,12 +5061,71 @@
       return;
     }
 
-    // Draggable Vertex Handle logic
+    // Check hover over green grip boxes (AutoCAD Glowing Green Aura) - for selected plot or any plot
+    state.hoveredVertex = null;
+    if (!state.camera.isPanning && !state.dragVertex.isDragging) {
+      if (state.selectedPlotId) {
+        const activePlot = state.plots.find(p => p.id === state.selectedPlotId);
+        if (activePlot) {
+          for (let i = 0; i < activePlot.vertices.length; i++) {
+            const v = activePlot.vertices[i];
+            const sp = worldToScreen(v.x, v.y);
+            if (Math.hypot(sp.x - state.mouse.screenX, sp.y - state.mouse.screenY) <= 18) {
+              state.hoveredVertex = { plotId: activePlot.id, vertexIndex: i };
+              canvas.style.cursor = 'grab';
+              break;
+            }
+          }
+        }
+      }
+      if (!state.hoveredVertex) {
+        for (const plot of state.plots) {
+          if (plot.id === state.selectedPlotId) continue;
+          for (let i = 0; i < plot.vertices.length; i++) {
+            const v = plot.vertices[i];
+            const sp = worldToScreen(v.x, v.y);
+            if (Math.hypot(sp.x - state.mouse.screenX, sp.y - state.mouse.screenY) <= 16) {
+              state.hoveredVertex = { plotId: plot.id, vertexIndex: i };
+              canvas.style.cursor = 'grab';
+              break;
+            }
+          }
+          if (state.hoveredVertex) break;
+        }
+      }
+    }
+
+    // Draggable Vertex Handle logic (AutoCAD Glowing Green Grip Points with Live Dimension Tooltip)
     if (state.dragVertex.isDragging && state.dragVertex.plotId) {
       const activePlot = state.plots.find(p => p.id === state.dragVertex.plotId);
       if (activePlot && state.dragVertex.vertexIndex >= 0) {
         activePlot.vertices[state.dragVertex.vertexIndex].x = world.x;
         activePlot.vertices[state.dragVertex.vertexIndex].y = world.y;
+
+        // Calculate live dimension feedback for the floating tooltip
+        const idx = state.dragVertex.vertexIndex;
+        const vs = activePlot.vertices;
+        let refV = null;
+        if (vs.length === 2) {
+          refV = vs[1 - idx];
+        } else if (vs.length >= 3) {
+          refV = vs[(idx - 1 + vs.length) % vs.length];
+        }
+        if (refV) {
+          const lk = Math.hypot(world.x - refV.x, world.y - refV.y);
+          const ft = lk * FEET_PER_LINK;
+          const ftIn = convertFeetToFeetInches(ft, true);
+          const mapInches = ft / getFeetPerMapInch();
+          const groundInches = ft * 12;
+          state.liveDragTooltip = {
+            screenX: state.mouse.screenX,
+            screenY: state.mouse.screenY,
+            ftIn: ftIn.formattedShortBengali,
+            mapInches: toBanglaDigits(mapInches.toFixed(2)),
+            inches: toBanglaDigits(groundInches.toFixed(0))
+          };
+        }
+        canvas.style.cursor = 'grabbing';
         updateInspector();
         render();
         return;
@@ -3450,13 +5141,28 @@
     coordXEl.textContent = displayX.toFixed(1);
     coordYEl.textContent = displayY.toFixed(1);
 
+    // Update live GPS in bottom status bar
+    const coordGPSEl = document.getElementById('coordGPS');
+    if (coordGPSEl) {
+      const originGPS = state.satellite?.originGPS || { lat: 23.3167, lng: 90.7500 };
+      const anchorWorld = state.satellite?.anchorWorld || { x: 0, y: 0 };
+      const gps = window.LSCAD?.PlotOps?.canvasToGPS ? window.LSCAD.PlotOps.canvasToGPS(displayX, displayY, originGPS, anchorWorld) : null;
+      if (gps) {
+        coordGPSEl.textContent = `GPS: ${gps.lat.toFixed(5)}°N, ${gps.lng.toFixed(5)}°E`;
+      } else {
+        const dLat = ((displayY - anchorWorld.y) * 0.66) / 364000;
+        const dLng = ((displayX - anchorWorld.x) * 0.66) / (364000 * Math.cos(originGPS.lat * Math.PI / 180));
+        coordGPSEl.textContent = `GPS: ${(originGPS.lat - dLat).toFixed(5)}°N, ${(originGPS.lng + dLng).toFixed(5)}°E`;
+      }
+    }
+
     // Live Scale Calibration hint during mouse move
     if (state.tool === 'calibrate' && state.calibrationPoints.length === 1) {
       const p1 = state.calibrationPoints[0];
       const curDist = Math.hypot(world.x - p1.x, world.y - p1.y);
       const curFtIn = convertLinksToFeetInches(curDist);
       drawHintBox.classList.remove('opacity-0');
-      drawHintText.textContent = `[AutoCAD ALIGN ধাপ ২/২] স্কেল বারের অপর প্রান্ত ক্লিক করুন • লাইভ দূরত্ব: ${curDist.toFixed(1)} px (${toBanglaDigits(curDist.toFixed(1))} লিংক / ${curFtIn.formattedShortBengali})`;
+      drawHintText.textContent = `[AutoCAD ALIGN ধাপ ২/২] স্কেল বারের অপর প্রান্ত ক্লিক করুন • লাইভ দূরত্ব: ${curDist.toFixed(1)} px (${curFtIn.formattedShortBengali})`;
     }
 
     render();
@@ -3476,6 +5182,37 @@
 
     if (e.button === 0) { // Left click
       const pt = state.activeSnapPoint || { x: state.mouse.worldX, y: state.mouse.worldY };
+
+      // 0. AutoCAD GPS Pin Placement (Can click ANY point/vertex on a plot, snap point, or canvas)
+      if (state.tool === 'gps-pin') {
+        let targetPt = pt;
+        // Priority 1: Check active snap point
+        if (state.activeSnapPoint) {
+          targetPt = { x: state.activeSnapPoint.x, y: state.activeSnapPoint.y };
+        }
+        // Priority 2: Check hovered vertex
+        else if (state.hoveredVertex) {
+          targetPt = { x: state.hoveredVertex.x, y: state.hoveredVertex.y };
+        } else {
+          // Priority 3: Check if within 25px of ANY plot vertex
+          for (const plot of state.plots) {
+            for (const v of plot.vertices) {
+              const sp = worldToScreen(v.x, v.y);
+              if (Math.hypot(sp.x - state.mouse.screenX, sp.y - state.mouse.screenY) <= 25) {
+                targetPt = { x: v.x, y: v.y };
+                break;
+              }
+            }
+          }
+        }
+
+        setGpsLocationPin(targetPt.x, targetPt.y);
+        state.tool = 'select';
+        updateToolUI();
+        drawHintBox.classList.add('opacity-0');
+        render();
+        return;
+      }
 
       // Multi-sheet intelligent auto-activation:
       // Clicking on any loaded map sheet instantly focuses that sheet for all tools
@@ -3558,6 +5295,12 @@
         }
       }
 
+      // Georeferencing / AutoCAD Align 2-point mode
+      if (state.geoAlignMode && state.geoAlignMode.active) {
+        handleGeoAlignClick(pt.x, pt.y);
+        return;
+      }
+
       // 1. Diagonal Measure Tool
       if (state.tool === 'diagonal') {
         state.diagonalPoints.push(pt);
@@ -3580,17 +5323,24 @@
         return;
       }
 
-      // 2. Check if clicking ANY plot vertex handle in select mode
-      if (state.tool === 'select') {
-        for (const plot of state.plots) {
+      // 2. Check if clicking ANY plot vertex green grip handle (AutoCAD Glowing Green Box)
+      if (state.hoveredVertex || (state.activePolyline.length === 0 && (state.tool === 'select' || state.tool === 'polyline' || state.tool === 'polygon' || state.tool === 'magic-wand'))) {
+        const targetPlotId = state.hoveredVertex ? state.hoveredVertex.plotId : state.selectedPlotId;
+        const candidatePlots = targetPlotId
+          ? [state.plots.find(p => p.id === targetPlotId), ...state.plots.filter(p => p.id !== targetPlotId)].filter(Boolean)
+          : state.plots;
+
+        for (const plot of candidatePlots) {
           for (let i = 0; i < plot.vertices.length; i++) {
             const v = plot.vertices[i];
-            const dist = Math.hypot(v.x - pt.x, v.y - pt.y);
-            if (dist < 14 / state.camera.zoom) {
+            const sp = worldToScreen(v.x, v.y);
+            // 20px screen-space hit-testing ensures effortless grab at ANY zoom level
+            if (Math.hypot(sp.x - state.mouse.screenX, sp.y - state.mouse.screenY) <= 20) {
               state.selectedPlotId = plot.id;
               state.dragVertex.isDragging = true;
               state.dragVertex.plotId = plot.id;
               state.dragVertex.vertexIndex = i;
+              canvas.style.cursor = 'grabbing';
               updateInspector();
               render();
               return;
@@ -3600,8 +5350,26 @@
       }
 
       if (state.tool === 'polygon' || state.tool === 'polyline') {
+        const firstPt = state.activePolyline[0];
+        const isClosingClick = state.activePolyline.length >= 3 && (
+          (state.activeSnapPoint && state.activeSnapPoint.type === 'firstpoint') ||
+          (firstPt && Math.hypot(firstPt.x - pt.x, firstPt.y - pt.y) < (22 / state.camera.zoom))
+        );
+
+        if (isClosingClick) {
+          finishActivePolygon();
+          return;
+        }
+
         state.activePolyline.push(pt);
         drawHintBox.classList.remove('opacity-0');
+        const count = state.activePolyline.length;
+        if (count >= 3) {
+          drawHintText.textContent = `পয়েন্ট ${count} যোগ হয়েছে। প্রথম পয়েন্টে ক্লিক করে দাগ বন্ধ করুন (অথবা Double Click / Enter চাপুন)`;
+        } else {
+          drawHintText.textContent = `পয়েন্ট ${count} যোগ হয়েছে। পরবর্তী পয়েন্টে ক্লিক করুন...`;
+        }
+        playCadSound('snap');
         render();
       } else if (state.tool === 'text') {
         showPromptDialog('ক্যানভাসে বিবরণ বা টেক্সট নোট লিখুন', 'যেমন: ১২ ফুট পাকা রাস্তা, সীমানা পিলার', '১২ ফুট রাস্তা', note => {
@@ -3650,7 +5418,7 @@
           openCalibrationModal(pxDist);
         } else {
           drawHintBox.classList.remove('opacity-0');
-          drawHintText.innerHTML = '<span class="text-amber-400 font-bold">[AutoCAD ALIGN ধাপ ২/২]</span> স্কেল বারের ১০ বা ২০ চেইনে (অপর প্রান্তে) ক্লিক করুন';
+          drawHintText.innerHTML = '<span class="text-amber-400 font-bold">[AutoCAD SCALE ধাপ ২/২]</span> জানা দূরত্বের ২য় বিন্দুতে ক্লিক করুন (রেফারেন্স মাপ নির্ধারণ করতে)';
         }
         render();
       } else if (state.tool === 'auto-number') {
@@ -3658,45 +5426,85 @@
         for (const plot of state.plots) {
           const c = calculateCentroid(plot.vertices);
           if (isPointInPolygon(pt, plot.vertices) || Math.hypot(c.x - pt.x, c.y - pt.y) < 70 / state.camera.zoom) {
-            plot.name = 'দাগ নং ' + toBanglaDigits(state.nextPlotNumber);
-            showToast(`দাগ নম্বর আপডেট: ${plot.name}`, 'info');
-            state.nextPlotNumber++;
+            applyAutoNumberToPlot(plot);
             foundPlot = true;
-            pushHistory();
-            updateInspector();
-            render();
             break;
           }
         }
         if (!foundPlot) {
+          const num = state.autoNumberSettings ? state.autoNumberSettings.current : (state.nextPlotNumber || 501);
+          const prefix = state.autoNumberSettings ? state.autoNumberSettings.prefix : 'দাগ নং ';
+          const annText = `${prefix}${toBanglaDigits(num)}`;
           state.annotations.push({
-            id: 'ann-num-' + state.nextPlotNumber,
+            id: 'ann-num-' + num,
             x: pt.x,
             y: pt.y,
-            text: 'দাগ ' + state.nextPlotNumber,
+            text: annText,
             color: '#10b981'
           });
-          state.nextPlotNumber++;
+          if (state.autoNumberSettings) {
+            state.autoNumberSettings.current += state.autoNumberSettings.step;
+          } else {
+            state.nextPlotNumber++;
+          }
+          playCadSound('beep');
+          showToast(`টেক্সট দাগ নম্বর যোগ করা হয়েছে: ${annText}`, 'info');
           pushHistory();
           render();
         }
       } else if (state.tool === 'merge') {
+        let clickedPlot = null;
         for (const plot of state.plots) {
           const c = calculateCentroid(plot.vertices);
-          if (Math.hypot(c.x - pt.x, c.y - pt.y) < 80 / state.camera.zoom) {
-            if (!state.mergeSelectedPlots.includes(plot.id)) {
-              state.mergeSelectedPlots.push(plot.id);
-              drawHintBox.classList.remove('opacity-0');
-              drawHintText.textContent = `দাগ ${plot.name} নির্বাচিত। আরেকটি সংলগ্ন দাগে ক্লিক করুন জোড়া লাগাতে (${state.mergeSelectedPlots.length}/2)`;
-              render();
-            }
-            if (state.mergeSelectedPlots.length === 2) {
-              applyPlotMerge(state.mergeSelectedPlots[0], state.mergeSelectedPlots[1]);
-            }
+          if (isPointInPolygon(pt, plot.vertices) || Math.hypot(c.x - pt.x, c.y - pt.y) < 80 / state.camera.zoom) {
+            clickedPlot = plot;
             break;
           }
         }
+        if (clickedPlot) {
+          if (!state.mergeSelectedPlots.includes(clickedPlot.id)) {
+            state.mergeSelectedPlots.push(clickedPlot.id);
+            playCadSound('beep');
+            if (state.mergeSelectedPlots.length === 1) {
+              drawHintBox.classList.remove('opacity-0');
+              drawHintText.innerHTML = `<span class="text-fuchsia-400 font-bold">[প্লট মার্জ ১/২]</span> ${clickedPlot.name} নির্বাচিত। জোড়া লাগাতে ২য় সংলগ্ন দাগে ক্লিক করুন`;
+              showToast(`${clickedPlot.name} নির্বাচিত! এবার ২য় সংলগ্ন দাগে ক্লিক করুন`, 'info');
+              render();
+            } else if (state.mergeSelectedPlots.length === 2) {
+              const success = executePlotMerge(state.mergeSelectedPlots[0], state.mergeSelectedPlots[1]);
+              if (success) {
+                state.tool = 'select';
+                updateToolUI();
+              } else {
+                state.mergeSelectedPlots = [state.mergeSelectedPlots[0]];
+              }
+              render();
+            }
+          } else {
+            showToast('একই দাগ দুবার নির্বাচন করা যাবে না! সংলগ্ন অন্য দাগে ক্লিক করুন', 'warning');
+          }
+        }
+      } else if (state.tool === 'line-wand') {
+        detectBoundaryLineFromClick(pt.x, pt.y);
       } else if (state.tool === 'magic-wand') {
+        // Photoshop-like Dag Wand: Click on an already detected dag to select it immediately,
+        // or click inside an adjacent/new dag boundary to auto-recognize and select it.
+        const clickCoord = { x: state.mouse.worldX, y: state.mouse.worldY };
+        let foundExistingPlot = null;
+        for (const plot of state.plots) {
+          if (isPointInPolygon(pt, plot.vertices) || isPointInPolygon(clickCoord, plot.vertices)) {
+            foundExistingPlot = plot;
+            break;
+          }
+        }
+        if (foundExistingPlot) {
+          state.selectedPlotId = foundExistingPlot.id;
+          playCadSound('snap');
+          showToast(`🪄 ${foundExistingPlot.name} নির্বাচিত হয়েছে`, 'info');
+          updateInspector();
+          render();
+          return;
+        }
         detectPlotBoundaryFromClick(pt.x, pt.y);
       } else if (state.tool === 'select') {
         // Find clicked plot using ray-casting point-in-polygon, centroid proximity, or edge proximity
@@ -3755,24 +5563,44 @@
 
   canvas.addEventListener('mouseup', () => {
     state.camera.isPanning = false;
+    if (state.dragVertex && state.dragVertex.isDragging) {
+      pushHistory();
+      showToast('✅ পয়েন্ট ড্র্যাগ করে রিশেপ/সাইজ আপডেট সম্পন্ন হয়েছে', 'success');
+    }
     state.dragVertex.isDragging = false;
     state.dragVertex.vertexIndex = -1;
+    state.liveDragTooltip = null;
     state.gunia.isDragging = false;
     state.gunia.isRotating = false;
     if (state.dragMap) state.dragMap.isDragging = false;
-    canvas.style.cursor = (state.tool === 'pan' || state.tool === 'map-move' || isSpacePressed) ? 'grab' : 'crosshair';
+    canvas.style.cursor = (state.tool === 'pan' || state.tool === 'map-move' || isSpacePressed) ? 'grab' : (state.hoveredVertex ? 'grab' : 'crosshair');
+    render();
   });
 
   window.addEventListener('mouseup', () => {
     state.camera.isPanning = false;
     if (state.dragMap) state.dragMap.isDragging = false;
-    if (state.dragVertex) state.dragVertex.isDragging = false;
+    if (state.dragVertex && state.dragVertex.isDragging) {
+      pushHistory();
+      state.dragVertex.isDragging = false;
+      state.dragVertex.vertexIndex = -1;
+      state.liveDragTooltip = null;
+      render();
+    }
     if (state.gunia) { state.gunia.isDragging = false; state.gunia.isRotating = false; }
   });
 
-  // Double click to finish Polygon or Line (Without popup on lines)
-  canvas.addEventListener('dblclick', () => {
-    if ((state.tool === 'polygon' || state.tool === 'polyline') && state.activePolyline.length >= 2) {
+  // Right-click to finish active line/polygon immediately (AutoCAD standard)
+  canvas.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if ((state.tool === 'polygon' || state.tool === 'polyline') && state.activePolyline && state.activePolyline.length >= 2) {
+      finishActivePolygon();
+    }
+  });
+
+  // Finish In-Progress Polygon or Line
+  function finishActivePolygon() {
+    if ((state.tool === 'polygon' || state.tool === 'polyline') && state.activePolyline && state.activePolyline.length >= 2) {
       const rawArea = calculateShoelaceArea(state.activePolyline);
       const isLine = state.activePolyline.length === 2 || rawArea < 0.15;
       const newPlotNumber = state.nextPlotNumber || (101 + state.plots.length);
@@ -3792,8 +5620,11 @@
       state.tool = 'select';
       updateToolUI();
       drawHintBox.classList.add('opacity-0');
+      pushHistory();
       updateInspector();
       render();
+      playCadSound('calibrate');
+      showToast(isLine ? 'রেখা অঙ্কন সম্পন্ন হয়েছে' : `দাগ নং ${toBanglaDigits(newPlotNumber)} সফলভাবে তৈরি ও আবদ্ধ করা হয়েছে!`, 'success');
 
       if (!isLine) {
         const lastPlot = state.plots[state.plots.length - 1];
@@ -3803,6 +5634,13 @@
       } else {
         hideFloatingRenameBox(false);
       }
+    }
+  }
+
+  // Double click to finish Polygon or Line (Without popup on lines)
+  canvas.addEventListener('dblclick', () => {
+    if (state.tool === 'polygon' || state.tool === 'polyline') {
+      finishActivePolygon();
     } else if (state.tool === 'select' && state.selectedPlotId) {
       const plot = state.plots.find(p => p.id === state.selectedPlotId);
       if (plot) {
@@ -3842,11 +5680,30 @@
     render();
   }, { passive: false });
 
-  // Toolbar Click Handlers
+  // Toolbar Click Handlers (Supports Polyline State Persistence & Resume)
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.tool = btn.getAttribute('data-tool');
+      const prevTool = state.tool;
+      const newTool = btn.getAttribute('data-tool');
+      state.tool = newTool;
       updateToolUI();
+
+      const isPrevPoly = (prevTool === 'polygon' || prevTool === 'polyline');
+      const isNewPoly = (newTool === 'polygon' || newTool === 'polyline');
+
+      if (isNewPoly && state.activePolyline && state.activePolyline.length > 0) {
+        drawHintBox.classList.remove('opacity-0');
+        drawHintText.textContent = `🔄 অসমাপ্ত পলিলাইন সক্রিয় আছে (${state.activePolyline.length}টি পয়েন্ট)! পরবর্তী পয়েন্ট যোগ করুন অথবা ১ম পয়েন্টে ক্লিক করে দাগ বন্ধ করুন।`;
+        showToast(`পলিলাইন পুনঃসক্রিয় হয়েছে (${state.activePolyline.length}টি পয়েন্ট সংরক্ষিত)`, 'success');
+        render();
+        return;
+      }
+
+      if (isPrevPoly && !isNewPoly && state.activePolyline && state.activePolyline.length > 0) {
+        showToast('পলিলাইন অঙ্কন সাময়িক পজ (Paused) আছে। পলিলাইন টুলে ফিরলে আগের পয়েন্ট থেকেই মেলানো যাবে।', 'info');
+        render();
+      }
+
       if (state.tool === 'pan') {
         drawHintBox.classList.remove('opacity-0');
         drawHintText.textContent = '✋ ক্যানভাসে যেকোনো স্থানে ক্লিক করে টেনে উপরে/নিচে/বামে/ডানে সরান (Pan)';
@@ -3857,11 +5714,17 @@
         canvas.style.cursor = 'grab';
       } else if (state.tool === 'auto-number') {
         drawHintBox.classList.remove('opacity-0');
-        drawHintText.textContent = `🔢 দাগে ক্লিক করে স্বয়ংক্রিয়ভাবে দাগ নং ${state.nextPlotNumber} বসান (প্রতি ক্লিকে ক্রমানুসারে নম্বর বাড়বে)`;
+        const currNum = state.autoNumberSettings ? state.autoNumberSettings.current : (state.nextPlotNumber || 501);
+        const prefix = state.autoNumberSettings ? state.autoNumberSettings.prefix : 'দাগ নং ';
+        drawHintText.textContent = `🔢 দাগে ক্লিক করে স্বয়ংক্রিয়ভাবে ${prefix}${toBanglaDigits(currNum)} বসান (প্রতি ক্লিকে ক্রমানুসারে নম্বর বাড়বে)`;
       } else if (state.tool === 'merge') {
         state.mergeSelectedPlots = [];
         drawHintBox.classList.remove('opacity-0');
-        drawHintText.textContent = '🔗 পাশাপাশি ২টি দাগে পরপর ক্লিক করে একটি বড় দাগে রূপান্তর (Merge) করুন';
+        drawHintText.textContent = '🔗 পাশাপাশি ২টি সংলগ্ন দাগে পরপর ক্লিক করে একটি বড় দাগে রূপান্তর (Merge) করুন (১ম দাগে ক্লিক করুন)';
+        render();
+      } else if (state.tool === 'line-wand') {
+        drawHintBox.classList.remove('opacity-0');
+        drawHintText.textContent = '⚡ মৌজা নকশার যেকোনো সীমানা রেখা বা আইলে (Boundary Line) ক্লিক করুন — নিখুঁত রেখা ও দৈর্ঘ্য ডিটেক্ট হবে';
       } else if (state.tool === 'magic-wand') {
         drawHintBox.classList.remove('opacity-0');
         drawHintText.textContent = '🪄 মৌজা নকশার যেকোনো দাগের মাঝখানে ক্লিক করুন (অটো দাগ বাউন্ডারি ডিটেক্ট)';
@@ -3878,10 +5741,13 @@
       } else if (state.tool === 'offset') {
         drawHintBox.classList.remove('opacity-0');
         drawHintText.textContent = 'নির্বাচিত দাগের ওপর ক্লিক করে ১০ লিংক বাউন্ডারি অফসেট করুন';
+      } else if (state.tool === 'gps-pin') {
+        drawHintBox.classList.remove('opacity-0');
+        drawHintText.innerHTML = '<span class="text-emerald-400 font-bold">[AutoCAD GPS পিন]</span> ক্যানভাসে নকশার যেকোনো পরিচিত স্থানে ক্লিক করে জিপিএস পিন বসান';
       } else if (state.tool === 'calibrate') {
         state.calibrationPoints = [];
         drawHintBox.classList.remove('opacity-0');
-        drawHintText.textContent = 'নকশার ২টি পরিচিত গ্রিড পয়েন্টে পরপর ক্লিক করুন স্কেল ক্যালিব্রেট করতে';
+        drawHintText.innerHTML = '<span class="text-cyan-400 font-bold">[AutoCAD SCALE (রেফারেন্স স্কেল)]</span> যেকোনো জানা আইল, রাস্তা বা স্কেল বারের ১ম বিন্দুতে ক্লিক করুন (Base Point)';
       } else {
         drawHintBox.classList.add('opacity-0');
       }
@@ -3896,6 +5762,24 @@
         b.classList.remove('active');
       }
     });
+
+    const quickGpsPinBtn = document.getElementById('btnQuickDropGpsPin');
+    if (quickGpsPinBtn) {
+      if (state.tool === 'gps-pin') {
+        quickGpsPinBtn.className = 'px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-extrabold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-500/30 ring-2 ring-white shrink-0 animate-pulse';
+      } else {
+        quickGpsPinBtn.className = 'px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shrink-0';
+      }
+    }
+
+    const quickMoveBtn = document.getElementById('btnQuickMoveMap');
+    if (quickMoveBtn) {
+      if (state.tool === 'map-move') {
+        quickMoveBtn.className = 'px-2.5 py-1 rounded-xl bg-cyan-700 text-white font-bold text-[11px] border border-cyan-400 flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ring-2 ring-cyan-300 shadow-lg shadow-cyan-500/30';
+      } else {
+        quickMoveBtn.className = 'px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-[11px] border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shrink-0';
+      }
+    }
   }
 
   // Zoom Controls
@@ -3954,7 +5838,7 @@
 
     const bboxW = Math.max(maxX - minX, 100);
     const bboxH = Math.max(maxY - minY, 100);
-    const padding = 50;
+    const padding = 40;
 
     const zoomX = (w - padding * 2) / bboxW;
     const zoomY = (h - padding * 2) / bboxH;
@@ -3962,8 +5846,9 @@
 
     state.camera.x = minX + bboxW / 2;
     state.camera.y = minY + bboxH / 2;
-    // Allow zooming down to 0.005 so even a 30,000 px map fits 100% on screen
-    state.camera.zoom = Math.max(0.005, Math.min(optimalZoom, 4.0));
+    // Comfortable fit: never allow the view to collapse into an unreadable 14% dot
+    // Ensures clean, crisp view of the Mouza sheet and survey plots (clamped between 50% and 250%)
+    state.camera.zoom = Math.max(0.50, Math.min(optimalZoom, 2.50));
 
     if (zoomLabelEl) {
       zoomLabelEl.textContent = (state.camera.zoom * 100).toFixed(0) + '%';
@@ -4236,6 +6121,7 @@
       ? (state.mouzaMaps.find(m => m.id === state.activeMapId) || state.mouzaMaps[0])
       : null;
 
+    let currentSheet = activeMap;
     if (activeMap) {
       activeMap.loaded = true;
       activeMap.isVector = false;
@@ -4250,7 +6136,7 @@
       activeMap.locked = false;
       state.activeMapId = activeMap.id;
     } else {
-      const primarySheet = {
+      currentSheet = {
         id: 'map_1',
         name: 'নকশা শিট ১ (প্রধান)',
         loaded: true,
@@ -4267,10 +6153,21 @@
         isCalibrated: false,
         visible: true,
         locked: false,
+        blendMode: 'normal',
         filters: { threshold: 0, brightness: 0, contrast: 0 }
       };
-      state.mouzaMaps = [primarySheet];
+      state.mouzaMaps = [currentSheet];
       state.activeMapId = 'map_1';
+    }
+    state.mouzaMap.loaded = true;
+    state.mouzaMap.image = img;
+
+    // Auto-center Satellite Anchor to the center of the Mouza Sheet
+    if (!state.satellite.pinPlaced || !state.satellite.anchorWorld) {
+      state.satellite.anchorWorld = {
+        x: currentSheet.x + currentSheet.width / 2,
+        y: currentSheet.y + currentSheet.height / 2
+      };
     }
 
     // Fit camera to the newly loaded map
@@ -4283,6 +6180,7 @@
     updateMapSheetsUI();
     updateScaleStatusBadge();
     updateInspector();
+    detectMouzaAndLocationFromMap(currentSheet, false);
     render();
 
     if (!silent) {
@@ -4531,10 +6429,53 @@
 
   document.getElementById('btnLoadMouza')?.addEventListener('click', openMouzaFileDialog);
   document.getElementById('btnEmptyUpload')?.addEventListener('click', openMouzaFileDialog);
+  document.getElementById('btnEmptyStartDemo')?.addEventListener('click', () => {
+    state.plots = [
+      {
+        id: 'plot_501',
+        name: 'দাগ নং ৫০১',
+        layer: 'plots',
+        fillColor: 'rgba(56, 189, 248, 0.25)',
+        strokeColor: '#38bdf8',
+        strokeWidth: 2,
+        vertices: [
+          { x: 260, y: 170 },
+          { x: 520, y: 170 },
+          { x: 535, y: 380 },
+          { x: 275, y: 365 }
+        ]
+      },
+      {
+        id: 'plot_502',
+        name: 'দাগ নং ৫০২',
+        layer: 'plots',
+        fillColor: 'rgba(16, 185, 129, 0.25)',
+        strokeColor: '#10b981',
+        strokeWidth: 2,
+        vertices: [
+          { x: 520, y: 170 },
+          { x: 760, y: 170 },
+          { x: 775, y: 380 },
+          { x: 535, y: 380 }
+        ]
+      }
+    ];
+    state.selectedPlotId = 'plot_501';
+    document.getElementById('canvasEmptyState')?.classList.add('hidden');
+    pushHistory();
+    updateInspector();
+    render();
+    resetFitView();
+    showToast('ডেমো জরিপ দাগ (৫০১ ও ৫০২) সফলভাবে লোড হয়েছে!', 'success');
+  });
 
   document.getElementById('btnLoadSampleMouza')?.addEventListener('click', () => {
     loadDefaultScannedMouzaMap(false);
   });
+  document.getElementById('btnEmptyLoadSampleMouza')?.addEventListener('click', () => {
+    loadDefaultScannedMouzaMap(false);
+  });
+  window.loadDefaultScannedMouzaMap = loadDefaultScannedMouzaMap;
 
   // Modal Handlers for Map Sheets Manager and Choice Dialog
   const mapSheetsModal = document.getElementById('mapSheetsModal');
@@ -4717,12 +6658,33 @@
 
   function openCalibrationModal(pxDist) {
     if (!calibrationModal) return;
-    lastCalibratedPixelDist = pxDist || lastCalibratedPixelDist || 250;
+
+    let effectiveDist = pxDist;
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId);
+    if ((!effectiveDist || effectiveDist <= 2) && activePlot && activePlot.vertices && activePlot.vertices.length >= 2) {
+      let plotDist = 0;
+      for (let i = 0; i < activePlot.vertices.length - 1; i++) {
+        plotDist += Math.hypot(activePlot.vertices[i + 1].x - activePlot.vertices[i].x, activePlot.vertices[i + 1].y - activePlot.vertices[i].y);
+      }
+      effectiveDist = plotDist;
+    }
+    lastCalibratedPixelDist = effectiveDist || lastCalibratedPixelDist || 250;
 
     const pxEl = document.getElementById('calPixelDist');
     if (pxEl) {
-      const curFtIn = convertLinksToFeetInches(lastCalibratedPixelDist);
-      pxEl.textContent = `${lastCalibratedPixelDist.toFixed(1)} px (${toBanglaDigits(lastCalibratedPixelDist.toFixed(1))} লিংক / ${curFtIn.formattedShortBengali})`;
+      const curFt = lastCalibratedPixelDist * FEET_PER_LINK;
+      const curFtIn = convertFeetToFeetInches(curFt);
+      const groundInches = Math.round(curFt * 12);
+      pxEl.textContent = `${curFtIn.formattedBengali} (${curFtIn.formattedShortBengali} • ${toBanglaDigits(groundInches)} ইঞ্চি)`;
+    }
+
+    // Default input to match current distance if not set or default
+    const feetPartInput = document.getElementById('calFeetPartInput');
+    const inchPartInput = document.getElementById('calInchPartInput');
+    if (feetPartInput && (!feetPartInput.value || feetPartInput.value === '330')) {
+      const curFt = lastCalibratedPixelDist * FEET_PER_LINK;
+      feetPartInput.value = Math.round(curFt);
+      if (inchPartInput) inchPartInput.value = 0;
     }
 
     updateCalibrationPreview(lastCalibratedPixelDist);
@@ -5003,8 +6965,25 @@
     }
 
     // 2-Point Reference Mode
-    if (state.calibrationPoints.length < 2) {
-      showToast('ক্যানভাস স্কেল বারে ২টি পয়েন্ট নির্বাচন করুন অথবা প্রিসেট ট্যাব ব্যবহার করুন।', 'warning');
+    let p1 = state.calibrationPoints[0];
+    let p2 = state.calibrationPoints[1];
+    let currDist = 0;
+
+    if (p1 && p2) {
+      currDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    } else {
+      const activePlot = state.plots.find(p => p.id === state.selectedPlotId);
+      if (activePlot && activePlot.vertices && activePlot.vertices.length >= 2) {
+        p1 = activePlot.vertices[0];
+        p2 = activePlot.vertices[activePlot.vertices.length - 1];
+        for (let i = 0; i < activePlot.vertices.length - 1; i++) {
+          currDist += Math.hypot(activePlot.vertices[i + 1].x - activePlot.vertices[i].x, activePlot.vertices[i + 1].y - activePlot.vertices[i].y);
+        }
+      }
+    }
+
+    if (!p1 || currDist <= 0.001) {
+      showToast('ক্যানভাসে যেকোনো জানা মাপের ২টি পয়েন্ট সিলেক্ট করুন অথবা একটি আইল সিলেক্ট করুন।', 'warning');
       return;
     }
 
@@ -5032,14 +7011,6 @@
       else targetLinks = groundVal;
     }
 
-    const p1 = state.calibrationPoints[0];
-    const p2 = state.calibrationPoints[1];
-    const currDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-
-    if (currDist <= 0.001) {
-      showToast('পয়েন্ট দুটির দূরত্ব অতি ক্ষুদ্র। পুনরায় দুটি স্পষ্ট ভিন্ন পয়েন্ট সিলেক্ট করুন।', 'error');
-      return;
-    }
 
     const targetMap = (state.calibrationPoints.length >= 2 ? getMapAtWorldCoord(p1.x, p1.y) : null) || getActiveMouzaMap();
     if (!targetMap || !targetMap.loaded) {
@@ -5100,32 +7071,2775 @@
     showToast(`মৌজা নকশা ক্যালিব্রেট সম্পন্ন! (${toBanglaDigits(targetLinks.toFixed(1))} লিংক / ${calFtIn.formattedShortBengali}, স্কেল অনুপাত ${toBanglaDigits(S.toFixed(3))}x)`, 'success');
   });
 
-  // Report Modal Handlers with Dynamic Plot Data
+  // ==========================================
+  // MODULE 14: PDF Map Export & Field Survey Print Studio
+  // ==========================================
   const reportModal = document.getElementById('reportModal');
-  document.getElementById('btnExportReport').addEventListener('click', () => {
+  const btnExportReport = document.getElementById('btnExportReport');
+  const btnCloseReportModal = document.getElementById('btnCloseReportModal');
+  const btnPrintReportPdf = document.getElementById('btnPrintReportPdf');
+  const btnDownloadReportPng = document.getElementById('btnDownloadReportPng');
+  const reportViewMode = document.getElementById('reportViewMode');
+  const reportPaperSize = document.getElementById('reportPaperSize');
+
+  function syncReportLabels() {
+    const fields = [
+      { inp: 'inpReportDistrict', lbl: 'lblReportDistrict' },
+      { inp: 'inpReportUpazila', lbl: 'lblReportUpazila' },
+      { inp: 'inpReportMouza', lbl: 'lblReportMouza' },
+      { inp: 'inpReportJl', lbl: 'lblReportJl' },
+      { inp: 'inpReportKhatian', lbl: 'lblReportKhatian' },
+      { inp: 'inpReportDaag', lbl: 'lblReportDaag' },
+      { inp: 'inpReportOwner', lbl: 'lblReportOwner' },
+      { inp: 'inpReportSurveyor', lbl: 'lblReportSurveyor' },
+      { inp: 'inpReportSurveyorReg', lbl: 'lblReportReg' },
+      { inp: 'inpReportDate', lbl: 'lblReportDate' },
+      { inp: 'inpReportScaleText', lbl: 'lblReportScale' },
+      { inp: 'inpReportNorthMouza', lbl: 'lblReportNorthMouza' },
+      { inp: 'inpReportEastMouza', lbl: 'lblReportEastMouza' },
+      { inp: 'inpReportSouthMouza', lbl: 'lblReportSouthMouza' },
+      { inp: 'inpReportWestMouza', lbl: 'lblReportWestMouza' }
+    ];
+
+    fields.forEach(f => {
+      const inpEl = document.getElementById(f.inp);
+      const lblEl = document.getElementById(f.lbl);
+      if (inpEl && lblEl) {
+        lblEl.textContent = inpEl.value || '—';
+      }
+    });
+  }
+
+  function drawReportMapCanvas() {
+    const canvas = document.getElementById('reportMapCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // HiDPI crisp resolution (2x buffer)
+    const W = 620;
+    const H = 320;
+    canvas.width = W * 2;
+    canvas.height = H * 2;
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+
+    // Background Fill
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle Cadastral Grid lines
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 1;
+    for (let x = 20; x < W; x += 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 20; y < H; y += 20) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    // Outer Blueprint Border
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(6, 6, W - 12, H - 12);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(9, 9, W - 18, H - 18);
+
+    const viewMode = reportViewMode ? reportViewMode.value : 'selected';
     const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    let plotsToDraw = [];
+
+    if (viewMode === 'all') {
+      plotsToDraw = state.plots.filter(p => p.vertices && p.vertices.length >= 3);
+    } else if (activePlot && activePlot.vertices && activePlot.vertices.length >= 3) {
+      plotsToDraw = [activePlot];
+    }
+
+    if (plotsToDraw.length === 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 14px "Hind Siliguri", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('কোনো দাগ অঙ্কন করা নেই — ক্যানভাসে দাগ ট্রেস অথবা নির্বাচন করুন', W / 2, H / 2);
+      drawReportCartographicDecorations(ctx, W, H, 1);
+      return;
+    }
+
+    // Calculate Bounding Box across all plots to draw
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    plotsToDraw.forEach(plot => {
+      plot.vertices.forEach(v => {
+        minX = Math.min(minX, v.x);
+        maxX = Math.max(maxX, v.x);
+        minY = Math.min(minY, v.y);
+        maxY = Math.max(maxY, v.y);
+      });
+    });
+
+    const bw = Math.max(maxX - minX, 20);
+    const bh = Math.max(maxY - minY, 20);
+    const pad = 55;
+    const scale = Math.min((W - pad * 2) / bw, (H - pad * 2) / bh);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const toCanvas = (pt) => ({
+      x: W / 2 + (pt.x - cx) * scale,
+      y: H / 2 + (pt.y - cy) * scale
+    });
+
+    // Draw Plots
+    plotsToDraw.forEach(plot => {
+      const isSelected = activePlot && plot.id === activePlot.id;
+      const pts = plot.vertices.map(toCanvas);
+
+      // Polygon Fill & Boundary Stroke
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.closePath();
+
+      ctx.fillStyle = isSelected ? 'rgba(14, 165, 233, 0.12)' : 'rgba(241, 245, 249, 0.7)';
+      ctx.fill();
+
+      ctx.strokeStyle = isSelected ? '#0284c7' : '#475569';
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
+      ctx.stroke();
+
+      // Dimension Labels on major boundary arms (Decluttered, zero overlap)
+      const reportArms = getSimplifiedBoundaryArms(plot.vertices, true, 12);
+      const placedReportBoxes = [];
+
+      for (const arm of reportArms) {
+        const cp1 = toCanvas(arm.p1);
+        const cp2 = toCanvas(arm.p2);
+
+        const distLk = arm.cumulativeLength;
+        if (distLk <= 0.001) continue;
+        const distFt = distLk * FEET_PER_LINK;
+        const ftIn = convertFeetToFeetInches(distFt);
+
+        const midX = (cp1.x + cp2.x) / 2;
+        const midY = (cp1.y + cp2.y) / 2;
+
+        const dx = cp2.x - cp1.x;
+        const dy = cp2.y - cp1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        if (len < 24 && reportArms.length > 3) continue;
+
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        const labelX = midX + nx * 14;
+        const labelY = midY + ny * 14;
+
+        const labelText = `${toBanglaDigits(distLk.toFixed(1))} lk (${ftIn.formattedShortBengali})`;
+
+        ctx.font = 'bold 9px "Hind Siliguri", sans-serif';
+        const metrics = ctx.measureText(labelText);
+        const tw = metrics.width + 10;
+        const th = 15;
+
+        let collides = false;
+        for (const b of placedReportBoxes) {
+          if (Math.abs(labelX - b.x) < (tw + b.w) / 2 + 4 && Math.abs(labelY - b.y) < (th + b.h) / 2 + 4) {
+            collides = true;
+            break;
+          }
+        }
+        if (collides) continue;
+        placedReportBoxes.push({ x: labelX, y: labelY, w: tw, h: th });
+
+        // Pill background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.beginPath();
+        ctx.roundRect(labelX - tw / 2, labelY - th / 2, tw, th, 4);
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? '#93c5fd' : '#cbd5e1';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, labelX, labelY);
+      }
+
+      // Vertex Boundary Pillars (corners only to eliminate clutter)
+      const reportCornerIndices = new Set();
+      reportArms.forEach(a => {
+        reportCornerIndices.add(a.startIndex);
+        reportCornerIndices.add(a.endIndex);
+      });
+      pts.forEach((pt, idx) => {
+        if (pts.length > 8 && !reportCornerIndices.has(idx)) return;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Pillar index
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(pt.x + 8, pt.y - 8, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#b91c1c';
+        ctx.font = 'bold 8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(toBanglaDigits(idx + 1), pt.x + 8, pt.y - 8);
+      });
+
+      // Centroid Daag Number & Area Badge
+      const centroid = calculateCentroid(plot.vertices);
+      const cp = toCanvas(centroid);
+      const rawArea = calculateShoelaceArea(plot.vertices);
+      const shotok = (rawArea * SQFT_PER_SQLINK / SQFT_PER_SHOTOK).toFixed(2);
+      const plotNameClean = plot.name ? plot.name.replace(' (নির্বাচিত)', '').replace(' (অটো)', '') : 'দাগ';
+
+      ctx.font = 'bold 11px "Hind Siliguri", sans-serif';
+      const daagTitle = plotNameClean.includes('দাগ') ? plotNameClean : `দাগ নং ${toBanglaDigits(plotNameClean)}`;
+      const areaTitle = `${toBanglaDigits(shotok)} শতক`;
+      const badgeW = Math.max(ctx.measureText(daagTitle).width, ctx.measureText(areaTitle).width) + 16;
+      const badgeH = 28;
+
+      ctx.fillStyle = 'rgba(240, 249, 255, 0.95)';
+      ctx.beginPath();
+      ctx.roundRect(cp.x - badgeW / 2, cp.y - badgeH / 2, badgeW, badgeH, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#0369a1';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(daagTitle, cp.x, cp.y - 6);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '9px "Hind Siliguri", sans-serif';
+      ctx.fillText(areaTitle, cp.x, cp.y + 7);
+    });
+
+    // Draw Cartographic Decorations
+    drawReportCartographicDecorations(ctx, W, H, scale);
+  }
+
+  function drawReportCartographicDecorations(ctx, W, H, scale) {
+    // 1. North Arrow Compass Rose (Top-Right)
+    const nx = W - 35;
+    const ny = 35;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(nx, ny, 16, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // North Pointer (Black/Red)
+    ctx.beginPath();
+    ctx.moveTo(nx, ny - 13);
+    ctx.lineTo(nx - 4, ny);
+    ctx.lineTo(nx, ny - 2);
+    ctx.closePath();
+    ctx.fillStyle = '#ef4444';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(nx, ny - 13);
+    ctx.lineTo(nx + 4, ny);
+    ctx.lineTo(nx, ny - 2);
+    ctx.closePath();
+    ctx.fillStyle = '#991b1b';
+    ctx.fill();
+
+    // South Pointer (White/Grey)
+    ctx.beginPath();
+    ctx.moveTo(nx, ny + 13);
+    ctx.lineTo(nx - 4, ny);
+    ctx.lineTo(nx, ny + 2);
+    ctx.closePath();
+    ctx.fillStyle = '#94a3b8';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(nx, ny + 13);
+    ctx.lineTo(nx + 4, ny);
+    ctx.lineTo(nx, ny + 2);
+    ctx.closePath();
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fill();
+
+    // North Label
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 9px "Hind Siliguri", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('উ / N', nx, ny - 17);
+    ctx.restore();
+
+    // 2. Graphical Scale Bar (Bottom-Left)
+    const sx = 20;
+    const sy = H - 24;
+    const barSegments = 4;
+    const segLengthLk = 25; // 25 links per segment = 100 links total
+    const segWidthPx = Math.max(16, Math.min(30, segLengthLk * scale));
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(sx - 4, sy - 14, (segWidthPx * barSegments) + 12, 28);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(sx - 4, sy - 14, (segWidthPx * barSegments) + 12, 28);
+
+    for (let i = 0; i < barSegments; i++) {
+      ctx.fillStyle = (i % 2 === 0) ? '#0f172a' : '#ffffff';
+      ctx.fillRect(sx + i * segWidthPx, sy - 2, segWidthPx, 5);
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(sx + i * segWidthPx, sy - 2, segWidthPx, 5);
+    }
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 8px "Hind Siliguri", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('০', sx - 2, sy - 3);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${toBanglaDigits(segLengthLk * barSegments)} লিংক (Graphic Scale)`, sx + barSegments * segWidthPx + 2, sy + 11);
+    ctx.restore();
+
+    // 3. Cadastral Certification Watermark (Bottom-Right)
+    ctx.save();
+    ctx.font = '8px "Hind Siliguri", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ল্যান্ড সার্ভে ক্যাড (Land Survey CAD) • কম্পিউটারাইজড নকশা রিপোর্ট', W - 16, H - 16);
+    ctx.restore();
+  }
+
+  // =========================================================================
+  // Official Bangladesh Cadastral Mouza & Area Knowledge Base & Detector
+  // =========================================================================
+  const DEFAULT_MOUZA_KNOWLEDGE = {
+    district: 'চাঁদপুর',
+    upazila: 'ফরিদগঞ্জ',
+    mouza: 'খাজুরাদিয়া',
+    altMouza: 'খাজুরিয়া',
+    jl: '১৬',
+    sheet: '১',
+    reSaNo: '৩৮৬৪',
+    gps: { lat: 23.127500, lng: 90.750900 },
+    scalePreset: '16_inch',
+    scaleText: '১৬ ইঞ্চি = ১ মাইল (স্ট্যান্ডার্ড)',
+    boundaries: {
+      north: 'সকদিরামপুর (নং ৩)',
+      east: 'কৃষ্ণপুর (নং ১২)',
+      south: 'মদনগাঁও (নং ১৫) ও দেইচর (নং ৩৬)',
+      west: 'সেখদি (নং ১৬)'
+    }
+  };
+
+  function detectMouzaAndLocationFromMap(targetMap = null, showNotification = false) {
+    const activeMap = targetMap || (state.mouzaMaps && state.mouzaMaps.find(m => m.id === state.activeMapId)) || state.mouzaMap;
+
+    let detected = {
+      district: DEFAULT_MOUZA_KNOWLEDGE.district,
+      upazila: DEFAULT_MOUZA_KNOWLEDGE.upazila,
+      mouza: DEFAULT_MOUZA_KNOWLEDGE.mouza,
+      jl: DEFAULT_MOUZA_KNOWLEDGE.jl,
+      sheet: DEFAULT_MOUZA_KNOWLEDGE.sheet,
+      reSaNo: DEFAULT_MOUZA_KNOWLEDGE.reSaNo,
+      scaleText: DEFAULT_MOUZA_KNOWLEDGE.scaleText,
+      boundaries: { ...DEFAULT_MOUZA_KNOWLEDGE.boundaries }
+    };
+
+    if (activeMap) {
+      const name = (activeMap.name || '').toLowerCase();
+      const src = (activeMap.imageObj && activeMap.imageObj.src) ? activeMap.imageObj.src.toLowerCase() : '';
+
+      // Pattern matcher for custom maps or standard Faridganj scan
+      if (name.includes('খাজুর') || src.includes('faridganj') || src.includes('default_mouza')) {
+        detected = {
+          ...DEFAULT_MOUZA_KNOWLEDGE,
+          boundaries: { ...DEFAULT_MOUZA_KNOWLEDGE.boundaries }
+        };
+      }
+    }
+
+    // Save into active map entity
+    if (activeMap) {
+      activeMap.locationInfo = {
+        district: detected.district,
+        upazila: detected.upazila,
+        mouza: detected.mouza,
+        jl: detected.jl,
+        sheet: detected.sheet,
+        reSaNo: detected.reSaNo,
+        scaleText: detected.scaleText,
+        boundaries: { ...detected.boundaries }
+      };
+    }
+
+    // Update Top Navbar Subtitle & Sync Real GPS Datum
+    syncLocationToHeader(detected);
+
+    if (detected.district === 'চাঁদপুর' && (detected.upazila === 'ফরিদগঞ্জ' || (detected.mouza || '').includes('খাজুর'))) {
+      state.satellite.originGPS = { lat: 23.127500, lng: 90.750900 };
+      const quickSel = document.getElementById('quickGpsDistrictSelect');
+      if (quickSel) quickSel.value = '23.1275,90.7509';
+      const kmzLat = document.getElementById('kmzInpLat');
+      const kmzLng = document.getElementById('kmzInpLng');
+      if (kmzLat) kmzLat.value = '23.127500';
+      if (kmzLng) kmzLng.value = '90.750900';
+    }
+
+    // Populate Report Studio Inputs
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined) el.value = val;
+    };
+    setVal('inpReportDistrict', detected.district);
+    setVal('inpReportUpazila', detected.upazila);
+    setVal('inpReportMouza', detected.mouza);
+    setVal('inpReportJl', detected.jl);
+    setVal('inpReportScaleText', detected.scaleText);
+    setVal('inpReportNorthMouza', detected.boundaries.north);
+    setVal('inpReportEastMouza', detected.boundaries.east);
+    setVal('inpReportSouthMouza', detected.boundaries.south);
+    setVal('inpReportWestMouza', detected.boundaries.west);
+
+    syncReportLabels();
+
+    if (showNotification) {
+      showToast(`✓ নকশা থেকে মৌজা ও এলাকা ডিটেক্ট সম্পন্ন: ${detected.mouza} (জেএল ${toBanglaDigits(detected.jl)}) • ${detected.upazila}, ${detected.district}`, 'success');
+    }
+
+    return detected;
+  }
+
+  // Auto-detect Mouza & Location Info from Active Map or Header
+  function getActiveMapLocationInfo() {
+    const activeMap = (state.mouzaMaps && state.mouzaMaps.find(m => m.id === state.activeMapId)) || state.mouzaMap;
+    if (activeMap && activeMap.locationInfo && activeMap.locationInfo.mouza) {
+      return activeMap.locationInfo;
+    }
+
+    const subEl = document.getElementById('mouzaMapInfoSubtitle');
+    const text = subEl ? subEl.textContent.trim() : '';
+
+    let district = DEFAULT_MOUZA_KNOWLEDGE.district;
+    let upazila = DEFAULT_MOUZA_KNOWLEDGE.upazila;
+    let mouza = DEFAULT_MOUZA_KNOWLEDGE.mouza;
+    let jl = DEFAULT_MOUZA_KNOWLEDGE.jl;
+    let sheet = DEFAULT_MOUZA_KNOWLEDGE.sheet;
+
+    if (text) {
+      const mMatch = text.match(/মৌজা:\s*([^\(•]+)(?:\(([^)]+)\))?/);
+      if (mMatch) {
+        if (mMatch[1]) mouza = mMatch[1].trim();
+        if (mMatch[2]) jl = mMatch[2].trim();
+      }
+      const upzDistMatch = text.match(/•\s*([^,•]+),\s*([^•]+)/);
+      if (upzDistMatch) {
+        if (upzDistMatch[1]) upazila = upzDistMatch[1].trim();
+        if (upzDistMatch[2]) {
+          district = upzDistMatch[2].replace(/•.*/, '').trim();
+        }
+      }
+      const sheetMatch = text.match(/সিট\s*নং:\s*([০-৯0-9]+)/);
+      if (sheetMatch && sheetMatch[1]) {
+        sheet = sheetMatch[1].trim();
+      }
+    }
+
+    return {
+      district, upazila, mouza, jl, sheet,
+      boundaries: { ...DEFAULT_MOUZA_KNOWLEDGE.boundaries }
+    };
+  }
+
+  function syncLocationToHeader(loc) {
+    const subEl = document.getElementById('mouzaMapInfoSubtitle');
+    if (subEl && loc) {
+      subEl.textContent = `মৌজা: ${loc.mouza} (${toBanglaDigits(loc.jl)}) • ${loc.upazila}, ${loc.district} • সিট নং: ${toBanglaDigits(loc.sheet || '১')}`;
+    }
+    const activeMap = (state.mouzaMaps && state.mouzaMaps.find(m => m.id === state.activeMapId)) || state.mouzaMap;
+    if (activeMap) {
+      activeMap.locationInfo = { ...loc };
+    }
+  }
+
+  // =========================================================================
+  // Button 1 & 3: Master Survey Report Studio vs Single Plot Certificate
+  // =========================================================================
+  function openReportStudio(mode = 'selected', specificPlotId = null) {
+    if (specificPlotId) {
+      state.selectedPlotId = specificPlotId;
+    }
+
+    // 1. Auto-detect and populate Mouza & Area location from active map
+    const locInfo = getActiveMapLocationInfo();
+    const inpDist = document.getElementById('inpReportDistrict');
+    const inpUpz = document.getElementById('inpReportUpazila');
+    const inpMouza = document.getElementById('inpReportMouza');
+    const inpJl = document.getElementById('inpReportJl');
+    const inpNorth = document.getElementById('inpReportNorthMouza');
+    const inpEast = document.getElementById('inpReportEastMouza');
+    const inpSouth = document.getElementById('inpReportSouthMouza');
+    const inpWest = document.getElementById('inpReportWestMouza');
+
+    if (inpDist && locInfo.district) inpDist.value = locInfo.district;
+    if (inpUpz && locInfo.upazila) inpUpz.value = locInfo.upazila;
+    if (inpMouza && locInfo.mouza) inpMouza.value = locInfo.mouza;
+    if (inpJl && locInfo.jl) inpJl.value = locInfo.jl;
+    if (inpNorth && locInfo.boundaries && locInfo.boundaries.north) inpNorth.value = locInfo.boundaries.north;
+    if (inpEast && locInfo.boundaries && locInfo.boundaries.east) inpEast.value = locInfo.boundaries.east;
+    if (inpSouth && locInfo.boundaries && locInfo.boundaries.south) inpSouth.value = locInfo.boundaries.south;
+    if (inpWest && locInfo.boundaries && locInfo.boundaries.west) inpWest.value = locInfo.boundaries.west;
+
+    // Set view mode
+    if (reportViewMode) {
+      reportViewMode.value = (mode === 'all') ? 'all' : 'selected';
+    }
+
+    // 2. Active Plot data
+    let activePlot = state.plots.find(p => p.id === state.selectedPlotId);
+    if (!activePlot && state.plots.length > 0) {
+      state.selectedPlotId = state.plots[0].id;
+      activePlot = state.plots[0];
+    }
+
     if (activePlot) {
+      const rawName = activePlot.name.replace(' (নির্বাচিত)', '').replace(' (অটো)', '');
+      const cleanDigits = rawName.replace(/[^0-9০-৯]/g, '');
+      const inpDaag = document.getElementById('inpReportDaag');
+      if (inpDaag && cleanDigits) {
+        inpDaag.value = cleanDigits;
+      }
+
+      // Calculate area breakdown
       const sqLinks = calculateShoelaceArea(activePlot.vertices);
       const sqft = sqLinks * SQFT_PER_SQLINK;
       const shotok = (sqft / SQFT_PER_SHOTOK).toFixed(3);
-      const kathaPart = Math.floor(sqft / SQFT_PER_KATHA);
+      const katha = sqft / SQFT_PER_KATHA;
+      const kathaPart = Math.floor(katha);
       const shotokRemaining = ((sqft / SQFT_PER_SHOTOK) % 1.652893).toFixed(1);
+      const sqM = sqft / SQFT_PER_SQMETER;
 
-      const reportPlotNum = document.getElementById('reportPlotNum');
       const reportTotalShotok = document.getElementById('reportTotalShotok');
       const reportBanglaKatha = document.getElementById('reportBanglaKatha');
       const reportTotalSqft = document.getElementById('reportTotalSqft');
 
-      if (reportPlotNum) reportPlotNum.textContent = activePlot.name.replace(' (নির্বাচিত)', '').replace(' (অটো)', '');
-      if (reportTotalShotok) reportTotalShotok.textContent = `${shotok} শতক (Decimal)`;
-      if (reportBanglaKatha) reportBanglaKatha.textContent = `${kathaPart} কাঠা ${shotokRemaining} শতক`;
-      if (reportTotalSqft) reportTotalSqft.textContent = `${sqft.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} বর্গফুট (Sq.ft)`;
+      if (reportTotalShotok) reportTotalShotok.textContent = `${toBanglaDigits(shotok)} শতক (Decimal)`;
+      if (reportBanglaKatha) reportBanglaKatha.textContent = `${toBanglaDigits(kathaPart)} কাঠা ${toBanglaDigits(shotokRemaining)} শতক`;
+      if (reportTotalSqft) reportTotalSqft.textContent = `${toBanglaDigits(sqft.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }))} বর্গফুট (${toBanglaDigits(sqM.toFixed(1))} বর্গমিটার)`;
+
+      // Populate Four-side Chouhaddi measurements
+      const grid = document.getElementById('reportBoundaryGrid');
+      if (grid && activePlot.vertices && activePlot.vertices.length >= 3) {
+        const sides = [];
+        const sideNames = ['উত্তর আইল', 'পূর্ব আইল', 'দক্ষিণ আইল', 'পশ্চিম আইল'];
+        for (let i = 0; i < activePlot.vertices.length; i++) {
+          const pA = activePlot.vertices[i];
+          const pB = activePlot.vertices[(i + 1) % activePlot.vertices.length];
+          const lk = Math.hypot(pB.x - pA.x, pB.y - pA.y);
+          const ft = lk * FEET_PER_LINK;
+          const ftIn = convertFeetToFeetInches(ft);
+          sides.push({
+            name: sideNames[i] || `আইল ${toBanglaDigits(i + 1)}`,
+            lk: lk.toFixed(1),
+            ftIn: ftIn.formattedShortBengali
+          });
+        }
+
+        let gridHtml = '';
+        sides.forEach(s => {
+          gridHtml += `
+            <div class="p-2 rounded-lg bg-slate-50 border border-slate-200 text-center">
+              <div class="text-[10px] text-slate-500 font-bold">${s.name}</div>
+              <div class="font-extrabold font-mono text-slate-900">${toBanglaDigits(s.lk)} lk (${s.ftIn})</div>
+            </div>
+          `;
+        });
+        grid.className = `grid grid-cols-${Math.min(sides.length, 4)} gap-2 text-center text-[11px]`;
+        grid.innerHTML = gridHtml;
+      }
+    } else if (mode === 'selected') {
+      showToast('দয়া করে ক্যানভাসে প্রথমে একটি দাগ সিলেক্ট করুন বা আঁকুন।', 'info');
     }
+
+    syncReportLabels();
+    drawReportMapCanvas();
     reportModal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  // =========================================================================
+  // Button 2: Scaled CAD Map Sheet Print Studio (AutoCAD Blueprint A4/A3)
+  // =========================================================================
+  function renderPrintSheetCanvas() {
+    const pCanvas = document.getElementById('printSheetCanvas');
+    if (!pCanvas) return;
+    const pCtx = pCanvas.getContext('2d');
+    pCanvas.width = 650;
+    pCanvas.height = 250;
+    pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    const plotsToDraw = activePlot ? [activePlot] : state.plots.filter(p => p.vertices && p.vertices.length >= 3);
+
+    if (plotsToDraw.length === 0) {
+      pCtx.fillStyle = '#64748b';
+      pCtx.font = 'bold 12px "Hind Siliguri", sans-serif';
+      pCtx.textAlign = 'center';
+      pCtx.fillText('কোনো সক্রিয় দাগ পাওয়া যায়নি — ক্যানভাসে দাগ ট্রেস করুন', pCanvas.width / 2, pCanvas.height / 2);
+      return;
+    }
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    plotsToDraw.forEach(plot => {
+      plot.vertices.forEach(v => {
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+      });
+    });
+
+    const plotW = maxX - minX || 1;
+    const plotH = maxY - minY || 1;
+    const pad = 35;
+    const scale = Math.min((pCanvas.width - pad * 2) / plotW, (pCanvas.height - pad * 2) / plotH);
+    const offsetX = (pCanvas.width - plotW * scale) / 2 - minX * scale;
+    const offsetY = (pCanvas.height - plotH * scale) / 2 - minY * scale;
+
+    plotsToDraw.forEach(plot => {
+      const vs = plot.vertices;
+      if (vs.length < 3) return;
+      pCtx.beginPath();
+      pCtx.moveTo(vs[0].x * scale + offsetX, vs[0].y * scale + offsetY);
+      for (let i = 1; i < vs.length; i++) {
+        pCtx.lineTo(vs[i].x * scale + offsetX, vs[i].y * scale + offsetY);
+      }
+      pCtx.closePath();
+      pCtx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+      pCtx.fill();
+      pCtx.strokeStyle = '#0f172a';
+      pCtx.lineWidth = 2.5;
+      pCtx.stroke();
+
+      pCtx.fillStyle = '#0f172a';
+      pCtx.font = 'bold 9px monospace';
+      pCtx.textAlign = 'center';
+      pCtx.textBaseline = 'middle';
+      const printArms = getSimplifiedBoundaryArms(plot.vertices, true, 12);
+      for (const arm of printArms) {
+        const p1 = arm.p1;
+        const p2 = arm.p2;
+        const mx = ((p1.x + p2.x) / 2) * scale + offsetX;
+        const my = ((p1.y + p2.y) / 2) * scale + offsetY;
+        const lk = arm.cumulativeLength;
+        if (lk <= 0.001) continue;
+        pCtx.fillText(`${toBanglaDigits(lk.toFixed(1))}lk`, mx, my - 6);
+      }
+    });
+
+    if (activePlot) {
+      const sqLinks = calculateShoelaceArea(activePlot.vertices);
+      const sqft = sqLinks * SQFT_PER_SQLINK;
+      const shotok = (sqft / SQFT_PER_SHOTOK).toFixed(2);
+      const kathaPart = Math.floor(sqft / SQFT_PER_KATHA);
+      const shotokRemaining = ((sqft / SQFT_PER_SHOTOK) % 1.652893).toFixed(1);
+      const perimLk = activePlot.vertices.reduce((acc, v, i, arr) => {
+        const next = arr[(i + 1) % arr.length];
+        return acc + Math.hypot(next.x - v.x, next.y - v.y);
+      }, 0);
+      const perimFt = (perimLk * FEET_PER_LINK).toFixed(1);
+
+      const daagEl = document.getElementById('printDaagNum');
+      const shotokEl = document.getElementById('printAreaShotok');
+      const sqftEl = document.getElementById('printAreaSqft');
+      const perimEl = document.getElementById('printPerimeter');
+
+      if (daagEl) daagEl.textContent = activePlot.name.replace(' (নির্বাচিত)', '').replace(' (অটো)', '');
+      if (shotokEl) shotokEl.textContent = `${toBanglaDigits(shotok)} শতক (${toBanglaDigits(kathaPart)} কাঠা ${toBanglaDigits(shotokRemaining)} শতক)`;
+      if (sqftEl) sqftEl.textContent = `${toBanglaDigits(sqft.toFixed(1))} বর্গফুট`;
+      if (perimEl) perimEl.textContent = `${toBanglaDigits(perimFt)} ফুট (${toBanglaDigits(perimLk.toFixed(1))} লিংক)`;
+    }
+  }
+
+  function openPrintLayoutModal() {
+    const modal = document.getElementById('printLayoutModal');
+    if (modal) {
+      modal.classList.remove('hidden');
+      setTimeout(renderPrintSheetCanvas, 50);
+      if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+    }
+  }
+  window.openPrintLayoutModal = openPrintLayoutModal;
+
+  // ==========================================
+  // Audio Feedback Synthesizer for CAD Operations
+  // ==========================================
+  function playCadSound(type = 'beep') {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      if (type === 'beep') {
+        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.12);
+      } else if (type === 'merge') {
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      }
+    } catch (e) {}
+  }
+
+  // ==========================================
+  // MODULE 18: Auto Plot Numbering Studio (অটো দাগ নাম্বারিং)
+  // ==========================================
+  const autoNumberModal = document.getElementById('autoNumberModal');
+  const btnCloseAutoNumberModal = document.getElementById('btnCloseAutoNumberModal');
+  const btnStartInteractiveNumbering = document.getElementById('btnStartInteractiveNumbering');
+  const btnBatchSequenceAll = document.getElementById('btnBatchSequenceAll');
+  const btnCheckDuplicates = document.getElementById('btnCheckDuplicates');
+  const btnResolveDuplicates = document.getElementById('btnResolveDuplicates');
+  const inpAutoNumberStart = document.getElementById('inpAutoNumberStart');
+  const selAutoNumberPrefix = document.getElementById('selAutoNumberPrefix');
+  const selAutoNumberStep = document.getElementById('selAutoNumberStep');
+  const duplicateAuditResult = document.getElementById('duplicateAuditResult');
+
+  function openAutoNumberModal() {
+    if (!autoNumberModal) return;
+    const emptyNotice = document.getElementById('autoNumberEmptyPlotsNotice');
+    if (!state.plots || state.plots.length === 0) {
+      if (emptyNotice) emptyNotice.classList.remove('hidden');
+    } else {
+      if (emptyNotice) emptyNotice.classList.add('hidden');
+    }
+    if (inpAutoNumberStart) inpAutoNumberStart.value = state.autoNumberSettings.start || 501;
+    if (selAutoNumberPrefix) selAutoNumberPrefix.value = state.autoNumberSettings.prefix !== undefined ? state.autoNumberSettings.prefix : 'দাগ নং ';
+    if (selAutoNumberStep) selAutoNumberStep.value = String(state.autoNumberSettings.step || 1);
+    checkDuplicatePlotNumbers();
+    autoNumberModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openAutoNumberModal = openAutoNumberModal;
+
+  function startInteractiveAutoNumbering() {
+    const startVal = parseInt(inpAutoNumberStart?.value, 10) || 501;
+    const prefixVal = selAutoNumberPrefix ? selAutoNumberPrefix.value : 'দাগ নং ';
+    const stepVal = parseInt(selAutoNumberStep?.value, 10) || 1;
+
+    state.autoNumberSettings = {
+      start: startVal,
+      current: startVal,
+      prefix: prefixVal,
+      step: stepVal
+    };
+
+    state.tool = 'auto-number';
+    updateToolUI();
+    if (autoNumberModal) autoNumberModal.classList.add('hidden');
+
+    drawHintBox.classList.remove('opacity-0');
+    drawHintText.innerHTML = `<span class="text-emerald-400 font-bold">[অটো দাগ নাম্বারিং]</span> ক্যানভাসে দাগের ভেতর ক্লিক করুন (পরবর্তী: ${state.autoNumberSettings.prefix}${toBanglaDigits(state.autoNumberSettings.current)})`;
+    showToast(`ক্লিক নাম্বারিং সক্রিয়! দাগের ভেতর ক্লিক করুন (${toBanglaDigits(state.autoNumberSettings.current)} থেকে শুরু)`, 'info');
+  }
+
+  function applyAutoNumberToPlot(plot, customNum = null) {
+    const num = customNum !== null ? customNum : state.autoNumberSettings.current;
+    const prefix = state.autoNumberSettings ? state.autoNumberSettings.prefix : 'দাগ নং ';
+    const newName = `${prefix}${toBanglaDigits(num)}`;
+    plot.name = newName;
+    playCadSound('beep');
+    showToast(`দাগ নম্বর নির্ধারণ: ${newName}`, 'success');
+
+    if (customNum === null && state.autoNumberSettings) {
+      state.autoNumberSettings.current += (state.autoNumberSettings.step || 1);
+      if (inpAutoNumberStart) inpAutoNumberStart.value = state.autoNumberSettings.current;
+      drawHintText.innerHTML = `<span class="text-emerald-400 font-bold">[অটো দাগ নাম্বারিং]</span> পরবর্তী দাগে ক্লিক করুন (পরবর্তী: ${state.autoNumberSettings.prefix}${toBanglaDigits(state.autoNumberSettings.current)})`;
+    }
+
+    pushHistory();
+    updateInspector();
+    render();
+  }
+
+  function batchSequenceAllPlots() {
+    if (!state.plots || state.plots.length === 0) {
+      showToast('নাম্বারিং করার মতো কোনো দাগ নেই!', 'warning');
+      return;
+    }
+
+    const startVal = parseInt(inpAutoNumberStart?.value, 10) || 501;
+    const prefixVal = selAutoNumberPrefix ? selAutoNumberPrefix.value : 'দাগ নং ';
+    const stepVal = parseInt(selAutoNumberStep?.value, 10) || 1;
+
+    state.autoNumberSettings.start = startVal;
+    state.autoNumberSettings.prefix = prefixVal;
+    state.autoNumberSettings.step = stepVal;
+
+    // Cadastral Spatial Sequence: Sort NW (North-West) to SE (South-East)
+    const plotsWithCentroid = state.plots.map(p => ({
+      plot: p,
+      centroid: calculateCentroid(p.vertices)
+    }));
+
+    plotsWithCentroid.sort((a, b) => {
+      if (Math.abs(a.centroid.y - b.centroid.y) > 120) {
+        return a.centroid.y - b.centroid.y;
+      }
+      return a.centroid.x - b.centroid.x;
+    });
+
+    let curr = startVal;
+    plotsWithCentroid.forEach(item => {
+      item.plot.name = `${prefixVal}${toBanglaDigits(curr)}`;
+      curr += stepVal;
+    });
+
+    state.autoNumberSettings.current = curr;
+    if (inpAutoNumberStart) inpAutoNumberStart.value = curr;
+
+    pushHistory();
+    updateInspector();
+    render();
+    checkDuplicatePlotNumbers();
+    playCadSound('merge');
+    showToast(`সব দাগ (${toBanglaDigits(state.plots.length)} টি) উত্তর-পশ্চিম থেকে ক্রমানুসারে নাম্বারিং সম্পন্ন হয়েছে!`, 'success');
+  }
+
+  function checkDuplicatePlotNumbers() {
+    if (!duplicateAuditResult) return;
+    if (!state.plots || state.plots.length === 0) {
+      duplicateAuditResult.innerHTML = '<span class="text-slate-400">নকশায় কোনো দাগ তৈরি করা হয়নি।</span>';
+      return;
+    }
+
+    const counts = {};
+    state.plots.forEach(p => {
+      const cleanName = (p.name || '').trim();
+      counts[cleanName] = (counts[cleanName] || 0) + 1;
+    });
+
+    const duplicates = Object.entries(counts).filter(([name, count]) => count > 1);
+
+    if (duplicates.length === 0) {
+      duplicateAuditResult.innerHTML = `
+        <div class="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>কোনো ডুপ্লিকেট দাগ নেই (সবগুলো ${toBanglaDigits(state.plots.length)} টি দাগ অনন্য)</span>
+        </div>
+      `;
+    } else {
+      const dupItems = duplicates.map(([name, count]) => 
+        `<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">${name} (${toBanglaDigits(count)} বার)</span>`
+      ).join(' ');
+
+      duplicateAuditResult.innerHTML = `
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2 text-amber-400 font-bold text-xs">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            <span>${toBanglaDigits(duplicates.length)} টি ডুপ্লিকেট দাগ নম্বর পাওয়া গেছে:</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5 pt-1">${dupItems}</div>
+        </div>
+      `;
+    }
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+
+  function resolveDuplicatePlotNumbers() {
+    if (!state.plots || state.plots.length === 0) return;
+
+    const groups = {};
+    state.plots.forEach(p => {
+      const cleanName = (p.name || '').trim();
+      if (!groups[cleanName]) groups[cleanName] = [];
+      groups[cleanName].push(p);
+    });
+
+    const subSuffixes = ['ক', 'খ', 'গ', 'ঘ', 'ঙ', 'চ', 'ছ', 'জ'];
+    let resolvedCount = 0;
+
+    Object.entries(groups).forEach(([name, plots]) => {
+      if (plots.length > 1) {
+        plots.forEach((p, idx) => {
+          const suffix = subSuffixes[idx] || (idx + 1);
+          p.name = `${name}/${suffix}`;
+          resolvedCount++;
+        });
+      }
+    });
+
+    if (resolvedCount > 0) {
+      pushHistory();
+      updateInspector();
+      render();
+      checkDuplicatePlotNumbers();
+      playCadSound('merge');
+      showToast(`${toBanglaDigits(resolvedCount)} টি ডুপ্লিকেট দাগ /ক, /খ উপ-দাগ আকারে সমাধান করা হয়েছে!`, 'success');
+    } else {
+      showToast('কোনো ডুপ্লিকেট দাগ পাওয়া যায়নি!', 'info');
+    }
+  }
+
+  // ==========================================
+  // MODULE 20: Advanced Plot Processing (Merge & Union)
+  // ==========================================
+  const plotMergeModal = document.getElementById('plotMergeModal');
+  const btnClosePlotMergeModal = document.getElementById('btnClosePlotMergeModal');
+  const btnStartInteractiveMerge = document.getElementById('btnStartInteractiveMerge');
+  const btnExecuteMergePlots = document.getElementById('btnExecuteMergePlots');
+  const mergePlotASelect = document.getElementById('mergePlotASelect');
+  const mergePlotBSelect = document.getElementById('mergePlotBSelect');
+  const mergeAdjacencyBadge = document.getElementById('mergeAdjacencyBadge');
+  const mergePlotAArea = document.getElementById('mergePlotAArea');
+  const mergePlotBArea = document.getElementById('mergePlotBArea');
+  const mergeTotalArea = document.getElementById('mergeTotalArea');
+  const mergeTotalSqft = document.getElementById('mergeTotalSqft');
+  const mergeOutputName = document.getElementById('mergeOutputName');
+
+  function openPlotMergeModal(selectedPlotId = null) {
+    if (!plotMergeModal) return;
+    const emptyNotice = document.getElementById('mergeEmptyPlotsNotice');
+    if (!state.plots || state.plots.length < 2) {
+      if (emptyNotice) emptyNotice.classList.remove('hidden');
+    } else {
+      if (emptyNotice) emptyNotice.classList.add('hidden');
+    }
+
+    populateMergePlotSelects(selectedPlotId || state.selectedPlotId);
+    plotMergeModal.classList.remove('hidden');
+    updatePlotMergePreview();
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openPlotMergeModal = openPlotMergeModal;
+
+  function populateMergePlotSelects(preferredPlotAId = null) {
+    if (!mergePlotASelect || !mergePlotBSelect) return;
+
+    mergePlotASelect.innerHTML = '';
+    mergePlotBSelect.innerHTML = '';
+
+    state.plots.forEach((p, idx) => {
+      const optA = document.createElement('option');
+      optA.value = p.id;
+      optA.textContent = `${p.name} (দাগ #${idx + 1})`;
+      mergePlotASelect.appendChild(optA);
+
+      const optB = document.createElement('option');
+      optB.value = p.id;
+      optB.textContent = `${p.name} (দাগ #${idx + 1})`;
+      mergePlotBSelect.appendChild(optB);
+    });
+
+    if (preferredPlotAId && state.plots.some(p => p.id === preferredPlotAId)) {
+      mergePlotASelect.value = preferredPlotAId;
+    } else {
+      mergePlotASelect.value = state.plots[0].id;
+    }
+
+    // Auto-select adjacent plot for B if available
+    const plotA = state.plots.find(p => p.id === mergePlotASelect.value);
+    let chosenB = null;
+    if (plotA && window.LSCAD && window.LSCAD.PlotOps) {
+      for (const other of state.plots) {
+        if (other.id !== plotA.id) {
+          const adj = window.LSCAD.PlotOps.checkPlotsAdjacency(plotA.vertices, other.vertices);
+          if (adj.isAdjacent) {
+            chosenB = other.id;
+            break;
+          }
+        }
+      }
+    }
+
+    if (chosenB) {
+      mergePlotBSelect.value = chosenB;
+    } else {
+      const other = state.plots.find(p => p.id !== mergePlotASelect.value);
+      if (other) mergePlotBSelect.value = other.id;
+    }
+  }
+
+  function updatePlotMergePreview() {
+    if (!mergePlotASelect || !mergePlotBSelect) return;
+    const idA = mergePlotASelect.value;
+    const idB = mergePlotBSelect.value;
+
+    const plotA = state.plots.find(p => p.id === idA);
+    const plotB = state.plots.find(p => p.id === idB);
+
+    if (!plotA || !plotB || idA === idB) {
+      if (mergeAdjacencyBadge) {
+        mergeAdjacencyBadge.textContent = 'একই দাগ নির্বাচন করা হয়েছে';
+        mergeAdjacencyBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      }
+      if (mergePlotAArea) mergePlotAArea.textContent = '০.০০০ শতক';
+      if (mergePlotBArea) mergePlotBArea.textContent = '০.০০০ শতক';
+      if (mergeTotalArea) mergeTotalArea.textContent = '০.০০০ শতক (০ কাঠা)';
+      if (mergeTotalSqft) mergeTotalSqft.textContent = '০.০ বর্গফুট';
+      return;
+    }
+
+    const areaA_sqLink = Math.abs(calculatePolygonArea(plotA.vertices));
+    const areaB_sqLink = Math.abs(calculatePolygonArea(plotB.vertices));
+
+    const shotokA = (areaA_sqLink * SQFT_PER_SQLINK / SQFT_PER_SHOTOK);
+    const shotokB = (areaB_sqLink * SQFT_PER_SQLINK / SQFT_PER_SHOTOK);
+    const totalShotok = shotokA + shotokB;
+    const totalKatha = totalShotok / 1.65;
+    const totalSqft = (areaA_sqLink + areaB_sqLink) * SQFT_PER_SQLINK;
+
+    if (mergePlotAArea) mergePlotAArea.textContent = `${toBanglaDigits(shotokA.toFixed(3))} শতক`;
+    if (mergePlotBArea) mergePlotBArea.textContent = `${toBanglaDigits(shotokB.toFixed(3))} শতক`;
+    if (mergeTotalArea) mergeTotalArea.textContent = `${toBanglaDigits(totalShotok.toFixed(3))} শতক (${toBanglaDigits(totalKatha.toFixed(2))} কাঠা)`;
+    if (mergeTotalSqft) mergeTotalSqft.textContent = `${toBanglaDigits(totalSqft.toFixed(1))} বর্গফুট`;
+
+    const adj = window.LSCAD?.PlotOps?.checkPlotsAdjacency 
+      ? window.LSCAD.PlotOps.checkPlotsAdjacency(plotA.vertices, plotB.vertices)
+      : { isAdjacent: true };
+
+    if (mergeAdjacencyBadge) {
+      if (adj.isAdjacent) {
+        mergeAdjacencyBadge.innerHTML = `<span class="flex items-center gap-1">✅ সংলগ্ন দাগ (সাধারণ আইল পাওয়া গেছে)</span>`;
+        mergeAdjacencyBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold';
+      } else {
+        mergeAdjacencyBadge.innerHTML = `<span class="flex items-center gap-1">⚠️ সংলগ্ন নয় (কোনো সাধারণ আইল স্পর্শ করেনি)</span>`;
+        mergeAdjacencyBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold';
+      }
+    }
+
+    if (mergeOutputName) {
+      mergeOutputName.value = `${plotA.name}+${plotB.name.replace(/^(দাগ নং|দাগ)\s*/, '')}`;
+    }
+  }
+
+  function executePlotMerge(plotIdA, plotIdB, customName = null) {
+    if (!plotIdA || !plotIdB || plotIdA === plotIdB) {
+      showToast('মার্জ করার জন্য দুটি ভিন্ন দাগ নির্বাচন করুন!', 'warning');
+      return false;
+    }
+
+    const plotA = state.plots.find(p => p.id === plotIdA);
+    const plotB = state.plots.find(p => p.id === plotIdB);
+
+    if (!plotA || !plotB) {
+      showToast('নির্বাচিত দাগের তথ্য খুঁজে পাওয়া যায়নি!', 'error');
+      return false;
+    }
+
+    // Call union engine from LSCAD.PlotOps
+    const unionRes = window.LSCAD?.PlotOps?.unionCadastralPlots(plotA.vertices, plotB.vertices);
+
+    if (!unionRes || !unionRes.success) {
+      const reason = unionRes?.reason || 'দাগ দুটি পরস্পর সংলগ্ন বা স্পর্শ করা অবস্থায় নেই!';
+      showToast(reason, 'error');
+      return false;
+    }
+
+    const outputName = customName || mergeOutputName?.value || `${plotA.name}+${plotB.name.replace(/^(দাগ নং|দাগ)\s*/, '')}`;
+
+    const mergedPlot = {
+      id: 'plot_' + Date.now(),
+      name: outputName,
+      vertices: unionRes.vertices,
+      strokeColor: plotA.strokeColor || '#f59e0b',
+      fillColor: plotA.fillColor || 'rgba(245, 158, 11, 0.18)',
+      layer: plotA.layer || 'plots',
+      createdAt: new Date().toISOString()
+    };
+
+    // Remove Plot A and Plot B
+    state.plots = state.plots.filter(p => p.id !== plotIdA && p.id !== plotIdB);
+    // Add Merged Plot
+    state.plots.push(mergedPlot);
+    state.selectedPlotId = mergedPlot.id;
+    state.mergeSelectedPlots = [];
+
+    pushHistory();
+    updateInspector();
+    render();
+
+    if (plotMergeModal) plotMergeModal.classList.add('hidden');
+    drawHintBox.classList.add('opacity-0');
+    playCadSound('merge');
+
+    const totalShotok = (unionRes.area * SQFT_PER_SQLINK / SQFT_PER_SHOTOK).toFixed(3);
+    showToast(`দাগ সফলভাবে একত্রিত ও মাঝের আইল অপসারিত হয়েছে! (${outputName} • ${toBanglaDigits(totalShotok)} শতক)`, 'success');
+    return true;
+  }
+  window.applyPlotMerge = executePlotMerge;
+
+  function startInteractiveMerge() {
+    state.tool = 'merge';
+    state.mergeSelectedPlots = [];
+    updateToolUI();
+    if (plotMergeModal) plotMergeModal.classList.add('hidden');
+    drawHintBox.classList.remove('opacity-0');
+    drawHintText.innerHTML = '<span class="text-fuchsia-400 font-bold">[প্লট মার্জ টুল]</span> ক্যানভাসে ১ম দাগের ওপর ক্লিক করুন';
+    showToast('প্লট মার্জ টুল অন! ক্যানভাসে ১ম দাগে ক্লিক করুন', 'info');
+    render();
+  }
+
+  // =========================================================================
+  // Wire Action Buttons (3 Distinct, Non-overlapping Actions + Modules 18 & 20)
+  // =========================================================================
+
+  // Module 18 Ribbon & Inspector Buttons
+  document.getElementById('btnRibbonAutoNumber')?.addEventListener('click', openAutoNumberModal);
+  document.getElementById('btnInspectorOpenAutoNumber')?.addEventListener('click', openAutoNumberModal);
+  if (btnCloseAutoNumberModal) {
+    btnCloseAutoNumberModal.addEventListener('click', () => {
+      autoNumberModal?.classList.add('hidden');
+    });
+  }
+  if (btnStartInteractiveNumbering) {
+    btnStartInteractiveNumbering.addEventListener('click', startInteractiveAutoNumbering);
+  }
+  if (btnBatchSequenceAll) {
+    btnBatchSequenceAll.addEventListener('click', batchSequenceAllPlots);
+  }
+  if (btnCheckDuplicates) {
+    btnCheckDuplicates.addEventListener('click', checkDuplicatePlotNumbers);
+  }
+  if (btnResolveDuplicates) {
+    btnResolveDuplicates.addEventListener('click', resolveDuplicatePlotNumbers);
+  }
+
+  // Module 20 Ribbon & Inspector Buttons
+  document.getElementById('btnRibbonMergePlots')?.addEventListener('click', () => openPlotMergeModal());
+  document.getElementById('btnInspectorOpenMerge')?.addEventListener('click', () => openPlotMergeModal(state.selectedPlotId));
+  if (btnClosePlotMergeModal) {
+    btnClosePlotMergeModal.addEventListener('click', () => {
+      plotMergeModal?.classList.add('hidden');
+    });
+  }
+  if (btnStartInteractiveMerge) {
+    btnStartInteractiveMerge.addEventListener('click', startInteractiveMerge);
+  }
+  if (btnExecuteMergePlots) {
+    btnExecuteMergePlots.addEventListener('click', () => {
+      executePlotMerge(mergePlotASelect?.value, mergePlotBSelect?.value, mergeOutputName?.value);
+    });
+  }
+  if (mergePlotASelect) {
+    mergePlotASelect.addEventListener('change', updatePlotMergePreview);
+  }
+  if (mergePlotBSelect) {
+    mergePlotBSelect.addEventListener('change', updatePlotMergePreview);
+  }
+
+  // Load Demo Plots for Auto Numbering
+  document.getElementById('btnLoadDemoPlotsForAutoNumber')?.addEventListener('click', () => {
+    state.plots = [
+      { id: 'plot_demo_1', name: 'দাগ ৫০১', vertices: [{x: 200, y: 150}, {x: 380, y: 150}, {x: 380, y: 350}, {x: 200, y: 350}], strokeColor: '#38bdf8', fillColor: 'rgba(56, 189, 248, 0.2)', layer: 'plots' },
+      { id: 'plot_demo_2', name: 'দাগ ৫০১', vertices: [{x: 380, y: 150}, {x: 560, y: 150}, {x: 560, y: 350}, {x: 380, y: 350}], strokeColor: '#10b981', fillColor: 'rgba(16, 185, 129, 0.2)', layer: 'plots' },
+      { id: 'plot_demo_3', name: 'দাগ ৫০৩', vertices: [{x: 560, y: 150}, {x: 740, y: 150}, {x: 740, y: 350}, {x: 560, y: 350}], strokeColor: '#f59e0b', fillColor: 'rgba(245, 158, 11, 0.2)', layer: 'plots' }
+    ];
+    state.selectedPlotId = 'plot_demo_1';
+    document.getElementById('canvasEmptyState')?.classList.add('hidden');
+    document.getElementById('autoNumberEmptyPlotsNotice')?.classList.add('hidden');
+    pushHistory();
+    updateInspector();
+    render();
+    resetFitView();
+    checkDuplicatePlotNumbers();
+    showToast('ডেমো ৩টি দাগ লোড করা হয়েছে (ডুপ্লিকেট অডিট ও নাম্বারিং পরীক্ষার জন্য প্রস্তুত)!', 'success');
   });
-  document.getElementById('btnCloseReportModal').addEventListener('click', () => {
-    reportModal.classList.add('hidden');
+
+  // Load Demo Adjacent Plots for Plot Merge
+  document.getElementById('btnLoadDemoPlotsForMerge')?.addEventListener('click', () => {
+    state.plots = [
+      { id: 'plot_m_1', name: 'দাগ নং ৫০১', vertices: [{x: 250, y: 180}, {x: 480, y: 180}, {x: 480, y: 380}, {x: 250, y: 380}], strokeColor: '#38bdf8', fillColor: 'rgba(56, 189, 248, 0.2)', layer: 'plots' },
+      { id: 'plot_m_2', name: 'দাগ নং ৫০২', vertices: [{x: 480, y: 180}, {x: 710, y: 180}, {x: 710, y: 380}, {x: 480, y: 380}], strokeColor: '#10b981', fillColor: 'rgba(16, 185, 129, 0.2)', layer: 'plots' }
+    ];
+    state.selectedPlotId = 'plot_m_1';
+    document.getElementById('canvasEmptyState')?.classList.add('hidden');
+    document.getElementById('mergeEmptyPlotsNotice')?.classList.add('hidden');
+    pushHistory();
+    updateInspector();
+    render();
+    resetFitView();
+    populateMergePlotSelects('plot_m_1');
+    updatePlotMergePreview();
+    showToast('ডেমো ২টি সংলগ্ন দাগ (৫০১ ও ৫০২) তৈরি করা হয়েছে!', 'success');
   });
+
+  // ==========================================
+  // MODULE 11: Digital Pantograph Proportional Scaling
+  // ==========================================
+  const pantographModal = document.getElementById('pantographModal');
+  const btnClosePantographModal = document.getElementById('btnClosePantographModal');
+  const btnRibbonPantograph = document.getElementById('btnRibbonPantograph');
+  const btnExecutePantograph = document.getElementById('btnExecutePantograph');
+  const selPantographTargetScale = document.getElementById('selPantographTargetScale');
+  const pantographCustomFactorRow = document.getElementById('pantographCustomFactorRow');
+  const inpPantographCustomFactor = document.getElementById('inpPantographCustomFactor');
+  const selPantographScope = document.getElementById('selPantographScope');
+  const selPantographAnchor = document.getElementById('selPantographAnchor');
+  const pantographCurrentScaleDisplay = document.getElementById('pantographCurrentScaleDisplay');
+  const pantographFactorBadge = document.getElementById('pantographFactorBadge');
+  const pantographLengthChange = document.getElementById('pantographLengthChange');
+  const pantographAreaMultiplier = document.getElementById('pantographAreaMultiplier');
+
+  function openPantographModal() {
+    if (!pantographModal) return;
+    if (!state.plots || state.plots.length === 0) {
+      showToast('প্যান্টোগ্রাফ স্কেলিং করার জন্য প্রথমে নকশায় দাগ আঁকুন বা লোড করুন!', 'warning');
+    }
+    const curScale = state.scalePreset || '16_inch';
+    const scaleNames = {
+      '16_inch': '১৬" = ১ মাইল (16 inch)',
+      '32_inch': '৩২" = ১ মাইল (32 inch)',
+      '64_inch': '৬৪" = ১ মাইল (64 inch)',
+      '80_inch': '৮০" = ১ মাইল (80 inch)',
+      '4_inch': '৪" = ১ মাইল (4 inch)'
+    };
+    if (pantographCurrentScaleDisplay) {
+      pantographCurrentScaleDisplay.textContent = scaleNames[curScale] || '১৬" = ১ মাইল (16 inch)';
+    }
+
+    updatePantographPreview();
+    pantographModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openPantographModal = openPantographModal;
+
+  function getSelectedPantographFactor() {
+    const val = selPantographTargetScale?.value;
+    if (val === 'custom') {
+      const customVal = parseFloat(inpPantographCustomFactor?.value);
+      return (!isNaN(customVal) && customVal > 0) ? customVal : 1.0;
+    }
+    return parseFloat(val) || 2.0;
+  }
+
+  function updatePantographPreview() {
+    const factor = getSelectedPantographFactor();
+    const isCustom = selPantographTargetScale?.value === 'custom';
+    if (pantographCustomFactorRow) {
+      pantographCustomFactorRow.classList.toggle('hidden', !isCustom);
+    }
+    if (pantographFactorBadge) {
+      pantographFactorBadge.textContent = `${factor.toFixed(2)}× ${factor >= 1 ? 'এনলার্জমেন্ট' : 'রিডাকশন'}`;
+    }
+    if (pantographLengthChange) {
+      pantographLengthChange.textContent = `${(factor * 100).toFixed(1)}% (${factor.toFixed(2)} গুণ)`;
+    }
+    if (pantographAreaMultiplier) {
+      const areaFactor = factor * factor;
+      pantographAreaMultiplier.textContent = `${areaFactor.toFixed(2)}× গুণ (k²)`;
+    }
+  }
+
+  function executePantographScaling() {
+    if (!state.plots || state.plots.length === 0) {
+      showToast('স্কেল রূপান্তর করার জন্য কোনো দাগ নেই!', 'warning');
+      return;
+    }
+
+    const factor = getSelectedPantographFactor();
+    if (factor <= 0) {
+      showToast('সঠিক স্কেল ফ্যাক্টর দিন!', 'warning');
+      return;
+    }
+
+    const scope = selPantographScope?.value || 'selected';
+    const anchorMode = selPantographAnchor?.value || 'centroid';
+
+    let scaledCount = 0;
+    if (scope === 'selected') {
+      const targetPlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+      if (!targetPlot) {
+        showToast('কোনো দাগ নির্বাচন করা নেই!', 'warning');
+        return;
+      }
+      let anchor = null;
+      if (anchorMode === 'origin') {
+        anchor = { x: 0, y: 0 };
+      }
+      if (window.LSCAD?.PlotOps?.scalePlotGeometry(targetPlot, factor, anchor)) {
+        scaledCount = 1;
+      }
+    } else {
+      let anchor = null;
+      if (anchorMode === 'origin') {
+        anchor = { x: 0, y: 0 };
+      }
+      scaledCount = window.LSCAD?.PlotOps?.scaleAllPlotsGeometry(state.plots, factor, anchor) || 0;
+    }
+
+    if (scaledCount > 0) {
+      pushHistory();
+      updateInspector();
+      render();
+      resetFitView();
+      if (pantographModal) pantographModal.classList.add('hidden');
+      playCadSound('calibrate');
+      showToast(`প্যান্টোগ্রাফ সফল! ${toBanglaDigits(scaledCount)} টি দাগ ${toBanglaDigits(factor.toFixed(2))}× স্কেলে রূপান্তরিত হয়েছে!`, 'success');
+    } else {
+      showToast('প্যান্টোগ্রাফ স্কেলিং প্রয়োগ ব্যর্থ হয়েছে!', 'error');
+    }
+  }
+
+  // ==========================================
+  // MODULE 21: Boundary Closure & Topology Validation Studio
+  // ==========================================
+  const topologyModal = document.getElementById('topologyModal');
+  const btnCloseTopologyModal = document.getElementById('btnCloseTopologyModal');
+  const btnRibbonTopology = document.getElementById('btnRibbonTopology');
+  const btnAutoRepairAllTopology = document.getElementById('btnAutoRepairAllTopology');
+  const btnRescanTopology = document.getElementById('btnRescanTopology');
+  const btnFixGapsOnly = document.getElementById('btnFixGapsOnly');
+  const btnFixDuplicatesOnly = document.getElementById('btnFixDuplicatesOnly');
+  const btnSimplifyCollinearOnly = document.getElementById('btnSimplifyCollinearOnly');
+  const selTopologyTolerance = document.getElementById('selTopologyTolerance');
+  const topologyScoreNumber = document.getElementById('topologyScoreNumber');
+  const topologyScoreBar = document.getElementById('topologyScoreBar');
+  const topologyIssueCountBadge = document.getElementById('topologyIssueCountBadge');
+  const topologySummaryText = document.getElementById('topologySummaryText');
+  const topologyIssuesCountLabel = document.getElementById('topologyIssuesCountLabel');
+  const topologyIssuesList = document.getElementById('topologyIssuesList');
+
+  let lastTopologyAudit = null;
+
+  function openTopologyModal() {
+    if (!topologyModal) return;
+    runTopologyAudit();
+    topologyModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openTopologyModal = openTopologyModal;
+
+  function runTopologyAudit() {
+    const tol = parseFloat(selTopologyTolerance?.value) || 10.0;
+    if (!state.plots || state.plots.length === 0) {
+      lastTopologyAudit = { score: 100, totalIssues: 0, gaps: [], intersections: [], duplicates: [], collinear: [] };
+      renderTopologyAuditUI(lastTopologyAudit);
+      return;
+    }
+
+    if (window.LSCAD?.PlotOps?.checkTopology) {
+      lastTopologyAudit = window.LSCAD.PlotOps.checkTopology(state.plots, tol);
+    } else {
+      lastTopologyAudit = { score: 100, totalIssues: 0, gaps: [], intersections: [], duplicates: [], collinear: [] };
+    }
+    renderTopologyAuditUI(lastTopologyAudit);
+  }
+
+  function renderTopologyAuditUI(audit) {
+    if (!audit) return;
+    const score = audit.score || 0;
+    const total = audit.totalIssues || 0;
+
+    if (topologyScoreNumber) {
+      topologyScoreNumber.textContent = toBanglaDigits(score);
+      topologyScoreNumber.className = `text-2xl font-extrabold font-mono ${score >= 90 ? 'text-emerald-400' : score >= 70 ? 'text-amber-400' : 'text-rose-400'}`;
+    }
+    if (topologyScoreBar) {
+      const barColor = score >= 90 ? 'bg-emerald-500' : score >= 70 ? 'bg-amber-500' : 'bg-rose-500';
+      topologyScoreBar.innerHTML = `<div class="${barColor} h-full transition-all duration-300" style="width: ${score}%;"></div>`;
+    }
+    if (topologyIssueCountBadge) {
+      topologyIssueCountBadge.textContent = `${toBanglaDigits(total)} টি`;
+      topologyIssueCountBadge.className = `text-xl font-extrabold font-mono mt-1 ${total === 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+    }
+    if (topologySummaryText) {
+      if (total === 0) {
+        topologySummaryText.textContent = 'বাউন্ডারি সম্পূর্ণ ত্রুটিমুক্ত ও নিখুঁত';
+        topologySummaryText.className = 'text-[10px] text-emerald-400 mt-2 font-medium';
+      } else {
+        topologySummaryText.textContent = `${toBanglaDigits(total)} টি জ্যামিতিক অসামঞ্জস্য পাওয়া গেছে`;
+        topologySummaryText.className = 'text-[10px] text-amber-300 mt-2 font-medium';
+      }
+    }
+    if (topologyIssuesCountLabel) {
+      topologyIssuesCountLabel.textContent = `${toBanglaDigits(total)} টি সমস্যা`;
+    }
+
+    if (!topologyIssuesList) return;
+    topologyIssuesList.innerHTML = '';
+
+    if (total === 0) {
+      const cleanEl = document.createElement('div');
+      cleanEl.className = 'p-4 rounded-xl bg-slate-950/40 border border-emerald-500/30 text-center text-emerald-400 text-xs font-medium flex items-center justify-center gap-2';
+      cleanEl.innerHTML = `<span>✅ নকশার সকল দাগের বাউন্ডারি সম্পূর্ণ আবদ্ধ, সিল্ড ও টপোলজিক্যালভাবে ত্রুটিমুক্ত।</span>`;
+      topologyIssuesList.appendChild(cleanEl);
+      return;
+    }
+
+    // Render Gaps
+    (audit.gaps || []).forEach(g => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-rose-950/30 border border-rose-500/30 flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0"></span>
+          <div class="truncate">
+            <span class="font-bold text-rose-300">${g.plotName}</span>
+            <span class="text-[10px] text-slate-400 block">${g.message || g.desc || 'সীমানা গ্যাপ'}</span>
+          </div>
+        </div>
+        <button type="button" class="btn-repair-single-plot px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold flex-shrink-0 transition-colors cursor-pointer" data-plot-id="${g.plotId}">
+          সিল করুন
+        </button>
+      `;
+      topologyIssuesList.appendChild(item);
+    });
+
+    // Render Self-Intersections
+    (audit.selfIntersections || audit.intersections || []).forEach(inter => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>
+          <div class="truncate">
+            <span class="font-bold text-amber-300">${inter.plotName}</span>
+            <span class="text-[10px] text-slate-400 block">${inter.message || inter.desc || 'ক্রসিং বাউন্ডারি'}</span>
+          </div>
+        </div>
+        <span class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono flex-shrink-0">সেলফ-ক্রস</span>
+      `;
+      topologyIssuesList.appendChild(item);
+    });
+
+    // Render Overlaps
+    (audit.overlaps || []).forEach(ov => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-rose-950/30 border border-rose-500/30 flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0"></span>
+          <div class="truncate">
+            <span class="font-bold text-rose-300">${ov.plotNameA} ও ${ov.plotNameB}</span>
+            <span class="text-[10px] text-slate-400 block">${ov.message || 'পরস্পর ওভারল্যাপ'}</span>
+          </div>
+        </div>
+        <span class="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono flex-shrink-0">ওভারল্যাপ</span>
+      `;
+      topologyIssuesList.appendChild(item);
+    });
+
+    // Render Duplicates
+    (audit.duplicates || []).forEach(dup => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-sky-950/30 border border-sky-500/30 flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-sky-400 flex-shrink-0"></span>
+          <div class="truncate">
+            <span class="font-bold text-sky-300">${dup.plotName}</span>
+            <span class="text-[10px] text-slate-400 block">${dup.message || dup.desc || 'ডুপ্লিকেট পয়েন্ট'}</span>
+          </div>
+        </div>
+        <button type="button" class="btn-repair-single-plot px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold flex-shrink-0 transition-colors cursor-pointer" data-plot-id="${dup.plotId}">
+          ক্লিন করুন
+        </button>
+      `;
+      topologyIssuesList.appendChild(item);
+    });
+
+    // Render Collinear Points
+    (audit.collinear || []).forEach(col => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>
+          <div class="truncate">
+            <span class="font-bold text-emerald-300">${col.plotName}</span>
+            <span class="text-[10px] text-slate-400 block">${col.message || col.desc || 'অতিরিক্ত পয়েন্ট'}</span>
+          </div>
+        </div>
+        <button type="button" class="btn-repair-single-plot px-2 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold flex-shrink-0 transition-colors cursor-pointer" data-plot-id="${col.plotId}">
+          সরলীকরণ
+        </button>
+      `;
+      topologyIssuesList.appendChild(item);
+    });
+
+    // Attach click events on single repair buttons
+    topologyIssuesList.querySelectorAll('.btn-repair-single-plot').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pId = btn.getAttribute('data-plot-id');
+        const plot = state.plots.find(p => p.id === pId);
+        if (plot && window.LSCAD?.PlotOps?.repairPlotTopology(plot)) {
+          pushHistory();
+          updateInspector();
+          render();
+          runTopologyAudit();
+          playCadSound('merge');
+          showToast(`${plot.name} এর বাউন্ডারি মেরামত সম্পন্ন হয়েছে!`, 'success');
+        }
+      });
+    });
+  }
+
+  function executeTopologyAutoRepairAll() {
+    if (!state.plots || state.plots.length === 0) {
+      showToast('মেরামত করার মতো কোনো দাগ নেই!', 'info');
+      return;
+    }
+    const tol = parseFloat(selTopologyTolerance?.value) || 10.0;
+    const repaired = window.LSCAD?.PlotOps?.repairAllPlotsTopology(state.plots, tol) || 0;
+    pushHistory();
+    updateInspector();
+    render();
+    runTopologyAudit();
+    playCadSound('merge');
+    showToast(`১-ক্লিকে মেরামত সম্পন্ন! মোট ${toBanglaDigits(repaired)} টি দাগের টপোলজি সংশোধন করা হয়েছে।`, 'success');
+  }
+
+  function executeFixGapsOnly() {
+    if (!state.plots || state.plots.length === 0) return;
+    const tol = parseFloat(selTopologyTolerance?.value) || 10.0;
+    const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    let count = 0;
+    state.plots.forEach(plot => {
+      if (plot.vertices && plot.vertices.length > 2) {
+        const v = plot.vertices;
+        const gap = dist(v[0], v[v.length - 1]);
+        if (gap > 0.001 && gap <= tol * 3) {
+          v[v.length - 1] = { x: v[0].x, y: v[0].y };
+          count++;
+        }
+      }
+    });
+    pushHistory();
+    render();
+    runTopologyAudit();
+    playCadSound('merge');
+    showToast(`${toBanglaDigits(count)} টি দাগের সীমানা গ্যাপ সিল করা হয়েছে!`, 'success');
+  }
+
+  function executeFixDuplicatesOnly() {
+    if (!state.plots || state.plots.length === 0) return;
+    const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    let count = 0;
+    state.plots.forEach(plot => {
+      if (plot.vertices && plot.vertices.length > 3) {
+        const cleaned = [];
+        for (let i = 0; i < plot.vertices.length; i++) {
+          const pt = plot.vertices[i];
+          const prev = cleaned[cleaned.length - 1];
+          if (!prev || dist(pt, prev) > 0.6) {
+            cleaned.push(pt);
+          }
+        }
+        if (cleaned.length < plot.vertices.length) {
+          plot.vertices = cleaned;
+          count++;
+        }
+      }
+    });
+    pushHistory();
+    render();
+    runTopologyAudit();
+    playCadSound('merge');
+    showToast(`${toBanglaDigits(count)} টি দাগের অতিরিক্ত ডুপ্লিকেট পয়েন্ট সরানো হয়েছে!`, 'success');
+  }
+
+  function executeSimplifyCollinearOnly() {
+    if (!state.plots || state.plots.length === 0) return;
+    let count = 0;
+    state.plots.forEach(plot => {
+      if (plot.vertices && plot.vertices.length > 3) {
+        const v = plot.vertices;
+        const simplified = [];
+        for (let i = 0; i < v.length; i++) {
+          const prev = v[(i - 1 + v.length) % v.length];
+          const curr = v[i];
+          const next = v[(i + 1) % v.length];
+          const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
+          const v2 = { x: next.x - curr.x, y: next.y - curr.y };
+          const cross = v1.x * v2.y - v1.y * v2.x;
+          const l1 = Math.hypot(v1.x, v1.y);
+          const l2 = Math.hypot(v2.x, v2.y);
+          if (l1 > 1.0 && l2 > 1.0 && Math.abs(cross) / (l1 * l2) < 0.001) {
+            continue;
+          }
+          simplified.push(curr);
+        }
+        if (simplified.length >= 3 && simplified.length < v.length) {
+          plot.vertices = simplified;
+          count++;
+        }
+      }
+    });
+    pushHistory();
+    render();
+    runTopologyAudit();
+    playCadSound('merge');
+    showToast(`${toBanglaDigits(count)} টি দাগের সরলরেখা পয়েন্ট স্মুথ করা হয়েছে!`, 'success');
+  }
+
+  // Wire Module 11 (Pantograph) Listeners
+  btnRibbonPantograph?.addEventListener('click', openPantographModal);
+  document.getElementById('btnInspectorPantograph')?.addEventListener('click', openPantographModal);
+  btnClosePantographModal?.addEventListener('click', () => pantographModal?.classList.add('hidden'));
+  btnExecutePantograph?.addEventListener('click', executePantographScaling);
+  selPantographTargetScale?.addEventListener('change', updatePantographPreview);
+  inpPantographCustomFactor?.addEventListener('input', updatePantographPreview);
+
+  // Wire Module 21 (Topology) Listeners
+  btnRibbonTopology?.addEventListener('click', openTopologyModal);
+  document.getElementById('btnInspectorTopology')?.addEventListener('click', openTopologyModal);
+  btnCloseTopologyModal?.addEventListener('click', () => topologyModal?.classList.add('hidden'));
+  btnAutoRepairAllTopology?.addEventListener('click', executeTopologyAutoRepairAll);
+  btnRescanTopology?.addEventListener('click', runTopologyAudit);
+  selTopologyTolerance?.addEventListener('change', runTopologyAudit);
+  btnFixGapsOnly?.addEventListener('click', executeFixGapsOnly);
+  btnFixDuplicatesOnly?.addEventListener('click', executeFixDuplicatesOnly);
+  btnSimplifyCollinearOnly?.addEventListener('click', executeSimplifyCollinearOnly);
+
+  // Backdrop click to close modals
+  autoNumberModal?.addEventListener('click', e => {
+    if (e.target === autoNumberModal) autoNumberModal.classList.add('hidden');
+  });
+  plotMergeModal?.addEventListener('click', e => {
+    if (e.target === plotMergeModal) plotMergeModal.classList.add('hidden');
+  });
+  pantographModal?.addEventListener('click', e => {
+    if (e.target === pantographModal) pantographModal.classList.add('hidden');
+  });
+  topologyModal?.addEventListener('click', e => {
+    if (e.target === topologyModal) topologyModal.classList.add('hidden');
+  });
+
+  // ==========================================
+  // MODULE 16: Object Properties & Vertex Coordinate Table Studio
+  // ==========================================
+  const objectPropsModal = document.getElementById('objectPropsModal');
+  const btnCloseObjectPropsModal = document.getElementById('btnCloseObjectPropsModal');
+  const btnRibbonProps = document.getElementById('btnRibbonProps');
+  const btnCopyCoordsTable = document.getElementById('btnCopyCoordsTable');
+  const btnExportCoordsCSV = document.getElementById('btnExportCoordsCSV');
+  const coordsTableBody = document.getElementById('coordsTableBody');
+
+  let currentPropsPlot = null;
+  let currentPropsData = null;
+
+  function openObjectPropsModal() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot || !activePlot.vertices || activePlot.vertices.length < 3) {
+      showToast('দয়া করে প্রথমে একটি দাগ সিলেক্ট করুন বা অঙ্কন করুন', 'warning');
+      return;
+    }
+
+    currentPropsPlot = activePlot;
+    const vs = activePlot.vertices;
+    const area = calculateShoelaceArea(vs);
+    const perim = calculatePerimeter(vs);
+    const c = calculateCentroid(vs);
+
+    // Compute bounding box
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    vs.forEach(p => {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+
+    let rawRows = [];
+    if (window.LSCAD?.PlotOps?.getPlotVerticesDetailedTable) {
+      rawRows = window.LSCAD.PlotOps.getPlotVerticesDetailedTable(activePlot);
+    }
+
+    currentPropsData = {
+      plotName: activePlot.name,
+      areaSqLinks: area,
+      areaShotok: (area * SQFT_PER_SQLINK / SQFT_PER_SHOTOK).toFixed(3),
+      areaSqft: (area * SQFT_PER_SQLINK).toFixed(1),
+      perimeterLinks: perim.toFixed(1),
+      perimeterFeet: (perim * FEET_PER_LINK).toFixed(1),
+      centroid: c,
+      boundingBox: { widthLinks: (maxX - minX).toFixed(1), heightLinks: (maxY - minY).toFixed(1) },
+      vertices: rawRows.map((r, i) => ({
+        index: i,
+        vertexName: `P${i + 1}`,
+        xLinks: r.xLinks,
+        yLinks: r.yLinks,
+        xFeet: r.xFeet,
+        yFeet: r.yFeet,
+        nextDistLinks: r.distLink,
+        nextDistFeet: r.distFeetInch,
+        bearingDeg: r.bearing || '0.0°',
+        bearingDirection: ''
+      }))
+    };
+
+    // Populate Header & Summary Cards
+    const nameBadge = document.getElementById('propsPlotNameBadge');
+    if (nameBadge) nameBadge.textContent = currentPropsPlot.name;
+    const totalAreaEl = document.getElementById('propsTotalArea');
+    if (totalAreaEl) totalAreaEl.textContent = `${currentPropsData.areaShotok} শতক`;
+    const totalSqftEl = document.getElementById('propsTotalSqft');
+    if (totalSqftEl) totalSqftEl.textContent = `${currentPropsData.areaSqft} বর্গফুট`;
+    const totalPerimEl = document.getElementById('propsTotalPerimeter');
+    if (totalPerimEl) totalPerimEl.textContent = `${currentPropsData.perimeterFeet} ফুট`;
+    const perimLinksEl = document.getElementById('propsPerimeterLinks');
+    if (perimLinksEl) perimLinksEl.textContent = `${currentPropsData.perimeterLinks} লিংক`;
+    const centroidEl = document.getElementById('propsCentroid');
+    if (centroidEl) centroidEl.textContent = `X: ${currentPropsData.centroid.x.toFixed(1)}, Y: ${currentPropsData.centroid.y.toFixed(1)}`;
+    const bboxEl = document.getElementById('propsBoundingBox');
+    if (bboxEl) bboxEl.textContent = `${currentPropsData.boundingBox.widthLinks} × ${currentPropsData.boundingBox.heightLinks} lk`;
+
+    // Populate Table Body
+    if (coordsTableBody) {
+      coordsTableBody.innerHTML = '';
+      currentPropsData.vertices.forEach(v => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-cyan-950/30 transition-colors cursor-pointer group';
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-bold text-white group-hover:text-cyan-400 flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+            <span>${v.vertexName}</span>
+          </td>
+          <td class="py-2 px-2 text-cyan-300 font-bold">${v.xLinks}</td>
+          <td class="py-2 px-2 text-cyan-300 font-bold">${v.yLinks}</td>
+          <td class="py-2 px-2 text-amber-300">${v.xFeet}</td>
+          <td class="py-2 px-2 text-amber-300">${v.yFeet}</td>
+          <td class="py-2 px-2 text-center text-emerald-400 font-semibold">${v.nextDistLinks} lk (${v.nextDistFeet}')</td>
+          <td class="py-2 px-2 text-center text-indigo-300">${v.bearingDeg}° ${v.bearingDirection}</td>
+        `;
+
+        // Interactive spotlight on canvas on hover
+        tr.addEventListener('mouseenter', () => {
+          state.highlightedVertex = {
+            x: parseFloat(v.xLinks),
+            y: parseFloat(v.yLinks),
+            index: v.index,
+            name: v.vertexName
+          };
+          render();
+        });
+        tr.addEventListener('mouseleave', () => {
+          state.highlightedVertex = null;
+          render();
+        });
+
+        coordsTableBody.appendChild(tr);
+      });
+    }
+
+    if (objectPropsModal) objectPropsModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openObjectPropsModal = openObjectPropsModal;
+
+  function exportCoordinatesCSV() {
+    if (!currentPropsData || !currentPropsData.vertices) {
+      showToast('কোনো কোঅর্ডিনেট ডাটা পাওয়া যায়নি', 'warning');
+      return;
+    }
+    let csv = '\uFEFFVertex,X_Links,Y_Links,X_Feet,Y_Feet,Aisle_Length_Links,Aisle_Length_Feet,Bearing_Deg,Bearing_Direction\r\n';
+    currentPropsData.vertices.forEach(v => {
+      csv += `${v.vertexName},${v.xLinks},${v.yLinks},${v.xFeet},${v.yFeet},${v.nextDistLinks},${v.nextDistFeet},${v.bearingDeg},${v.bearingDirection}\r\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Plot_Coordinates_${currentPropsPlot?.name || 'Survey'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('কোঅর্ডিনেট টেবিল CSV সফলভাবে ডাউনলোড হয়েছে!', 'success');
+  }
+
+  function copyCoordinatesTable() {
+    if (!currentPropsData || !currentPropsData.vertices) return;
+    let tsv = 'Vertex\tX (Links)\tY (Links)\tX (Feet)\tY (Feet)\tLength (Links)\tLength (Feet)\tBearing\r\n';
+    currentPropsData.vertices.forEach(v => {
+      tsv += `${v.vertexName}\t${v.xLinks}\t${v.yLinks}\t${v.xFeet}\t${v.yFeet}\t${v.nextDistLinks}\t${v.nextDistFeet}\t${v.bearingDeg}° ${v.bearingDirection}\r\n`;
+    });
+    navigator.clipboard.writeText(tsv).then(() => {
+      showToast('কোঅর্ডিনেট টেবিল ক্লিপবোর্ডে কপি হয়েছে (Excel-এ পেস্ট করতে পারবেন)', 'success');
+    }).catch(() => {
+      showToast('ক্লিপবোর্ড কপি ব্যর্থ হয়েছে', 'error');
+    });
+  }
+
+  // ==========================================
+  // MODULE 17: Geo-Referencing, WGS84 GPS Coordinates & Satellite Overlay Studio
+  // ==========================================
+  const geoRefModal = document.getElementById('geoRefModal');
+  const btnCloseGeoRefModal = document.getElementById('btnCloseGeoRefModal');
+  const btnRibbonGeoRef = document.getElementById('btnRibbonGeoRef');
+  const btnToggleSatelliteMap = document.getElementById('btnToggleSatelliteMap');
+  const sliderSatelliteOpacity = document.getElementById('sliderSatelliteOpacity');
+  const valSatelliteOpacity = document.getElementById('valSatelliteOpacity');
+  const inpGeoLat = document.getElementById('inpGeoLat');
+  const inpGeoLng = document.getElementById('inpGeoLng');
+  const btmEasting = document.getElementById('btmEasting');
+  const btmNorthing = document.getElementById('btmNorthing');
+  const btnDownloadKMLFromGeo = document.getElementById('btnDownloadKMLFromGeo');
+
+  function openGeoRefModal() {
+    if (!geoRefModal) return;
+    if (inpGeoLat && state.satellite.originGPS) inpGeoLat.value = state.satellite.originGPS.lat;
+    if (inpGeoLng && state.satellite.originGPS) inpGeoLng.value = state.satellite.originGPS.lng;
+    updateBTMProjectionDisplay();
+    updateSatelliteUIState();
+    geoRefModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openGeoRefModal = openGeoRefModal;
+
+  function updateBTMProjectionDisplay() {
+    const lat = parseFloat(inpGeoLat?.value) || 23.316700;
+    const lng = parseFloat(inpGeoLng?.value) || 90.750000;
+    state.satellite.originGPS = { lat, lng };
+
+    if (window.LSCAD?.PlotOps?.convertGPSToBTM) {
+      const btm = window.LSCAD.PlotOps.convertGPSToBTM(lat, lng);
+      if (btmEasting) btmEasting.textContent = `${btm.easting.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m`;
+      if (btmNorthing) btmNorthing.textContent = `${btm.northing.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m`;
+    }
+  }
+
+  function updateSatelliteUIState() {
+    if (btnToggleSatelliteMap) {
+      if (state.satellite.enabled) {
+        btnToggleSatelliteMap.textContent = 'স্যাটেলাইট বন্ধ করুন';
+        btnToggleSatelliteMap.className = 'px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors cursor-pointer';
+      } else {
+        btnToggleSatelliteMap.textContent = 'স্যাটেলাইট চালু করুন';
+        btnToggleSatelliteMap.className = 'px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer';
+      }
+    }
+    const quickDot = document.getElementById('quickSatelliteDot');
+    const quickBtn = document.getElementById('btnQuickToggleSatellite');
+    const quickText = document.getElementById('quickSatelliteText');
+    if (quickDot && quickBtn) {
+      if (state.satellite.enabled) {
+        quickDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse';
+        quickBtn.classList.add('bg-emerald-950/70', 'border-emerald-500/50', 'text-emerald-300');
+        if (quickText) quickText.textContent = 'স্যাটেলাইট চালু';
+      } else {
+        quickDot.className = 'w-2 h-2 rounded-full bg-slate-500 transition-colors';
+        quickBtn.classList.remove('bg-emerald-950/70', 'border-emerald-500/50', 'text-emerald-300');
+        if (quickText) quickText.textContent = 'স্যাটেলাইট ভিউ';
+      }
+    }
+    if (sliderSatelliteOpacity) {
+      sliderSatelliteOpacity.value = Math.round((state.satellite.opacity || 0.7) * 100);
+    }
+    if (valSatelliteOpacity) {
+      valSatelliteOpacity.textContent = `${Math.round((state.satellite.opacity || 0.7) * 100)}%`;
+    }
+    if (typeof updateSatProviderUI === 'function') {
+      updateSatProviderUI();
+    }
+
+    // Quick HUD Bar Synchronizer
+    const satBar = document.getElementById('satelliteQuickBar');
+    if (satBar) {
+      if (state.satellite.enabled) {
+        satBar.classList.remove('hidden');
+      } else {
+        satBar.classList.add('hidden');
+      }
+    }
+    const quickSatOp = document.getElementById('quickSatOpacity');
+    const quickSatOpVal = document.getElementById('quickSatOpacityVal');
+    const curOp = Math.round((state.satellite.opacity !== undefined ? state.satellite.opacity : 0.65) * 100);
+    if (quickSatOp) quickSatOp.value = curOp;
+    if (quickSatOpVal) quickSatOpVal.textContent = `${curOp}%`;
+
+    const btnTop = document.getElementById('btnSatLayerTop');
+    const btnBottom = document.getElementById('btnSatLayerBottom');
+    const btnMultiply = document.getElementById('btnSatPaperMultiply');
+
+    const isUnder = state.satellite.layerPosition === 'bottom';
+    const isMultiply = state.satellite.blendMode === 'multiply';
+
+    if (btnTop && btnBottom) {
+      if (!isUnder) {
+        btnTop.className = 'px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] cursor-pointer transition-colors shadow-sm';
+        btnBottom.className = 'px-2 py-1 rounded-lg text-slate-400 hover:text-white font-bold text-[10px] cursor-pointer transition-colors';
+      } else {
+        btnTop.className = 'px-2 py-1 rounded-lg text-slate-400 hover:text-white font-bold text-[10px] cursor-pointer transition-colors';
+        btnBottom.className = 'px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] cursor-pointer transition-colors shadow-sm';
+      }
+    }
+
+    if (btnMultiply) {
+      if (isMultiply) {
+        btnMultiply.className = 'px-2.5 py-1 rounded-xl bg-amber-600 text-white font-extrabold text-[10px] shadow-sm flex items-center gap-1 transition-all cursor-pointer shrink-0 ring-1 ring-amber-400';
+      } else {
+        btnMultiply.className = 'px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-[10px] border border-slate-700 flex items-center gap-1 transition-all cursor-pointer shrink-0';
+      }
+    }
+  }
+
+  function toggleSatelliteOverlay() {
+    state.satellite.enabled = !state.satellite.enabled;
+    updateSatelliteUIState();
+    render();
+    playCadSound('snap');
+    showToast(state.satellite.enabled ? '🛰️ লাইভ স্যাটেলাইট ওভারলে চালু হয়েছে!' : 'স্যাটেলাইট ওভারলে বন্ধ করা হয়েছে', 'info');
+  }
+
+  // AutoCAD 2-Point Georeference Alignment Engine
+  // Aligns, scales, and rotates scanned Mouza Map directly onto real-world Satellite & GPS!
+  function handleGeoAlignClick(worldX, worldY) {
+    const activeMap = getActiveMouzaMap();
+    if (!activeMap || !activeMap.loaded) {
+      showToast('কোনো মৌজা নকশা লোড করা নেই', 'warning');
+      state.geoAlignMode = null;
+      drawHintBox.classList.add('opacity-0');
+      return;
+    }
+
+    if (!state.geoAlignMode || state.geoAlignMode.step === 1) {
+      const defaultLat = state.satellite?.originGPS?.lat || 23.3167;
+      const defaultLng = state.satellite?.originGPS?.lng || 90.7500;
+
+      showPromptDialog(
+        'AutoCAD ALIGN - ১ম পয়েন্টের GPS কোঅর্ডিনেট দিন',
+        'অক্ষাংশ, দ্রাঘিমাংশ (যেমন: 23.3167, 90.7500)',
+        `${defaultLat}, ${defaultLng}`,
+        gpsStr => {
+          if (!gpsStr) {
+            showToast('অ্যালাইনমেন্ট বাতিল করা হয়েছে', 'info');
+            state.geoAlignMode = null;
+            drawHintBox.classList.add('opacity-0');
+            return;
+          }
+          const parts = gpsStr.split(/[,;\s]+/).map(parseFloat).filter(n => !isNaN(n));
+          const lat = parts[0] || defaultLat;
+          const lng = parts[1] || defaultLng;
+
+          state.geoAlignMode = {
+            active: true,
+            step: 2,
+            p1: { worldX, worldY, lat, lng }
+          };
+
+          drawHintBox.classList.remove('opacity-0');
+          drawHintText.innerHTML = '<span class="text-amber-400 font-bold">[AutoCAD ALIGN ধাপ ২/২]</span> মৌজা নকশার ২য় পরিচিত পয়েন্টে (যেমন: অন্য প্রান্তের মোড় বা পুকুর) ক্লিক করুন';
+          playCadSound('beep');
+          render();
+        }
+      );
+    } else if (state.geoAlignMode.step === 2) {
+      const p1 = state.geoAlignMode.p1;
+      const p2World = { x: worldX, y: worldY };
+      const mapDist = Math.hypot(p2World.x - p1.worldX, p2World.y - p1.worldY);
+      if (mapDist < 20) {
+        showToast('২য় পয়েন্টটি ১ম পয়েন্টের খুব কাছে। দূরবর্তী অন্য পয়েন্ট নির্বাচন করুন।', 'error');
+        return;
+      }
+
+      const dLat = (p2World.y - p1.worldY) / 550000;
+      const dLng = (p2World.x - p1.worldX) / 505000;
+      const defLat2 = (p1.lat - dLat).toFixed(6);
+      const defLng2 = (p1.lng + dLng).toFixed(6);
+
+      showPromptDialog(
+        'AutoCAD ALIGN - ২য় পয়েন্টের GPS কোঅর্ডিনেট দিন',
+        'অক্ষাংশ, দ্রাঘিমাংশ (যেমন: 23.3180, 90.7520)',
+        `${defLat2}, ${defLng2}`,
+        gpsStr => {
+          if (!gpsStr) {
+            showToast('অ্যালাইনমেন্ট বাতিল করা হয়েছে', 'info');
+            state.geoAlignMode = null;
+            drawHintBox.classList.add('opacity-0');
+            return;
+          }
+          const parts = gpsStr.split(/[,;\s]+/).map(parseFloat).filter(n => !isNaN(n));
+          const lat2 = parts[0] || parseFloat(defLat2);
+          const lng2 = parts[1] || parseFloat(defLng2);
+
+          const originGPS = { lat: p1.lat, lng: p1.lng };
+          state.satellite.originGPS = originGPS;
+          if (inpGeoLat) inpGeoLat.value = p1.lat;
+          if (inpGeoLng) inpGeoLng.value = p1.lng;
+
+          const targetX1 = 0;
+          const targetY1 = 0;
+          const targetX2 = (lng2 - p1.lng) * 505000;
+          const targetY2 = -(lat2 - p1.lat) * 550000;
+
+          const targetDist = Math.hypot(targetX2 - targetX1, targetY2 - targetY1);
+          const S = targetDist > 0 ? (targetDist / mapDist) : 1;
+
+          const mapAngle = Math.atan2(p2World.y - p1.worldY, p2World.x - p1.worldX);
+          const targetAngle = Math.atan2(targetY2 - targetY1, targetX2 - targetX1);
+          const rotDeltaDeg = (targetAngle - mapAngle) * (180 / Math.PI);
+
+          const oldW = activeMap.width;
+          const oldH = activeMap.height;
+          const oldX = activeMap.x;
+          const oldY = activeMap.y;
+
+          activeMap.width = oldW * S;
+          activeMap.height = oldH * S;
+          activeMap.rotation = ((activeMap.rotation || 0) + rotDeltaDeg) % 360;
+
+          activeMap.x = targetX1 - (p1.worldX - oldX) * S;
+          activeMap.y = targetY1 - (p1.worldY - oldY) * S;
+
+          state.satellite.enabled = true;
+          state.satellite.opacity = 0.6;
+          updateSatelliteUIState();
+
+          state.geoAlignMode = null;
+          drawHintBox.classList.add('opacity-0');
+          pushHistory();
+          render();
+          playCadSound('calibrate');
+          showToast('✓ মৌজা নকশা সফলভাবে স্যাটেলাইট ও GPS-এ নিখুঁতভাবে বসে গেছে (AutoCAD Georeferenced)!', 'success');
+        }
+      );
+    }
+  }
+
+  // ==========================================
+  // MODULE 19 Extension: Exact Area Cut-Off Studio
+  // ==========================================
+  const exactCutModal = document.getElementById('exactCutModal');
+  const btnCloseExactCutModal = document.getElementById('btnCloseExactCutModal');
+  const btnOpenExactCutModal = document.getElementById('btnOpenExactCutModal');
+  const exactCutPlotName = document.getElementById('exactCutPlotName');
+  const exactCutTotalArea = document.getElementById('exactCutTotalArea');
+  const inpExactCutAmount = document.getElementById('inpExactCutAmount');
+  const selExactCutUnit = document.getElementById('selExactCutUnit');
+  const selExactCutSide = document.getElementById('selExactCutSide');
+  const previewCutPlotA = document.getElementById('previewCutPlotA');
+  const previewCutPlotB = document.getElementById('previewCutPlotB');
+  const btnExecuteExactCut = document.getElementById('btnExecuteExactCut');
+
+  function openExactCutModal() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot || !activePlot.vertices || activePlot.vertices.length < 3) {
+      showToast('দয়া করে প্রথমে একটি দাগ সিলেক্ট করুন বা অঙ্কন করুন', 'warning');
+      return;
+    }
+    const area = calculateShoelaceArea(activePlot.vertices);
+    const totalShotok = area * SQFT_PER_SQLINK / SQFT_PER_SHOTOK;
+
+    if (exactCutPlotName) exactCutPlotName.textContent = activePlot.name;
+    if (exactCutTotalArea) exactCutTotalArea.textContent = `${totalShotok.toFixed(3)} শতক`;
+    if (inpExactCutAmount) {
+      inpExactCutAmount.max = (totalShotok * 0.98).toFixed(2);
+      inpExactCutAmount.value = Math.max(0.1, (totalShotok * 0.35).toFixed(2));
+    }
+
+    updateExactCutPreview();
+    if (exactCutModal) exactCutModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openExactCutModal = openExactCutModal;
+
+  function updateExactCutPreview() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot) return;
+    const totalAreaSqLinks = calculateShoelaceArea(activePlot.vertices);
+    const totalShotok = totalAreaSqLinks * SQFT_PER_SQLINK / SQFT_PER_SHOTOK;
+
+    const val = parseFloat(inpExactCutAmount?.value) || 0;
+    const unit = selExactCutUnit?.value || 'shotok';
+    let targetShotok = val;
+    if (unit === 'katha') targetShotok = val * 1.652893;
+    else if (unit === 'sqft') targetShotok = val / 435.6;
+
+    const remShotok = Math.max(0, totalShotok - targetShotok);
+    const baseName = activePlot.name.replace(/ \(\/[কখ]\)/, '');
+
+    if (previewCutPlotA) previewCutPlotA.textContent = `${targetShotok.toFixed(3)} শতক (${baseName}/ক)`;
+    if (previewCutPlotB) previewCutPlotB.textContent = `${remShotok.toFixed(3)} শতক (${baseName}/খ)`;
+  }
+
+  function executeExactAreaCut() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot || !activePlot.vertices || activePlot.vertices.length < 3) return;
+
+    const val = parseFloat(inpExactCutAmount?.value) || 0;
+    const unit = selExactCutUnit?.value || 'shotok';
+    let targetAreaSqLink = 0;
+
+    // Convert unit to sq. links: 1 sq. link = 0.4356 sq. ft, 1 shotok = 435.6 sq. ft = 1000 sq. links
+    if (unit === 'shotok') {
+      targetAreaSqLink = val * 1000;
+    } else if (unit === 'katha') {
+      targetAreaSqLink = val * 1.652893 * 1000;
+    } else if (unit === 'sqft') {
+      targetAreaSqLink = val / 0.4356;
+    }
+
+    const side = selExactCutSide?.value || 'north';
+    if (!window.LSCAD?.PlotOps?.cutPolygonExactArea) {
+      showToast('কাটিং ইঞ্জিন লোড করা যায়নি', 'error');
+      return;
+    }
+
+    const res = window.LSCAD.PlotOps.cutPolygonExactArea(activePlot.vertices, targetAreaSqLink, side);
+    if (!res || !res.success) {
+      showToast(res?.reason || 'নির্দিষ্ট শতক কর্তন সম্পন্ন করা যায়নি', 'warning');
+      return;
+    }
+
+    const baseName = activePlot.name.replace(/ \(\/[কখ]\)/, '');
+    const newPlotA = {
+      id: `plot_${Date.now()}_1`,
+      name: `${baseName}/ক`,
+      layer: 'plots',
+      fillColor: 'rgba(16, 185, 129, 0.25)',
+      strokeColor: '#10b981',
+      strokeWidth: 2,
+      vertices: res.targetPoly
+    };
+
+    const newPlotB = {
+      id: `plot_${Date.now()}_2`,
+      name: `${baseName}/খ`,
+      layer: 'plots',
+      fillColor: 'rgba(56, 189, 248, 0.25)',
+      strokeColor: '#38bdf8',
+      strokeWidth: 2,
+      vertices: res.otherPoly
+    };
+
+    state.plots = state.plots.filter(p => p.id !== activePlot.id);
+    state.plots.push(newPlotA, newPlotB);
+    state.selectedPlotId = newPlotA.id;
+
+    pushHistory();
+    updateInspector();
+    render();
+    if (exactCutModal) exactCutModal.classList.add('hidden');
+    playCadSound('split');
+    showToast(`সফলভাবে ${(targetAreaSqLink / 1000).toFixed(2)} শতক জমি নিখুঁতভাবে কর্তন করা হয়েছে!`, 'success');
+  }
+
+  // ==========================================
+  // MODULE 19 Extension: Islamic Faraez Inheritance Partitioning Studio
+  // ==========================================
+  const faraezModal = document.getElementById('faraezModal');
+  const btnCloseFaraezModal = document.getElementById('btnCloseFaraezModal');
+  const btnOpenFaraezModal = document.getElementById('btnOpenFaraezModal');
+  const faraezPlotName = document.getElementById('faraezPlotName');
+  const faraezTotalShotok = document.getElementById('faraezTotalShotok');
+  const inpFaraezWife = document.getElementById('inpFaraezWife');
+  const inpFaraezSon = document.getElementById('inpFaraezSon');
+  const inpFaraezDaughter = document.getElementById('inpFaraezDaughter');
+  const chkFaraezFather = document.getElementById('chkFaraezFather');
+  const chkFaraezMother = document.getElementById('chkFaraezMother');
+  const faraezShareTableBody = document.getElementById('faraezShareTableBody');
+  const btnExecuteFaraezPartition = document.getElementById('btnExecuteFaraezPartition');
+
+  let currentFaraezShares = [];
+
+  function openFaraezModal() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot || !activePlot.vertices || activePlot.vertices.length < 3) {
+      showToast('দয়া করে প্রথমে একটি দাগ সিলেক্ট করুন বা অঙ্কন করুন', 'warning');
+      return;
+    }
+    const area = calculateShoelaceArea(activePlot.vertices);
+    const totalShotok = area * SQFT_PER_SQLINK / SQFT_PER_SHOTOK;
+
+    if (faraezPlotName) faraezPlotName.textContent = activePlot.name;
+    if (faraezTotalShotok) faraezTotalShotok.textContent = `${totalShotok.toFixed(3)} শতক`;
+
+    updateFaraezCalculation();
+    if (faraezModal) faraezModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openFaraezModal = openFaraezModal;
+
+  function updateFaraezCalculation() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot) return;
+    const totalShotok = calculateShoelaceArea(activePlot.vertices) * SQFT_PER_SQLINK / SQFT_PER_SHOTOK;
+
+    const wifeCount = parseInt(inpFaraezWife?.value) || 0;
+    const sonCount = parseInt(inpFaraezSon?.value) || 0;
+    const daughterCount = parseInt(inpFaraezDaughter?.value) || 0;
+    const fatherPresent = chkFaraezFather?.checked || false;
+    const motherPresent = chkFaraezMother?.checked || false;
+
+    if (window.LSCAD?.PlotOps?.calculateIslamicFaraez) {
+      currentFaraezShares = window.LSCAD.PlotOps.calculateIslamicFaraez(totalShotok, {
+        wifeCount,
+        sonCount,
+        daughterCount,
+        fatherPresent,
+        motherPresent
+      });
+    } else {
+      currentFaraezShares = [];
+    }
+
+    if (faraezShareTableBody) {
+      faraezShareTableBody.innerHTML = '';
+      currentFaraezShares.forEach(s => {
+        const kathaPart = Math.floor(s.katha);
+        const shotokRem = ((s.shotok % 1.652893)).toFixed(1);
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-indigo-950/30 transition-colors';
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-bold text-white flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+            <span>${s.relation}</span>
+          </td>
+          <td class="py-2 px-2 text-indigo-300 font-bold">${s.fractionStr}</td>
+          <td class="py-2 px-2 text-amber-300 font-bold">${s.shotok.toFixed(3)} শতক</td>
+          <td class="py-2 px-2 text-sky-300">${kathaPart} কাঠা ${shotokRem} শতক</td>
+          <td class="py-2 px-2 text-right font-bold text-emerald-400">${s.percent}%</td>
+        `;
+        faraezShareTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  function executeFaraezPartition() {
+    const activePlot = state.plots.find(p => p.id === state.selectedPlotId) || state.plots[0];
+    if (!activePlot || !activePlot.vertices || activePlot.vertices.length < 3) return;
+    if (!currentFaraezShares || currentFaraezShares.length === 0) {
+      showToast('ওয়ারিশ হিস্যা পাওয়া যায়নি', 'warning');
+      return;
+    }
+
+    const vs = activePlot.vertices;
+    const minX = Math.min(...vs.map(v => v.x));
+    const maxX = Math.max(...vs.map(v => v.x));
+    const minY = Math.min(...vs.map(v => v.y));
+    const maxY = Math.max(...vs.map(v => v.y));
+    const totalW = maxX - minX;
+
+    const baseName = activePlot.name.replace(/ \(.*\)/, '');
+    const subColors = [
+      { fill: 'rgba(99, 102, 241, 0.25)', stroke: '#6366f1' },
+      { fill: 'rgba(16, 185, 129, 0.25)', stroke: '#10b981' },
+      { fill: 'rgba(245, 158, 11, 0.25)', stroke: '#f59e0b' },
+      { fill: 'rgba(56, 189, 248, 0.25)', stroke: '#38bdf8' },
+      { fill: 'rgba(236, 72, 153, 0.25)', stroke: '#ec4899' },
+      { fill: 'rgba(168, 85, 247, 0.25)', stroke: '#a855f7' }
+    ];
+
+    state.plots = state.plots.filter(p => p.id !== activePlot.id);
+
+    let currentX = minX;
+    currentFaraezShares.forEach((share, idx) => {
+      const partW = totalW * share.fraction;
+      const nextX = (idx === currentFaraezShares.length - 1) ? maxX : currentX + partW;
+
+      const subVertices = [
+        { x: currentX, y: minY },
+        { x: nextX, y: minY },
+        { x: nextX, y: maxY },
+        { x: currentX, y: maxY }
+      ];
+
+      const color = subColors[idx % subColors.length];
+      state.plots.push({
+        id: `plot_faraez_${Date.now()}_${idx + 1}`,
+        name: `${baseName} (${share.relation})`,
+        layer: 'plots',
+        fillColor: color.fill,
+        strokeColor: color.stroke,
+        strokeWidth: 2,
+        vertices: subVertices
+      });
+
+      currentX = nextX;
+    });
+
+    state.selectedPlotId = state.plots[state.plots.length - 1].id;
+    pushHistory();
+    updateInspector();
+    render();
+    if (faraezModal) faraezModal.classList.add('hidden');
+    playCadSound('merge');
+    showToast('ইসলামিক ফারায়েজ অনুযায়ী ওয়ারিশদের দাগ সফলভাবে বন্টন করা হয়েছে!', 'success');
+  }
+
+  // Wire Listeners for Module 16
+  btnRibbonProps?.addEventListener('click', openObjectPropsModal);
+  document.getElementById('btnInspectorProps')?.addEventListener('click', openObjectPropsModal);
+  btnCloseObjectPropsModal?.addEventListener('click', () => {
+    objectPropsModal?.classList.add('hidden');
+    state.highlightedVertex = null;
+    render();
+  });
+  btnExportCoordsCSV?.addEventListener('click', exportCoordinatesCSV);
+  btnCopyCoordsTable?.addEventListener('click', copyCoordinatesTable);
+
+  // Wire Listeners for Module 17
+  btnRibbonGeoRef?.addEventListener('click', openGeoRefModal);
+  document.getElementById('btnPickGpsOnCanvas')?.addEventListener('click', () => {
+    geoRefModal?.classList.add('hidden');
+    state.tool = 'gps-pin';
+    updateToolUI();
+    drawHintBox.classList.remove('opacity-0');
+    drawHintText.innerHTML = '<span class="text-emerald-400 font-bold">[AutoCAD GPS পিন]</span> ক্যানভাসে নকশার যেকোনো পরিচিত স্থানে ক্লিক করে জিপিএস পিন বসান';
+    showToast('ক্যানভাসে ক্লিক করে জিপিএস পিন বসান', 'info');
+  });
+  document.getElementById('btnInspectorGeoRef')?.addEventListener('click', openGeoRefModal);
+  btnCloseGeoRefModal?.addEventListener('click', () => geoRefModal?.classList.add('hidden'));
+  btnToggleSatelliteMap?.addEventListener('click', toggleSatelliteOverlay);
+  document.getElementById('btnQuickToggleSatellite')?.addEventListener('click', toggleSatelliteOverlay);
+
+  document.getElementById('btnDetectCurrentGPS')?.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      showToast('আপনার ব্রাউজারে লাইভ GPS সাপোর্ট করে না', 'warning');
+      return;
+    }
+    showToast('জিপিএস লোকেশন সনাক্ত করা হচ্ছে...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const lat = parseFloat(pos.coords.latitude.toFixed(6));
+        const lng = parseFloat(pos.coords.longitude.toFixed(6));
+        if (inpGeoLat) inpGeoLat.value = lat;
+        if (inpGeoLng) inpGeoLng.value = lng;
+        state.satellite.originGPS = { lat, lng };
+        updateBTMProjectionDisplay();
+        render();
+        showToast(`🛰️ লাইভ GPS পাওয়া গেছে: ${lat}°N, ${lng}°E`, 'success');
+      },
+      err => {
+        showToast('GPS লোকেশন এক্সেস পাওয়া যায়নি (ডিফল্ট প্রিসেট সিলেক্ট করুন)', 'warning');
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  });
+
+  document.querySelectorAll('.geo-preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const lat = parseFloat(chip.getAttribute('data-lat'));
+      const lng = parseFloat(chip.getAttribute('data-lng'));
+      if (inpGeoLat) inpGeoLat.value = lat;
+      if (inpGeoLng) inpGeoLng.value = lng;
+      state.satellite.originGPS = { lat, lng };
+      updateBTMProjectionDisplay();
+      render();
+      showToast(`📍 এলাকা সেট করা হয়েছে: ${chip.textContent.trim()}`, 'info');
+    });
+  });
+
+  sliderSatelliteOpacity?.addEventListener('input', e => {
+    state.satellite.opacity = parseFloat(e.target.value) / 100;
+    if (valSatelliteOpacity) valSatelliteOpacity.textContent = `${e.target.value}%`;
+    render();
+  });
+
+  // Satellite Provider Switcher Listeners (Module 17)
+  function updateSatProviderUI() {
+    const activeProvider = state.satellite?.source || 'google_hybrid';
+    ['btnSatProvGoogleHybrid', 'btnSatProvGoogleSat', 'btnSatProvEsri'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      const prov = btn.getAttribute('data-provider');
+      if (prov === activeProvider) {
+        btn.className = 'px-2 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold border border-emerald-400/50 flex flex-col items-center justify-center transition-all cursor-pointer shadow-sm';
+      } else {
+        btn.className = 'px-2 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-[11px] font-bold border border-slate-700 flex flex-col items-center justify-center transition-all cursor-pointer hover:bg-slate-700';
+      }
+    });
+
+    const isTransparent = state.satellite?.blendMode !== 'multiply';
+    const btnTrans = document.getElementById('btnBlendTransparent');
+    const btnMult = document.getElementById('btnBlendMultiply');
+    if (btnTrans && btnMult) {
+      if (isTransparent) {
+        btnTrans.className = 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold cursor-pointer transition-colors shadow-sm';
+        btnMult.className = 'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[10px] font-semibold cursor-pointer hover:bg-slate-700 transition-colors';
+      } else {
+        btnTrans.className = 'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[10px] font-semibold cursor-pointer hover:bg-slate-700 transition-colors';
+        btnMult.className = 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold cursor-pointer transition-colors shadow-sm';
+      }
+    }
+  }
+
+  document.querySelectorAll('.sat-provider-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const prov = btn.getAttribute('data-provider');
+      if (prov) {
+        state.satellite.source = prov;
+        updateSatProviderUI();
+        render();
+        const provNames = {
+          google_hybrid: 'গুগল হাইব্রিড (স্যাটেলাইট + রোড)',
+          google_sat: 'গুগল স্যাটেলাইট (হাই রেজুলেশন)',
+          esri: 'Esri World Imagery Clarity'
+        };
+        showToast(`🛰️ স্যাটেলাইট প্রোভাইডার: ${provNames[prov] || prov}`, 'info');
+      }
+    });
+  });
+
+  document.getElementById('btnBlendTransparent')?.addEventListener('click', () => {
+    state.satellite.blendMode = 'transparent';
+    updateSatProviderUI();
+    render();
+    showToast('মৌজা ওভারলে: স্বচ্ছ ভেক্টর কালি সক্রিয়', 'info');
+  });
+
+  document.getElementById('btnBlendMultiply')?.addEventListener('click', () => {
+    state.satellite.blendMode = 'multiply';
+    updateSatProviderUI();
+    render();
+    showToast('মৌজা ওভারলে: কাগজের মাল্টিপ্লাই সক্রিয়', 'info');
+  });
+
+  // Satellite Quick HUD Bar Action Listeners
+  document.getElementById('btnSatLayerTop')?.addEventListener('click', () => {
+    state.satellite.layerPosition = 'top';
+    state.satellite.blendMode = 'normal';
+    updateSatelliteUIState();
+    render();
+    showToast('🛰️ স্যাটেলাইট ভিউ: নকশার উপরে ওভারলে সক্রিয়', 'info');
+  });
+
+  document.getElementById('btnSatLayerBottom')?.addEventListener('click', () => {
+    state.satellite.layerPosition = 'bottom';
+    updateSatelliteUIState();
+    render();
+    showToast('🛰️ স্যাটেলাইট ভিউ: নকশার নিচে ব্যাকগ্রাউন্ড সক্রিয়', 'info');
+  });
+
+  // Transparent White Paper (Multiply Blend Mode)
+  document.getElementById('btnSatPaperMultiply')?.addEventListener('click', () => {
+    const willBeMultiply = state.satellite.blendMode !== 'multiply';
+    if (willBeMultiply) {
+      state.satellite.blendMode = 'multiply';
+      state.satellite.layerPosition = 'bottom';
+      showToast('✨ সাদা কাগজ স্বচ্ছ করা হয়েছে (কালো দাগগুলো স্যাটেলাইটের উপর ভাসবে)', 'success');
+    } else {
+      state.satellite.blendMode = 'normal';
+      showToast('স্বাভাবিক কাগজ ব্যাকগ্রাউন্ড সক্রিয়', 'info');
+    }
+    const activeMap = getActiveMouzaMap();
+    if (activeMap) activeMap.blendMode = state.satellite.blendMode;
+    updateSatelliteUIState();
+    render();
+  });
+
+  const onQuickSatOpacityChange = e => {
+    const val = parseFloat(e.target.value) / 100;
+    state.satellite.opacity = val;
+    const lbl = document.getElementById('quickSatOpacityVal');
+    if (lbl) lbl.textContent = `${e.target.value}%`;
+    if (sliderSatelliteOpacity) sliderSatelliteOpacity.value = e.target.value;
+    if (valSatelliteOpacity) valSatelliteOpacity.textContent = `${e.target.value}%`;
+    render();
+  };
+  document.getElementById('quickSatOpacity')?.addEventListener('input', onQuickSatOpacityChange);
+  document.getElementById('quickSatOpacity')?.addEventListener('change', onQuickSatOpacityChange);
+
+  document.getElementById('btnQuickDropGpsPin')?.addEventListener('click', () => {
+    state.tool = (state.tool === 'gps-pin') ? 'select' : 'gps-pin';
+    updateToolUI();
+    if (state.tool === 'gps-pin') {
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.innerHTML = '<span class="text-emerald-400 font-bold">[AutoCAD GPS পিন]</span> ক্যানভাসে নকশার যেকোনো পয়েন্টে ক্লিক করে GPS পিন বসান';
+      showToast('📍 ক্যানভাসে নকশার উপর ক্লিক করে GPS পিন বসান', 'info');
+    } else {
+      drawHintBox.classList.add('opacity-0');
+    }
+  });
+
+  document.getElementById('btnQuickMoveMap')?.addEventListener('click', () => {
+    state.tool = (state.tool === 'map-move') ? 'select' : 'map-move';
+    updateToolUI();
+    if (state.tool === 'map-move') {
+      drawHintBox.classList.remove('opacity-0');
+      drawHintText.innerHTML = '<span class="text-cyan-400 font-bold">[নকশা স্থানান্তর]</span> মাউস দিয়ে ড্র্যাগ করে নকশাটিকে স্যাটেলাইটের রোডের সাথে মেলান';
+      showToast('✋ মাউস দিয়ে ড্র্যাগ করে নকশাটি সরান', 'info');
+    } else {
+      drawHintBox.classList.add('opacity-0');
+    }
+  });
+
+  // Nudge Buttons (20 links / ~13 ft per click)
+  const nudgeSheet = (dx, dy, dir) => {
+    const sheet = getActiveMouzaMap();
+    if (sheet) {
+      sheet.x += dx;
+      sheet.y += dy;
+      state.mouzaMap.x = sheet.x;
+      state.mouzaMap.y = sheet.y;
+      render();
+      playCadSound('snap');
+      showToast(`নকশা ${dir} ২০ লিংক সরানো হয়েছে`, 'info');
+    }
+  };
+  document.getElementById('btnNudgeLeft')?.addEventListener('click', () => nudgeSheet(-20, 0, 'বামে'));
+  document.getElementById('btnNudgeRight')?.addEventListener('click', () => nudgeSheet(20, 0, 'ডানে'));
+  document.getElementById('btnNudgeUp')?.addEventListener('click', () => nudgeSheet(0, -20, 'উপরে'));
+  document.getElementById('btnNudgeDown')?.addEventListener('click', () => nudgeSheet(0, 20, 'নিচে'));
+
+  // Scale Adjuster (+3% / -3%)
+  document.getElementById('btnScaleMapPlus')?.addEventListener('click', () => {
+    const sheet = getActiveMouzaMap();
+    if (sheet) {
+      sheet.scaleFactor = (sheet.scaleFactor || 1.0) * 1.03;
+      sheet.width *= 1.03;
+      sheet.height *= 1.03;
+      state.mouzaMap.width = sheet.width;
+      state.mouzaMap.height = sheet.height;
+      render();
+      playCadSound('snap');
+      showToast(`নকশার স্কেল +৩% বাড়ানো হয়েছে (${Math.round((sheet.scaleFactor || 1) * 100)}%)`, 'info');
+    }
+  });
+  document.getElementById('btnScaleMapMinus')?.addEventListener('click', () => {
+    const sheet = getActiveMouzaMap();
+    if (sheet) {
+      sheet.scaleFactor = (sheet.scaleFactor || 1.0) * 0.97;
+      sheet.width *= 0.97;
+      sheet.height *= 0.97;
+      state.mouzaMap.width = sheet.width;
+      state.mouzaMap.height = sheet.height;
+      render();
+      playCadSound('snap');
+      showToast(`নকশার স্কেল -৩% কমানো হয়েছে (${Math.round((sheet.scaleFactor || 1) * 100)}%)`, 'info');
+    }
+  });
+
+  document.getElementById('quickGpsDistrictSelect')?.addEventListener('change', e => {
+    const val = e.target.value;
+    if (val === 'custom') {
+      openGeoRefModal();
+      return;
+    }
+    const parts = val.split(',');
+    if (parts.length === 2) {
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
+      state.satellite.originGPS = { lat, lng };
+
+      const sheet = getActiveMouzaMap();
+      if (sheet) {
+        state.satellite.anchorWorld = {
+          x: sheet.x + sheet.width / 2,
+          y: sheet.y + sheet.height / 2
+        };
+      }
+
+      if (typeof _satelliteTileCache === 'object') {
+        for (const k in _satelliteTileCache) delete _satelliteTileCache[k];
+      }
+      const inpLat = document.getElementById('inpGeoLat');
+      const inpLng = document.getElementById('inpGeoLng');
+      if (inpLat) inpLat.value = lat.toFixed(6);
+      if (inpLng) inpLng.value = lng.toFixed(6);
+      updateBTMProjectionDisplay();
+      render();
+      const txt = e.target.options[e.target.selectedIndex]?.text || '';
+      showToast(`📍 ${txt} জিপিএস সেট সম্পন্ন (${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E)`, 'success');
+    }
+  });
+
+  document.getElementById('btnCloseSatQuickBar')?.addEventListener('click', () => {
+    document.getElementById('satelliteQuickBar')?.classList.add('hidden');
+  });
+  inpGeoLat?.addEventListener('input', updateBTMProjectionDisplay);
+  inpGeoLng?.addEventListener('input', updateBTMProjectionDisplay);
+  btnDownloadKMLFromGeo?.addEventListener('click', downloadKML);
+
+  document.getElementById('btnStartAutoCadAlign')?.addEventListener('click', () => {
+    geoRefModal?.classList.add('hidden');
+    state.geoAlignMode = { active: true, step: 1 };
+    drawHintBox.classList.remove('opacity-0');
+    drawHintText.innerHTML = '<span class="text-sky-400 font-bold">[AutoCAD ALIGN ধাপ ১/২]</span> মৌজা নকশার ১ম পরিচিত পয়েন্টে (যেমন: রাস্তার মোড় বা মসজিদ) ক্লিক করুন';
+    showToast('AutoCAD ALIGN: নকশার ১ম পরিচিত পয়েন্টে ক্লিক করুন', 'info');
+  });
+
+  // Wire Listeners for Module 19 Extension (Exact Cut & Faraez)
+  btnOpenExactCutModal?.addEventListener('click', openExactCutModal);
+  btnCloseExactCutModal?.addEventListener('click', () => exactCutModal?.classList.add('hidden'));
+  inpExactCutAmount?.addEventListener('input', updateExactCutPreview);
+  selExactCutUnit?.addEventListener('change', updateExactCutPreview);
+  selExactCutSide?.addEventListener('change', updateExactCutPreview);
+  btnExecuteExactCut?.addEventListener('click', executeExactAreaCut);
+
+  btnOpenFaraezModal?.addEventListener('click', openFaraezModal);
+  btnCloseFaraezModal?.addEventListener('click', () => faraezModal?.classList.add('hidden'));
+  inpFaraezWife?.addEventListener('input', updateFaraezCalculation);
+  inpFaraezSon?.addEventListener('input', updateFaraezCalculation);
+  inpFaraezDaughter?.addEventListener('input', updateFaraezCalculation);
+  chkFaraezFather?.addEventListener('change', updateFaraezCalculation);
+  chkFaraezMother?.addEventListener('change', updateFaraezCalculation);
+  btnExecuteFaraezPartition?.addEventListener('click', executeFaraezPartition);
+
+  // Backdrop dismissal for new modals
+  objectPropsModal?.addEventListener('click', e => {
+    if (e.target === objectPropsModal) {
+      objectPropsModal.classList.add('hidden');
+      state.highlightedVertex = null;
+      render();
+    }
+  });
+  geoRefModal?.addEventListener('click', e => {
+    if (e.target === geoRefModal) geoRefModal.classList.add('hidden');
+  });
+  exactCutModal?.addEventListener('click', e => {
+    if (e.target === exactCutModal) exactCutModal.classList.add('hidden');
+  });
+  faraezModal?.addEventListener('click', e => {
+    if (e.target === faraezModal) faraezModal.classList.add('hidden');
+  });
+
+  // 1. Top Navbar Button: Full Project Survey Field Report Studio
+  if (btnExportReport) {
+    btnExportReport.addEventListener('click', () => {
+      openReportStudio('all');
+    });
+  }
+
+  // 2. CAD Ribbon Button: Cartographic Scaled Blueprint Map Sheet Print
+  const btnPrintLayout = document.getElementById('btnPrintLayout');
+  if (btnPrintLayout) {
+    btnPrintLayout.addEventListener('click', openPrintLayoutModal);
+  }
+
+  // 3. Right Sidebar Inspector Button: Focused Single-Plot Certificate
+  const btnInspectorPrintReport = document.getElementById('btnInspectorPrintReport');
+  if (btnInspectorPrintReport) {
+    btnInspectorPrintReport.addEventListener('click', () => {
+      openReportStudio('selected', state.selectedPlotId);
+    });
+  }
+
+  // Close modals
+  if (btnCloseReportModal) {
+    btnCloseReportModal.addEventListener('click', () => {
+      reportModal.classList.add('hidden');
+    });
+  }
+
+  const btnClosePrintLayoutModal = document.getElementById('btnClosePrintLayoutModal');
+  if (btnClosePrintLayoutModal) {
+    btnClosePrintLayoutModal.addEventListener('click', () => {
+      document.getElementById('printLayoutModal')?.classList.add('hidden');
+    });
+  }
+
+  // Detect Mouza Buttons
+  document.getElementById('btnHeaderDetectMouza')?.addEventListener('click', () => {
+    detectMouzaAndLocationFromMap(null, true);
+  });
+  document.getElementById('btnAutoDetectMouza')?.addEventListener('click', () => {
+    detectMouzaAndLocationFromMap(null, true);
+  });
+
+  // Header Subtitle Click -> Edit Mouza Location Dialog
+  document.getElementById('mouzaMapInfoSubtitle')?.addEventListener('click', () => {
+    const loc = getActiveMapLocationInfo();
+    showPromptDialog('মৌজা ও এলাকা পরিবর্তন করুন', 'মৌজা (জেএল) • থানা, জেলা', `${loc.mouza} (${loc.jl}) • ${loc.upazila}, ${loc.district}`, val => {
+      if (val && val.trim()) {
+        const subEl = document.getElementById('mouzaMapInfoSubtitle');
+        if (subEl) subEl.textContent = `মৌজা: ${val.trim()} • সিট নং: ১`;
+        const updatedLoc = getActiveMapLocationInfo();
+        const activeMap = (state.mouzaMaps && state.mouzaMaps.find(m => m.id === state.activeMapId)) || state.mouzaMap;
+        if (activeMap) activeMap.locationInfo = updatedLoc;
+        showToast('মৌজা ও এলাকার বিবরণ আপডেট হয়েছে', 'success');
+      }
+    });
+  });
+
+  // Live input sync for all fields
+  const reportInputs = [
+    'inpReportDistrict', 'inpReportUpazila', 'inpReportMouza', 'inpReportJl',
+    'inpReportKhatian', 'inpReportDaag', 'inpReportOwner', 'inpReportSurveyor',
+    'inpReportSurveyorReg', 'inpReportDate', 'inpReportScaleText',
+    'inpReportNorthMouza', 'inpReportEastMouza', 'inpReportSouthMouza', 'inpReportWestMouza'
+  ];
+  reportInputs.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        syncReportLabels();
+        // If location inputs are changed, sync back to header
+        if (['inpReportDistrict', 'inpReportUpazila', 'inpReportMouza', 'inpReportJl'].includes(id)) {
+          const d = document.getElementById('inpReportDistrict')?.value || DEFAULT_MOUZA_KNOWLEDGE.district;
+          const u = document.getElementById('inpReportUpazila')?.value || DEFAULT_MOUZA_KNOWLEDGE.upazila;
+          const m = document.getElementById('inpReportMouza')?.value || DEFAULT_MOUZA_KNOWLEDGE.mouza;
+          const j = document.getElementById('inpReportJl')?.value || DEFAULT_MOUZA_KNOWLEDGE.jl;
+          syncLocationToHeader({ district: d, upazila: u, mouza: m, jl: j });
+        }
+      });
+    }
+  });
+
+  if (reportViewMode) {
+    reportViewMode.addEventListener('change', drawReportMapCanvas);
+  }
+
+  if (reportPaperSize) {
+    reportPaperSize.addEventListener('change', () => {
+      const printable = document.getElementById('printableReport');
+      if (!printable) return;
+      if (reportPaperSize.value === 'a4_landscape') {
+        printable.className = printable.className.replace(/max-w-[a-z0-9]+/g, '') + ' max-w-4xl';
+      } else if (reportPaperSize.value === 'a3_landscape') {
+        printable.className = printable.className.replace(/max-w-[a-z0-9]+/g, '') + ' max-w-5xl';
+      } else {
+        printable.className = printable.className.replace(/max-w-[a-z0-9]+/g, '') + ' max-w-2xl';
+      }
+      drawReportMapCanvas();
+    });
+  }
+
+  // Print PDF Button
+  if (btnPrintReportPdf) {
+    btnPrintReportPdf.addEventListener('click', () => {
+      window.print();
+    });
+  }
+
+  // Download High-Res PNG
+  if (btnDownloadReportPng) {
+    btnDownloadReportPng.addEventListener('click', () => {
+      const canvas = document.getElementById('reportMapCanvas');
+      if (!canvas) return;
+      const daagVal = document.getElementById('inpReportDaag')?.value || 'Survey';
+      const link = document.createElement('a');
+      link.download = `Noksha_Report_Daag_${daagVal}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('নকশা ইমেজ (PNG) সফলভাবে ডাউনলোড হয়েছে!', 'success');
+    });
+  }
 
   // Open / Import .lscad Project File
   const projectFileInput = document.createElement('input');
@@ -5656,6 +10370,16 @@
   }
 
   // Global Modal & Tool Helpers attached to window
+  window.loadSampleMouzaMap = function() {
+    const img = new Image();
+    img.onload = () => {
+      loadMouzaImageObject(img, false, false);
+      document.getElementById('canvasEmptyState')?.classList.add('hidden');
+      showToast('নমুনা মৌজা ম্যাপ লোড হয়েছে!', 'success');
+    };
+    img.src = '/default_mouza_map.jpg';
+  };
+
   window.openMouzaMapModal = function() {
     document.getElementById('btnLoadMouza')?.click();
   };
@@ -5751,6 +10475,245 @@
 
   document.getElementById('btnExportKML')?.addEventListener('click', downloadKML);
 
+  // ========================================================
+  // Land Survey CAD - KMZ Maker Studio Integration
+  // ========================================================
+  const kmzMakerModal = document.getElementById('kmzMakerModal');
+  const kmzInpLat = document.getElementById('kmzInpLat');
+  const kmzInpLng = document.getElementById('kmzInpLng');
+  const kmzSliderOpacity = document.getElementById('kmzSliderOpacity');
+  const kmzValOpacity = document.getElementById('kmzValOpacity');
+  const kmzStatusMouzaName = document.getElementById('kmzStatusMouzaName');
+  const kmzStatusPlotsCount = document.getElementById('kmzStatusPlotsCount');
+  const kmzStatusTotalArea = document.getElementById('kmzStatusTotalArea');
+  const kmzInpFileName = document.getElementById('kmzInpFileName');
+  const kmzProgressContainer = document.getElementById('kmzProgressContainer');
+  const kmzProgressStatus = document.getElementById('kmzProgressStatus');
+  const kmzProgressPercent = document.getElementById('kmzProgressPercent');
+  const kmzProgressBar = document.getElementById('kmzProgressBar');
+
+  function openKmzMakerModal() {
+    if (!kmzMakerModal) return;
+
+    // Sync GPS with active state
+    if (state.satellite?.originGPS) {
+      if (kmzInpLat) kmzInpLat.value = state.satellite.originGPS.lat.toFixed(6);
+      if (kmzInpLng) kmzInpLng.value = state.satellite.originGPS.lng.toFixed(6);
+    }
+
+    // Sync Mouza Map Sheet info
+    const activeMap = (state.mouzaMaps || []).find(m => m.id === state.activeMapId && m.loaded) || (state.mouzaMaps || [])[0];
+    if (activeMap && activeMap.loaded) {
+      if (kmzStatusMouzaName) kmzStatusMouzaName.textContent = activeMap.name || 'সক্রিয় মৌজা নকশা';
+      const cleanName = (activeMap.name || 'mouza_survey').replace(/[\s\/\\:*?"<>|]+/g, '_');
+      if (kmzInpFileName) kmzInpFileName.value = `${cleanName}_daag.kmz`;
+    } else {
+      if (kmzStatusMouzaName) kmzStatusMouzaName.textContent = 'কোনো ম্যাপ লোড করা হয়নি (নমুনা লোড করুন)';
+      if (kmzInpFileName) kmzInpFileName.value = 'mouza_survey_daag.kmz';
+    }
+
+    // Sync Plots count and total area
+    const plotCount = (state.plots || []).length;
+    if (kmzStatusPlotsCount) kmzStatusPlotsCount.textContent = `${toBanglaDigits(plotCount)} টি`;
+
+    let totalAreaSqFt = 0;
+    (state.plots || []).forEach(p => {
+      if (window.LSCAD?.Geometry?.calculateShoelaceArea && p.vertices) {
+        totalAreaSqFt += window.LSCAD.Geometry.calculateShoelaceArea(p.vertices) * (0.66 * 0.66);
+      } else if (p.area) {
+        totalAreaSqFt += p.area;
+      }
+    });
+    const totalShatak = (totalAreaSqFt / 435.60).toFixed(2);
+    if (kmzStatusTotalArea) kmzStatusTotalArea.textContent = `${toBanglaDigits(totalShatak)} শতাংশ`;
+
+    // Reset progress container
+    if (kmzProgressContainer) kmzProgressContainer.classList.add('hidden');
+
+    // Update satellite button label in modal
+    const satBtnText = document.getElementById('kmzSatCanvasBtnText');
+    if (satBtnText) {
+      satBtnText.textContent = state.satellite?.enabled ? 'স্যাটেলাইট বন্ধ' : 'স্যাটেলাইট ভিউ';
+    }
+
+    kmzMakerModal.classList.remove('hidden');
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  }
+  window.openKmzMakerModal = openKmzMakerModal;
+
+  function closeKmzMakerModal() {
+    kmzMakerModal?.classList.add('hidden');
+  }
+
+  // Toggle live satellite overlay on canvas from KMZ modal
+  document.getElementById('btnKmzToggleSatelliteCanvas')?.addEventListener('click', () => {
+    toggleSatelliteOverlay();
+    const satBtnText = document.getElementById('kmzSatCanvasBtnText');
+    if (satBtnText) {
+      satBtnText.textContent = state.satellite?.enabled ? 'স্যাটেলাইট বন্ধ' : 'স্যাটেলাইট ভিউ';
+    }
+    showToast(state.satellite?.enabled ? 'ক্যানভাসে সরাসরি গুগল স্যাটেলাইট দৃশ্যমান হয়েছে!' : 'স্যাটেলাইট ভিউ বন্ধ করা হয়েছে', 'info');
+  });
+
+  // Open triggers
+  document.getElementById('btnOpenKMZMaker')?.addEventListener('click', openKmzMakerModal);
+  document.getElementById('btnOpenKMZMakerHeader')?.addEventListener('click', openKmzMakerModal);
+  document.getElementById('btnOpenKMZFromGeoRef')?.addEventListener('click', () => {
+    geoRefModal?.classList.add('hidden');
+    openKmzMakerModal();
+  });
+
+  // Close triggers
+  document.getElementById('btnCloseKmzMakerModal')?.addEventListener('click', closeKmzMakerModal);
+  document.getElementById('btnKmzCancel')?.addEventListener('click', closeKmzMakerModal);
+
+  // Opacity Slider
+  kmzSliderOpacity?.addEventListener('input', (e) => {
+    const val = e.target.value;
+    if (kmzValOpacity) kmzValOpacity.textContent = `${toBanglaDigits(val)}%`;
+  });
+
+  // District Presets
+  document.querySelectorAll('.kmz-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lat = parseFloat(btn.dataset.lat);
+      const lng = parseFloat(btn.dataset.lng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        if (kmzInpLat) kmzInpLat.value = lat.toFixed(6);
+        if (kmzInpLng) kmzInpLng.value = lng.toFixed(6);
+        if (state.satellite) state.satellite.originGPS = { lat, lng };
+        if (inpGeoLat) inpGeoLat.value = lat.toFixed(6);
+        if (inpGeoLng) inpGeoLng.value = lng.toFixed(6);
+        showToast(`জিপিএস সেট করা হয়েছে: ${btn.textContent.trim()}`, 'info');
+      }
+    });
+  });
+
+  // Current Device GPS
+  document.getElementById('btnKmzUseDeviceGps')?.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      showToast('আপনার ব্রাউজারে জিপিএস সমর্থন করে না।', 'error');
+      return;
+    }
+    showToast('ডিভাইসের বর্তমান লাইভ জিপিএস লোকেশন নেওয়া হচ্ছে...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        if (kmzInpLat) kmzInpLat.value = lat.toFixed(6);
+        if (kmzInpLng) kmzInpLng.value = lng.toFixed(6);
+        if (state.satellite) state.satellite.originGPS = { lat, lng };
+        if (inpGeoLat) inpGeoLat.value = lat.toFixed(6);
+        if (inpGeoLng) inpGeoLng.value = lng.toFixed(6);
+        showToast(`সরাসরি লাইভ জিপিএস সফলভাবে গৃহীত: (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`, 'success');
+      },
+      (err) => {
+        showToast('জিপিএস লোকেশন পাওয়া যায়নি: ' + err.message, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+  // Load Sample Mouza Map inside KMZ Maker
+  document.getElementById('btnKmzLoadSampleMap')?.addEventListener('click', () => {
+    window.loadSampleMouzaMap();
+    setTimeout(openKmzMakerModal, 300);
+  });
+
+  // Generate and Download KMZ
+  document.getElementById('btnGenerateAndDownloadKMZ')?.addEventListener('click', async () => {
+    const lat = parseFloat(kmzInpLat?.value) || 23.3167;
+    const lng = parseFloat(kmzInpLng?.value) || 90.7500;
+    const originGPS = { lat, lng };
+    const anchorWorld = state.satellite?.anchorWorld || { x: 0, y: 0 };
+
+    const activeMap = (state.mouzaMaps || []).find(m => m.id === state.activeMapId && m.loaded) || (state.mouzaMaps || [])[0];
+    const plots = state.plots || [];
+
+    const includeOverlay = document.getElementById('kmzChkOverlay')?.checked ?? true;
+    const includePolygons = document.getElementById('kmzChkPolygons')?.checked ?? true;
+    const includeCentroidPins = document.getElementById('kmzChkCentroidPins')?.checked ?? true;
+    const includeKhatian = document.getElementById('kmzChkKhatianInfo')?.checked ?? true;
+    const opacityPct = parseInt(kmzSliderOpacity?.value || '85', 10);
+    const overlayOpacity = opacityPct / 100.0;
+
+    let fileName = (kmzInpFileName?.value || 'mouza_survey_kmz.kmz').trim();
+    if (!fileName.toLowerCase().endsWith('.kmz')) fileName += '.kmz';
+
+    // Show Progress Indicator
+    if (kmzProgressContainer) kmzProgressContainer.classList.remove('hidden');
+    if (kmzProgressBar) kmzProgressBar.style.width = '10%';
+    if (kmzProgressPercent) kmzProgressPercent.textContent = '১০%';
+    if (kmzProgressStatus) kmzProgressStatus.textContent = 'প্রসেসিং শুরু হচ্ছে...';
+
+    const btn = document.getElementById('btnGenerateAndDownloadKMZ');
+    if (btn) btn.disabled = true;
+
+    try {
+      if (!window.LSCAD?.Exporters?.generateKMZ) {
+        throw new Error('KMZ এক্সপোর্টার ইঞ্জিন প্রস্তুত নয়।');
+      }
+
+      await window.LSCAD.Exporters.generateKMZ(
+        plots,
+        activeMap,
+        originGPS,
+        anchorWorld,
+        {
+          fileName: fileName,
+          includeOverlay: includeOverlay && !!activeMap?.loaded,
+          overlayOpacity: overlayOpacity,
+          includePolygons: includePolygons,
+          includeCentroidPins: includeCentroidPins,
+          includeKhatian: includeKhatian
+        },
+        (pct, msg) => {
+          if (kmzProgressBar) kmzProgressBar.style.width = `${pct}%`;
+          if (kmzProgressPercent) kmzProgressPercent.textContent = `${toBanglaDigits(pct)}%`;
+          if (kmzProgressStatus) kmzProgressStatus.textContent = msg;
+        }
+      );
+
+      showToast(`সফল! ${fileName} ফাইলটি ডাউনলোড হয়েছে। এটি Google Earth-এ ওপেন করুন।`, 'success');
+      playCadSound('snap');
+      setTimeout(() => {
+        closeKmzMakerModal();
+      }, 1200);
+    } catch (err) {
+      console.error(err);
+      showToast('KMZ এক্সপোর্ট ত্রুটি: ' + err.message, 'error');
+      if (kmzProgressStatus) kmzProgressStatus.textContent = 'ত্রুটি: ' + err.message;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Download Vector KML Only
+  document.getElementById('btnDownloadKMLOnly')?.addEventListener('click', () => {
+    const lat = parseFloat(kmzInpLat?.value) || 23.3167;
+    const lng = parseFloat(kmzInpLng?.value) || 90.7500;
+    const originGPS = { lat, lng };
+    const anchorWorld = state.satellite?.anchorWorld || { x: 0, y: 0 };
+    const activeMap = (state.mouzaMaps || []).find(m => m.id === state.activeMapId && m.loaded) || (state.mouzaMaps || [])[0];
+    const plots = state.plots || [];
+
+    try {
+      const kmlContent = window.LSCAD.Exporters.generateKML(plots, activeMap, originGPS, anchorWorld, {
+        includeOverlay: false,
+        includePolygons: true,
+        includeCentroidPins: true,
+        includeKhatian: true
+      });
+
+      let fileName = (kmzInpFileName?.value || 'mouza_survey').replace(/\.kmz$/i, '') + '.kml';
+      window.LSCAD.Exporters.downloadFile(kmlContent, fileName, 'application/vnd.google-earth.kml+xml');
+      showToast('Google Earth KML ফাইল ডাউনলোড হয়েছে!', 'success');
+      closeKmzMakerModal();
+    } catch (err) {
+      showToast('KML ডাউনলোড ত্রুটি: ' + err.message, 'error');
+    }
+  });
+
   // Khatian Modal Listeners
   const khatianModal = document.getElementById('khatianModal');
   document.getElementById('btnKhatianCalc')?.addEventListener('click', () => {
@@ -5835,6 +10798,11 @@
     } else if (e.key === 'g' || e.key === 'G') {
       e.preventDefault();
       document.getElementById('btnToggleGunia')?.click();
+    } else if (e.key === 'd' || e.key === 'D') {
+      document.getElementById('toggleDimensionsVisibility')?.click();
+      showToast(state.layers.dimensions ? '📏 বাউন্ডারির মাপ দৃশ্যমান (Dimensions ON)' : '👁️ বাউন্ডারির মাপ লুকানো হয়েছে (Dimensions OFF)', 'info');
+    } else if (e.key === 'b' || e.key === 'B') {
+      document.querySelector('.tool-btn[data-tool="line-wand"]')?.click();
     } else if (e.key === 'w' || e.key === 'W') {
       document.querySelector('.tool-btn[data-tool="magic-wand"]')?.click();
     } else if (e.key === 'v' || e.key === 'V') {
@@ -5846,7 +10814,7 @@
     } else if (e.key === 'n' || e.key === 'N') {
       document.querySelector('.tool-btn[data-tool="auto-number"]')?.click();
     } else if (e.key === 'm' || e.key === 'M') {
-      document.querySelector('.tool-btn[data-tool="map-move"]')?.click();
+      document.querySelector('.tool-btn[data-tool="merge"]')?.click();
     } else if (e.key === 'Delete') {
       e.preventDefault();
       deleteSelectedPlot();
@@ -5881,6 +10849,15 @@
       document.getElementById('layerModal')?.classList.add('hidden');
       document.getElementById('mapSheetsModal')?.classList.add('hidden');
       document.getElementById('mouzaImportChoiceModal')?.classList.add('hidden');
+      document.getElementById('autoNumberModal')?.classList.add('hidden');
+      document.getElementById('plotMergeModal')?.classList.add('hidden');
+      document.getElementById('pantographModal')?.classList.add('hidden');
+      document.getElementById('topologyModal')?.classList.add('hidden');
+      document.getElementById('objectPropsModal')?.classList.add('hidden');
+      document.getElementById('geoRefModal')?.classList.add('hidden');
+      document.getElementById('exactCutModal')?.classList.add('hidden');
+      document.getElementById('faraezModal')?.classList.add('hidden');
+      state.highlightedVertex = null;
       render();
       if (wasDrawing) {
         showToast('অঙ্কন বাতিল করা হয়েছে', 'info');
@@ -5893,6 +10870,7 @@
   // Initialize (Clean start on reload without forcing default map)
   const initialEmptyState = document.getElementById('canvasEmptyState');
   if (initialEmptyState) initialEmptyState.classList.remove('hidden');
+  state.plots = [];
   pushHistory();
   resizeCanvas();
   resetFitView();
@@ -5946,4 +10924,12 @@
       updateInspector: updateInspector
     };
   }
+
+  // Global API Exposure for Tests, Scripts & External Automation
+  window.loadMouzaImageObject = loadMouzaImageObject;
+  window.handleLoadedImagePrompt = handleLoadedImagePrompt;
+  window.toggleSatelliteOverlay = toggleSatelliteOverlay;
+  window.setGpsLocationPin = setGpsLocationPin;
+  window.getActiveMouzaMap = getActiveMouzaMap;
+
 })();
