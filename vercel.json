@@ -1,14 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/apps/web/index.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/apps/web/$1"
-    }
-  ]
+  "framework": null,
+  "buildCommand": "echo 'Static web ready'",
+  "installCommand": "echo 'No installation needed'",
+  "outputDirectory": "apps/web",
+  "cleanUrls": true
 }
