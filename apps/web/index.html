@@ -545,6 +545,18 @@
         <div class="crosshair-box"></div>
       </div>
 
+      <!-- AutoCAD Dynamic Input (DYN) Floating HUD -->
+      <div id="cadDynamicInput" class="cad-dyn-hud hidden pointer-events-none select-none">
+        <div class="dyn-row">
+          <div id="dynDistanceBadge" class="dyn-badge dyn-dist">151'-6"</div>
+          <div id="dynAngleBadge" class="dyn-badge dyn-ang">80°</div>
+        </div>
+        <div id="dynPromptBadge" class="dyn-badge dyn-prompt">Specify next point or [Close/Undo]</div>
+        <div id="dynOsnapTooltip" class="dyn-osnap-tip hidden">
+          <span>■</span> Endpoint
+        </div>
+      </div>
+
       <!-- Interactive SVG CAD Drawing Canvas -->
       <svg id="cadSvgCanvas" viewBox="10 70 1000 760" class="w-full h-full">
         <defs>
@@ -720,14 +732,20 @@
           <!-- Active Polyline Drawing Track (Backwards compatibility) -->
           <polyline id="activeRubberBand" points="" fill="none" stroke="#facc15" stroke-width="2" stroke-dasharray="4 3" class="hidden"/>
 
-          <!-- Interactive Polyline In-Progress Drawing Layer (Image 4 standard) -->
+          <!-- Interactive Polyline In-Progress Drawing Layer (AutoCAD DYN standard) -->
           <g id="drawingOverlayGroup" class="pointer-events-none">
-            <polyline id="drawingSolidTrack" points="" fill="none" stroke="#06b6d4" stroke-width="2" vector-effect="non-scaling-stroke"/>
-            <line id="drawingGuideLine" x1="0" y1="0" x2="0" y2="0" stroke="#38bdf8" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" class="hidden"/>
+            <polyline id="drawingSolidTrack" points="" fill="none" stroke="#ffffff" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
+            <line id="drawingGuideLine" x1="0" y1="0" x2="0" y2="0" stroke="#ffffff" stroke-width="1.4" vector-effect="non-scaling-stroke" class="hidden"/>
+            <line id="drawingPolarTrack" x1="0" y1="0" x2="0" y2="0" stroke="#94a3b8" stroke-width="1.0" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" class="hidden"/>
+            <path id="drawingAngleArc" d="" fill="none" stroke="#94a3b8" stroke-width="1.0" stroke-dasharray="2 2" vector-effect="non-scaling-stroke" class="hidden"/>
             <g id="drawingVerticesGroup"></g>
             <g id="drawingActiveHalo" class="hidden">
               <circle id="drawingActiveDot" cx="0" cy="0" r="2.5" fill="#f97316"/>
               <circle id="drawingActiveRing" cx="0" cy="0" r="6" fill="none" stroke="#f97316" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+            </g>
+            <!-- AutoCAD OSNAP green square indicator -->
+            <g id="drawingOsnapMarker" class="hidden">
+              <rect id="osnapMarkerBox" x="0" y="0" width="8" height="8" fill="none" stroke="#22c55e" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
             </g>
           </g>
 

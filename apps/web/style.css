@@ -786,3 +786,94 @@ html, body {
 .workspace-maximized #ribbonToolbar {
   display: none !important;
 }
+
+/* ==========================================================================
+   AutoCAD Dynamic Input (DYN) & OSNAP HUD Overlay
+   ========================================================================== */
+.cad-dyn-hud {
+  position: absolute;
+  pointer-events: none;
+  z-index: 45;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translate(18px, 14px);
+}
+
+.dyn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dyn-badge {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 2.5px 7px;
+  border-radius: 2px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.dyn-dist {
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.dyn-ang {
+  background: rgba(30, 41, 59, 0.94);
+  color: #cbd5e1;
+  border: 1px solid #64748b;
+}
+
+.dyn-prompt {
+  background: rgba(15, 23, 42, 0.95);
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+.dyn-osnap-tip {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1.2px solid #22c55e;
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 2px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.8);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* AutoCAD Aligned Dimension Elements */
+.cad-dim-elem {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.cad-dim-elem:hover line {
+  stroke: #facc15 !important;
+}
+.cad-dim-elem:hover text {
+  fill: #facc15 !important;
+}
+.cad-dim-elem.selected line {
+  stroke: #00ffff !important;
+  stroke-width: 1.5 !important;
+}
+.cad-dim-elem.selected text {
+  fill: #00ffff !important;
+  font-weight: bold !important;
+}
+.cad-dim-elem.selected rect {
+  stroke: #00ffff !important;
+}
+

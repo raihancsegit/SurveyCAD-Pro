@@ -726,10 +726,19 @@
   // =========================================================================
   function resetDrawingOverlay() {
     state.drawingPoints = [];
+    state.snappedPoint = null;
     const solid = document.getElementById('drawingSolidTrack');
     if (solid) solid.setAttribute('points', '');
     const guide = document.getElementById('drawingGuideLine');
     if (guide) guide.classList.add('hidden');
+    const polarTrack = document.getElementById('drawingPolarTrack');
+    if (polarTrack) polarTrack.classList.add('hidden');
+    const angleArc = document.getElementById('drawingAngleArc');
+    if (angleArc) angleArc.classList.add('hidden');
+    const osnapMarker = document.getElementById('drawingOsnapMarker');
+    if (osnapMarker) osnapMarker.classList.add('hidden');
+    const dynHud = document.getElementById('cadDynamicInput');
+    if (dynHud) dynHud.classList.add('hidden');
     const vGroup = document.getElementById('drawingVerticesGroup');
     if (vGroup) vGroup.innerHTML = '';
     const halo = document.getElementById('drawingActiveHalo');
@@ -757,8 +766,11 @@
       if (toolName === 'magicwand') {
         bannerText.textContent = '🪄 মৌজা নকশার যেকোনো দাগের মাঝখানে ক্লিক করুন (অটো দাগ বাউন্ডারি ডিটেক্ট)';
         banner.classList.remove('hidden');
-      } else if (toolName === 'polyline' || toolName === 'polygon') {
-        bannerText.textContent = '✏️ আইলের কোণায় কোণায় ক্লিক করে দাগ আঁকুন (Enter বা ডাবল ক্লিকে শেষ করুন)';
+      } else if (toolName === 'polyline' || toolName === 'polygon' || toolName === 'autopolyline') {
+        bannerText.textContent = '✏️ আইলের কোণায় কোণায় ক্লিক করে দাগ আঁকুন (Enter বা ১ম পয়েন্টে ক্লিক করে শেষ করুন)';
+        banner.classList.remove('hidden');
+      } else if (toolName === 'dimension') {
+        bannerText.textContent = '📏 বাউন্ডারির লাইনে ক্লিক করুন বা দুটি কোণা সিলেক্ট করুন (AutoCAD Aligned Dimension)';
         banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
@@ -766,7 +778,7 @@
     }
 
     // Reset temporary drawing buffer if switching tools
-    if (toolName !== 'polyline' && toolName !== 'polygon') {
+    if (toolName !== 'polyline' && toolName !== 'polygon' && toolName !== 'autopolyline') {
       resetDrawingOverlay();
     }
 
@@ -1574,6 +1586,227 @@
   }
 
   // =========================================================================
+  // AUTOCAD DISTANCE FORMATTING & SEGMENT MATH
+  // =========================================================================
+  function formatDistanceFeetInches(distFeet) {
+    if (distFeet === null || distFeet === undefined || isNaN(distFeet)) return "0'-0\"";
+    let f = Math.floor(distFeet);
+    let in_ = Math.round((distFeet - f) * 12);
+    if (in_ === 12) {
+      f++;
+      in_ = 0;
+    }
+    if (in_ === 0) {
+      return `${f}'`;
+    }
+    return `${f}'-${in_}"`;
+  }
+
+  function distToSegment(p, v, w) {
+    const l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
+    if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+  }
+
+  // =========================================================================
+  // AUTOCAD ALIGNED DIMENSION GENERATOR (IMAGE 4 STANDARD)
+  // Extension lines, offset dimension line, 45-deg oblique ticks, feet-inch badge
+  // =========================================================================
+  function createAlignedDimension(p1, p2, options = {}) {
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (!drawingsGroup) return null;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const segLen = Math.hypot(dx, dy);
+    if (segLen < 1.0) return null;
+
+    const s2w = getScreenPixelToWorld();
+    const u = getUnitsPerPixel();
+    const realFeet = Math.hypot(dx * u.upp_svg_x, dy * u.upp_svg_y);
+    const formattedText = formatDistanceFeetInches(realFeet);
+
+    // Direction unit vector
+    const ux = dx / segLen;
+    const uy = dy / segLen;
+
+    // Normal unit vector (perpendicular)
+    let nx = -uy;
+    let ny = ux;
+
+    // If centroid is provided, point normal outward away from centroid
+    if (options.centroid) {
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      const toMidX = midX - options.centroid.x;
+      const toMidY = midY - options.centroid.y;
+      if (toMidX * nx + toMidY * ny < 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+    } else if (options.flip) {
+      nx = -nx;
+      ny = -ny;
+    }
+
+    const offsetDist = (options.offset || 16.0) * s2w;
+    const extPast = 3.5 * s2w;
+    const extOffset = 1.5 * s2w;
+    const tickSize = 4.0 * s2w;
+
+    // Dimension line endpoints
+    const q1x = p1.x + nx * offsetDist;
+    const q1y = p1.y + ny * offsetDist;
+    const q2x = p2.x + nx * offsetDist;
+    const q2y = p2.y + ny * offsetDist;
+
+    // Extension line 1
+    const e1_startX = p1.x + nx * extOffset;
+    const e1_startY = p1.y + ny * extOffset;
+    const e1_endX = q1x + nx * extPast;
+    const e1_endY = q1y + ny * extPast;
+
+    // Extension line 2
+    const e2_startX = p2.x + nx * extOffset;
+    const e2_startY = p2.y + ny * extOffset;
+    const e2_endX = q2x + nx * extPast;
+    const e2_endY = q2y + ny * extPast;
+
+    // 45-degree oblique architectural tick vector
+    const tx = (ux + nx) * 0.707 * tickSize;
+    const ty = (uy + ny) * 0.707 * tickSize;
+
+    // Midpoint for text
+    const tmx = (q1x + q2x) / 2;
+    const tmy = (q1y + q2y) / 2;
+
+    // Orientation angle for text
+    let textAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (textAngle > 90 || textAngle < -90) {
+      textAngle += 180;
+    }
+
+    const dimId = 'cad_dim_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'cad-dim-elem');
+    g.setAttribute('data-dim-id', dimId);
+    g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+
+    const textChars = formattedText.length;
+    const bgW = Math.max(28 * s2w, (textChars * 6.2 + 8) * s2w);
+    const bgH = 13.0 * s2w;
+
+    g.innerHTML = `
+      <!-- Extension lines -->
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ffffff" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ffffff" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <!-- Dimension line -->
+      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ffffff" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <!-- Oblique ticks -->
+      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ffffff" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + ty).toFixed(1)}" stroke="#ffffff" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+      <!-- Label with dark knockout background -->
+      <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
+        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${1.5 * s2w}" fill="#0f172a" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/>
+        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.2 * s2w).toFixed(1)}" fill="#ffffff" font-size="${10.5 * s2w}" font-weight="bold" font-family="'Fira Code', 'Consolas', monospace" text-anchor="middle">${formattedText}</text>
+      </g>
+    `;
+
+    g.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
+      document.querySelectorAll('.mouza-plot.selected, .user-plot-boundary.selected').forEach(el => el.classList.remove('selected'));
+      g.classList.add('selected');
+      state.selectedDim = g;
+      logCommand(`DIMENSION: Aligned dimension ${formattedText} selected. Press Delete or Erase to delete.`);
+    });
+
+    drawingsGroup.appendChild(g);
+    pushUndo(`Add Dimension (${formattedText})`);
+    logCommand(`DIMENSION: Aligned dimension ${formattedText} placed.`);
+    return g;
+  }
+
+  // =========================================================================
+  // OBJECT DELETION ENGINE (DELETE / BACKSPACE)
+  // Deletes selected plot boundary, CAD dimension, or undos last polyline vertex
+  // =========================================================================
+  function deleteSelectedPlot(dagNo) {
+    if (!dagNo) return;
+    const dagStr = String(dagNo);
+
+    document.querySelectorAll(`[data-dag="${dagStr}"], [data-dag-handles="${dagStr}"], [data-dag-dims="${dagStr}"], [data-dag-label="${dagStr}"], #plot-${dagStr}`).forEach(el => el.remove());
+
+    if (state.plots[dagStr]) {
+      delete state.plots[dagStr];
+    }
+
+    if (state.selectedDag === dagStr) {
+      state.selectedDag = null;
+      const centerNum = document.getElementById('selectedDagCenterNum');
+      const centerSqft = document.getElementById('selectedDagCenterSqft');
+      const centerDec = document.getElementById('selectedDagCenterDec');
+      if (centerNum) centerNum.textContent = '—';
+      if (centerSqft) centerSqft.textContent = '—';
+      if (centerDec) centerDec.textContent = '—';
+
+      const infoDag = document.getElementById('infoDagNo');
+      const infoArea = document.getElementById('infoArea');
+      const infoPerimeter = document.getElementById('infoPerimeter');
+      if (infoDag) infoDag.textContent = '—';
+      if (infoArea) infoArea.textContent = '—';
+      if (infoPerimeter) infoPerimeter.textContent = '—';
+    }
+
+    pushUndo(`Delete Plot (দাগ ${dagStr})`);
+    logCommand(`ERASE: Plot boundary ${dagStr} deleted.`);
+  }
+
+  function deleteSelectedObject() {
+    // 1. If actively drawing polyline, remove last vertex
+    if ((state.activeTool === 'polyline' || state.activeTool === 'autopolyline' || state.activeTool === 'polygon') && state.drawingPoints && state.drawingPoints.length > 0) {
+      state.drawingPoints.pop();
+      updateDrawingOverlay();
+      logCommand(`PLINE: Last vertex removed (${state.drawingPoints.length} points remaining).`);
+      return true;
+    }
+
+    // 2. If a CAD dimension is selected
+    const selectedDim = document.querySelector('.cad-dim-elem.selected') || state.selectedDim;
+    if (selectedDim) {
+      selectedDim.remove();
+      state.selectedDim = null;
+      pushUndo('Delete Dimension');
+      logCommand('ERASE: Dimension deleted.');
+      return true;
+    }
+
+    // 3. If any user-drawn object in userDrawingsGroup is selected
+    const selectedDrawn = document.querySelector('#userDrawingsGroup .selected');
+    if (selectedDrawn) {
+      const dag = selectedDrawn.getAttribute('data-dag');
+      if (dag) {
+        deleteSelectedPlot(dag);
+      } else {
+        selectedDrawn.remove();
+        pushUndo('Delete Drawing');
+        logCommand('ERASE: Selected drawing object deleted.');
+      }
+      return true;
+    }
+
+    // 4. If a plot is currently selected
+    if (state.selectedDag) {
+      deleteSelectedPlot(state.selectedDag);
+      return true;
+    }
+
+    return false;
+  }
+
+  // =========================================================================
   // CANVAS COORDINATE TRANSFORMATION
   // =========================================================================
   function getCanvasCoords(e) {
@@ -2015,22 +2248,23 @@
     const pt = getCanvasCoords(e);
 
     // 1. Polyline / Boundary Drawing Mode (Image 2 standard)
-    if (state.activeTool === 'polyline' || state.activeTool === 'autopolyline') {
-      // Check if clicking strictly near Point 1 to close polyline (Snap threshold in screen pixels)
+    if (state.activeTool === 'polyline' || state.activeTool === 'autopolyline' || state.activeTool === 'polygon') {
+      const clickPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : pt;
+      const s2w = getScreenPixelToWorld();
+
+      // Check if clicking near Point 1 or snapped to start point to close polyline
       if (state.drawingPoints.length >= 3) {
         const p1 = state.drawingPoints[0];
-        const distToStart = Math.hypot(pt.x - p1.x, pt.y - p1.y);
-        const s2w = getScreenPixelToWorld();
-        const snapThreshold = 7.5 * s2w; // Strictly within 7.5 screen pixels of Point 1
-        if (distToStart <= snapThreshold) {
+        const distToStart = Math.hypot(clickPt.x - p1.x, clickPt.y - p1.y);
+        if (distToStart <= 14 * s2w || (state.snappedPoint && state.snappedPoint.isStart)) {
           finishPolyline();
           return;
         }
       }
 
-      state.drawingPoints.push(pt);
+      state.drawingPoints.push(clickPt);
       updateDrawingOverlay();
-      logCommand(`PLINE: Point ${state.drawingPoints.length} added at X=${pt.x}, Y=${pt.y}`);
+      logCommand(`PLINE: Point ${state.drawingPoints.length} added at X=${clickPt.x}, Y=${clickPt.y}`);
       return;
     }
 
@@ -2045,41 +2279,52 @@
 
     // 3. Select Tool
     if (state.activeTool === 'select') {
+      document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
+      state.selectedDim = null;
       detectPlotBoundaryFromClick(pt, true);
       return;
     }
 
-    // 4. Distance / Dimension Tool (DIST)
+    // 4. AutoCAD Aligned Dimension Tool (DIM)
     if (state.activeTool === 'dimension') {
-      state.dimensionPoints.push(pt);
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 14 * s2w;
+
+      // Check if user clicked directly on or near a parcel boundary segment
+      let clickedEdge = null;
+      for (const [dag, pData] of Object.entries(state.plots)) {
+        const verts = pData.vertices;
+        if (!verts || verts.length < 2) continue;
+        let sumX = 0, sumY = 0;
+        for (let i = 0; i < verts.length; i++) { sumX += verts[i].x; sumY += verts[i].y; }
+        const centroid = { x: sumX / verts.length, y: sumY / verts.length };
+
+        for (let i = 0; i < verts.length; i++) {
+          const j = (i + 1) % verts.length;
+          const d = distToSegment(pt, verts[i], verts[j]);
+          if (d <= clickTol) {
+            clickedEdge = { p1: verts[i], p2: verts[j], centroid, dag };
+            break;
+          }
+        }
+        if (clickedEdge) break;
+      }
+
+      if (clickedEdge) {
+        createAlignedDimension(clickedEdge.p1, clickedEdge.p2, { centroid: clickedEdge.centroid, dag: clickedEdge.dag });
+        state.dimensionPoints = [];
+        return;
+      }
+
+      // Point-to-point dimensioning
+      const snapPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : pt;
+      state.dimensionPoints.push(snapPt);
       if (state.dimensionPoints.length === 1) {
-        logCommand(`DIMENSION: First point selected (X=${pt.x}, Y=${pt.y}). Specify second point:`);
-      } else if (state.dimensionPoints.length === 2) {
+        logCommand(`DIMENSION: First origin specified (X=${snapPt.x}, Y=${snapPt.y}). Specify second extension origin:`);
+      } else if (state.dimensionPoints.length >= 2) {
         const p1 = state.dimensionPoints[0];
         const p2 = state.dimensionPoints[1];
-        const u = getUnitsPerPixel();
-
-        // Exact AutoCAD distance conversion
-        const realFeet = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
-        const realLinks = (realFeet / FEET_PER_LINK).toFixed(1);
-        const realMeters = (realFeet * 0.3048).toFixed(2);
-
-        // Draw dimension line & text
-        const drawingsGroup = document.getElementById('userDrawingsGroup');
-        if (drawingsGroup) {
-          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-          g.setAttribute('class', 'cad-dim-elem');
-          g.innerHTML = `
-            <line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#facc15" stroke-width="2" vector-effect="non-scaling-stroke"/>
-            <circle cx="${p1.x}" cy="${p1.y}" r="3.5" fill="#facc15"/>
-            <circle cx="${p2.x}" cy="${p2.y}" r="3.5" fill="#facc15"/>
-            <rect x="${(p1.x + p2.x)/2 - 32}" y="${(p1.y + p2.y)/2 - 14}" width="64" height="18" rx="3" fill="#181c24" stroke="#facc15" stroke-width="1"/>
-            <text x="${(p1.x + p2.x)/2}" y="${(p1.y + p2.y)/2 - 1}" fill="#facc15" font-size="10.5" font-weight="bold" font-family="'Fira Code', monospace" text-anchor="middle">${realFeet.toFixed(2)} ft</text>
-          `;
-          drawingsGroup.appendChild(g);
-        }
-
-        logCommand(`DIST: Distance = ${realFeet.toFixed(2)} ft (${realLinks} Links, ${realMeters} m) [AutoCAD Scale 1:${u.scale}]`);
+        createAlignedDimension(p1, p2);
         state.dimensionPoints = [];
       }
       return;
@@ -2614,9 +2859,8 @@ const ribbonTemplates = {
       'rbScale': () => openModal('modalScaleCalculator'),
       'rbOffset': () => applyOffsetToSelectedPlot(10),
       'rbErase': () => {
-        if (state.selectedDag && state.selectedDag !== '126') {
-          deleteSelectedPlot(state.selectedDag);
-        } else {
+        const deleted = deleteSelectedObject();
+        if (!deleted) {
           clearUserDrawings();
         }
       },
@@ -4053,23 +4297,203 @@ const ribbonTemplates = {
           crosshair.style.top = `${mouseY}px`;
         }
 
-        // Handle Polyline Guide Line preview (Image 4 standard)
-        if ((state.activeTool === 'polyline' || state.activeTool === 'polygon') && state.drawingPoints.length > 0) {
-          const pt = getCanvasCoords(e);
-          const guide = document.getElementById('drawingGuideLine');
-          if (guide) {
-            const lastP = state.drawingPoints[state.drawingPoints.length - 1];
-            guide.setAttribute('x1', lastP.x.toFixed(1));
-            guide.setAttribute('y1', lastP.y.toFixed(1));
-            guide.setAttribute('x2', pt.x.toFixed(1));
-            guide.setAttribute('y2', pt.y.toFixed(1));
-            guide.classList.remove('hidden');
+        const pt = getCanvasCoords(e);
+        const s2w = getScreenPixelToWorld();
+        const snapThresh = 14 * s2w;
+
+        const dynHud = document.getElementById('cadDynamicInput');
+        const dynDistBadge = document.getElementById('dynDistanceBadge');
+        const dynAngBadge = document.getElementById('dynAngleBadge');
+        const dynPromptBadge = document.getElementById('dynPromptBadge');
+        const dynOsnapTooltip = document.getElementById('dynOsnapTooltip');
+        const osnapMarker = document.getElementById('drawingOsnapMarker');
+        const osnapBox = document.getElementById('osnapMarkerBox');
+        const guide = document.getElementById('drawingGuideLine');
+        const polarTrack = document.getElementById('drawingPolarTrack');
+        const angleArc = document.getElementById('drawingAngleArc');
+
+        // AutoCAD OSNAP (Object Snap) Detection
+        let bestSnap = null;
+        let bestDist = snapThresh;
+
+        const isDrawTool = (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline' || state.activeTool === 'dimension');
+        if (isDrawTool) {
+          // Check start vertex first (for closing polyline)
+          if (state.drawingPoints && state.drawingPoints.length >= 3) {
+            const p0 = state.drawingPoints[0];
+            const d0 = Math.hypot(pt.x - p0.x, pt.y - p0.y);
+            if (d0 <= snapThresh) {
+              bestSnap = { x: p0.x, y: p0.y, isStart: true, label: 'Endpoint (Click to Close)' };
+              bestDist = d0;
+            }
           }
+
+          if (!bestSnap && state.drawingPoints) {
+            for (let i = 0; i < state.drawingPoints.length; i++) {
+              const dp = state.drawingPoints[i];
+              const d = Math.hypot(pt.x - dp.x, pt.y - dp.y);
+              if (d < bestDist) {
+                bestDist = d;
+                bestSnap = { x: dp.x, y: dp.y, isStart: (i === 0), label: 'Endpoint' };
+              }
+            }
+          }
+
+          if (!bestSnap && state.plots) {
+            for (const pData of Object.values(state.plots)) {
+              if (!pData.vertices) continue;
+              for (const v of pData.vertices) {
+                const d = Math.hypot(pt.x - v.x, pt.y - v.y);
+                if (d < bestDist) {
+                  bestDist = d;
+                  bestSnap = { x: v.x, y: v.y, isStart: false, label: 'Endpoint' };
+                }
+              }
+            }
+          }
+        }
+
+        if (bestSnap) {
+          state.snappedPoint = { x: bestSnap.x, y: bestSnap.y, isStart: bestSnap.isStart };
+          if (osnapBox && osnapMarker) {
+            osnapBox.setAttribute('x', (bestSnap.x - 4 * s2w).toFixed(1));
+            osnapBox.setAttribute('y', (bestSnap.y - 4 * s2w).toFixed(1));
+            osnapBox.setAttribute('width', (8 * s2w).toFixed(1));
+            osnapBox.setAttribute('height', (8 * s2w).toFixed(1));
+            osnapMarker.classList.remove('hidden');
+          }
+          if (dynOsnapTooltip) {
+            dynOsnapTooltip.innerHTML = `<span>■</span> ${bestSnap.label}`;
+            dynOsnapTooltip.classList.remove('hidden');
+          }
+        } else {
+          state.snappedPoint = null;
+          if (osnapMarker) osnapMarker.classList.add('hidden');
+          if (dynOsnapTooltip) dynOsnapTooltip.classList.add('hidden');
+        }
+
+        const targetPt = state.snappedPoint ? state.snappedPoint : pt;
+
+        // AutoCAD Dynamic Input (DYN) & Real-time Guide Line Handling
+        if (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline') {
+          if (state.drawingPoints && state.drawingPoints.length > 0) {
+            const lastP = state.drawingPoints[state.drawingPoints.length - 1];
+
+            if (guide) {
+              guide.setAttribute('x1', lastP.x.toFixed(1));
+              guide.setAttribute('y1', lastP.y.toFixed(1));
+              guide.setAttribute('x2', targetPt.x.toFixed(1));
+              guide.setAttribute('y2', targetPt.y.toFixed(1));
+              guide.classList.remove('hidden');
+            }
+
+            const u = getUnitsPerPixel();
+            const distFeet = Math.hypot((targetPt.x - lastP.x) * u.upp_svg_x, (targetPt.y - lastP.y) * u.upp_svg_y);
+            const formattedDist = formatDistanceFeetInches(distFeet);
+
+            const dx = targetPt.x - lastP.x;
+            const dy = targetPt.y - lastP.y;
+            const angleDeg = Math.round((Math.atan2(-dy, dx) * 180 / Math.PI + 360) % 360);
+
+            if (dynDistBadge) {
+              dynDistBadge.textContent = formattedDist;
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) {
+              dynAngBadge.textContent = `${angleDeg}°`;
+              dynAngBadge.style.display = 'block';
+            }
+            if (dynPromptBadge) {
+              dynPromptBadge.textContent = (state.snappedPoint && state.snappedPoint.isStart && state.drawingPoints.length >= 3) 
+                ? 'Endpoint (Click to close)' 
+                : 'Specify next point or [Close/Undo]';
+            }
+
+            if (polarTrack) {
+              polarTrack.setAttribute('x1', lastP.x.toFixed(1));
+              polarTrack.setAttribute('y1', lastP.y.toFixed(1));
+              polarTrack.setAttribute('x2', (lastP.x + Math.max(35 * s2w, Math.abs(dx))).toFixed(1));
+              polarTrack.setAttribute('y2', lastP.y.toFixed(1));
+              polarTrack.classList.remove('hidden');
+            }
+
+            if (angleArc) {
+              const arcR = Math.min(Math.hypot(dx, dy) * 0.45, 20 * s2w);
+              if (arcR > 5 * s2w) {
+                const rad = -angleDeg * Math.PI / 180;
+                const ax = lastP.x + arcR * Math.cos(rad);
+                const ay = lastP.y + arcR * Math.sin(rad);
+                const largeArc = angleDeg > 180 ? 1 : 0;
+                angleArc.setAttribute('d', `M ${lastP.x + arcR} ${lastP.y} A ${arcR} ${arcR} 0 ${largeArc} 0 ${ax.toFixed(1)} ${ay.toFixed(1)}`);
+                angleArc.classList.remove('hidden');
+              } else {
+                angleArc.classList.add('hidden');
+              }
+            }
+
+            if (dynHud) {
+              dynHud.style.left = `${mouseX}px`;
+              dynHud.style.top = `${mouseY}px`;
+              dynHud.classList.remove('hidden');
+            }
+          } else {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify start point:';
+            if (dynHud) {
+              dynHud.style.left = `${mouseX}px`;
+              dynHud.style.top = `${mouseY}px`;
+              dynHud.classList.remove('hidden');
+            }
+            if (guide) guide.classList.add('hidden');
+            if (polarTrack) polarTrack.classList.add('hidden');
+            if (angleArc) angleArc.classList.add('hidden');
+          }
+        } else if (state.activeTool === 'dimension') {
+          if (state.dimensionPoints.length === 0) {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify first extension line origin or select edge:';
+          } else {
+            const p1 = state.dimensionPoints[0];
+            const u = getUnitsPerPixel();
+            const distFeet = Math.hypot((targetPt.x - p1.x) * u.upp_svg_x, (targetPt.y - p1.y) * u.upp_svg_y);
+            if (dynDistBadge) {
+              dynDistBadge.textContent = formatDistanceFeetInches(distFeet);
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify second extension line origin:';
+          }
+          if (dynHud) {
+            dynHud.style.left = `${mouseX}px`;
+            dynHud.style.top = `${mouseY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (guide) guide.classList.add('hidden');
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+        } else {
+          if (dynHud) dynHud.classList.add('hidden');
+          if (guide) guide.classList.add('hidden');
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+          if (osnapMarker) osnapMarker.classList.add('hidden');
         }
       });
 
       cadWorkspace.addEventListener('mouseleave', () => {
         if (crosshair) crosshair.style.display = 'none';
+        const dynHud = document.getElementById('cadDynamicInput');
+        if (dynHud) dynHud.classList.add('hidden');
+        const osnapMarker = document.getElementById('drawingOsnapMarker');
+        if (osnapMarker) osnapMarker.classList.add('hidden');
+        const guide = document.getElementById('drawingGuideLine');
+        if (guide) guide.classList.add('hidden');
+        const polarTrack = document.getElementById('drawingPolarTrack');
+        if (polarTrack) polarTrack.classList.add('hidden');
+        const angleArc = document.getElementById('drawingAngleArc');
+        if (angleArc) angleArc.classList.add('hidden');
       });
     }
 
@@ -4303,15 +4727,15 @@ const ribbonTemplates = {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key === 'Escape') {
         resetDrawingOverlay();
+        document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
+        state.selectedDim = null;
         setActiveTool('select');
         logCommand('*Cancel*');
-      } else if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon')) {
+      } else if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
         finishPolyline();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (state.selectedDag && state.selectedDag !== '126') {
-          e.preventDefault();
-          deleteSelectedPlot(state.selectedDag);
-        }
+        e.preventDefault();
+        deleteSelectedObject();
       } else if (e.key === 'g' || e.key === 'G') {
         toggleVirtualGuniya();
       } else if (e.key === 'l' || e.key === 'L') {
@@ -4607,6 +5031,9 @@ const ribbonTemplates = {
   window.setActiveTool = setActiveTool;
   window.selectPlot = selectPlot;
   window.toggleDemoPlots = toggleDemoPlots;
+  window.deleteSelectedPlot = deleteSelectedPlot;
+  window.deleteSelectedObject = deleteSelectedObject;
+  window.createAlignedDimension = createAlignedDimension;
 
     // Expose clean public API for UI triggers, extensions, and automated tests
   window.SurveyCAD = {
@@ -4616,6 +5043,9 @@ const ribbonTemplates = {
     rasterCache,
     setActiveTool,
     selectPlot,
+    deleteSelectedPlot,
+    deleteSelectedObject,
+    createAlignedDimension,
     toggleDemoPlots,
     togglePlotLabels,
     toggleVirtualGuniya,
@@ -4627,6 +5057,7 @@ const ribbonTemplates = {
     detectPlotBoundaryFromClick,
     finishPolyline,
     resetDrawingOverlay,
+    updateDrawingOverlay,
     renderParcelPolygon,
     startVertexDrag,
     vertexDragState,
