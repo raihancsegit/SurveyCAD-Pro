@@ -9,7 +9,7 @@
     "pack": "electron-builder --dir"
   },
   "dependencies": {
-    "@land-survey/shared-core": "*"
+    "@land-survey/shared-core": "file:../../packages/shared-core"
   },
   "devDependencies": {
     "electron": "^30.0.9",

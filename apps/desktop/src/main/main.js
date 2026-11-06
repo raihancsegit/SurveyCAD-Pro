@@ -21,7 +21,7 @@ function createWindow() {
   });
 
   // Load the CAD workspace (Directly uses full web workspace when in monorepo, fallback to renderer)
-  const webPath = path.join(__dirname, '../../web/index.html');
+  const webPath = path.join(__dirname, '../../../web/index.html');
   const rendererPath = path.join(__dirname, '../renderer/index.html');
   mainWindow.loadFile(fs.existsSync(webPath) ? webPath : rendererPath);
 

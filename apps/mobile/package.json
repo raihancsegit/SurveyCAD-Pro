@@ -9,7 +9,7 @@
     "ios": "expo start --ios"
   },
   "dependencies": {
-    "@land-survey/shared-core": "*"
+    "@land-survey/shared-core": "file:../../packages/shared-core"
   },
   "private": true
 }
