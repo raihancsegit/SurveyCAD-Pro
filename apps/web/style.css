@@ -6,13 +6,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --cad-bg: #0c0e12;
-  --cad-canvas: #090c10;
-  --cad-panel: #161920;
-  --cad-panel-dark: #12141a;
-  --cad-panel-light: #1c2029;
-  --cad-border: #262b36;
-  --cad-border-light: #323846;
+  --cad-bg: #181b20;
+  --cad-canvas: #212830;
+  --cad-panel: #1e2229;
+  --cad-panel-dark: #16191f;
+  --cad-panel-light: #252a33;
+  --cad-border: #2c323d;
+  --cad-border-light: #38404e;
   --cad-blue: #0284c7;
   --cad-blue-hover: #0369a1;
   --cad-blue-light: #38bdf8;
@@ -21,6 +21,7 @@
   --cad-red: #ef4444;
   --cad-cyan: #06b6d4;
   --cad-magenta: #d946ef;
+  --cad-orange: #f97316;
   --cad-text: #f1f5f9;
   --cad-text-muted: #94a3b8;
   --cad-text-dim: #64748b;
@@ -40,7 +41,7 @@ html, body {
   overflow: hidden;
   background-color: var(--cad-bg);
   color: var(--cad-text);
-  font-family: 'Inter', 'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   display: flex;
   flex-direction: column;
 }
@@ -432,22 +433,28 @@ html, body {
   transition: all 0.2s ease;
 }
 .cmd-history {
-  max-height: 38px; /* compact 2 lines by default, leaving maximum vertical space for drawing */
+  max-height: 48px;
   overflow-y: auto;
   padding: 4px 10px;
   font-family: 'Fira Code', monospace;
   font-size: 10.5px;
   line-height: 1.4;
   color: #cbd5e1;
-  background: rgba(10, 12, 16, 0.88);
-  border-bottom: 1px solid #252b37;
-  transition: max-height 0.2s ease;
+  background: rgba(18, 22, 28, 0.95);
+  border-bottom: 1px solid #28303e;
+  transition: opacity 0.35s ease, max-height 0.35s ease, padding 0.35s ease;
+  opacity: 1;
 }
 .cmd-history.expanded {
   max-height: 110px;
 }
-.cmd-history.collapsed {
-  display: none;
+.cmd-history.cmd-history-hidden {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom: none !important;
+  pointer-events: none;
 }
 .cmd-input-row {
   display: flex;
@@ -854,10 +861,19 @@ html, body {
   gap: 4px;
 }
 
-/* AutoCAD Aligned Dimension Elements */
+/* AutoCAD Aligned Dimension Elements (Matching Image 5) */
 .cad-dim-elem {
   cursor: pointer;
   transition: opacity 0.15s ease;
+}
+.cad-dim-elem line {
+  stroke: #f97316;
+  stroke-width: 1.2;
+}
+.cad-dim-elem text {
+  fill: #f97316;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-weight: 700;
 }
 .cad-dim-elem:hover line {
   stroke: #facc15 !important;
@@ -867,7 +883,7 @@ html, body {
 }
 .cad-dim-elem.selected line {
   stroke: #00ffff !important;
-  stroke-width: 1.5 !important;
+  stroke-width: 1.6 !important;
 }
 .cad-dim-elem.selected text {
   fill: #00ffff !important;

@@ -98,9 +98,9 @@
         owners: '3 Person(s)',
         dims: { top: '160.00 ft', bottom: '160.00 ft', left: '81.00 ft', right: '81.00 ft' },
         ownerList: [
-          { name: '১. রহিম আলী', share: '১০.০০ শতাংশ (০.৩৩৩ হিস্যা)' },
-          { name: '২. করিম মিয়া', share: '১০.০০ শতাংশ (০.৩৩৩ হিস্যা)' },
-          { name: '৩. সালমা বেগম', share: '১০.০০ শতাংশ (০.৩৩৪ হিস্যা)' }
+          { name: '1. Rahim Ali', share: '10.00 Decimal (0.333 Share)' },
+          { name: '2. Karim Mia', share: '10.00 Decimal (0.333 Share)' },
+          { name: '3. Salma Begum', share: '10.00 Decimal (0.334 Share)' }
         ]
       },
       '103': {
@@ -115,7 +115,7 @@
         perimeter: 326.00,
         owners: '1 Person',
         dims: { top: '110.00 ft', bottom: '105.00 ft', left: '60.00 ft', right: '58.00 ft' },
-        ownerList: [{ name: '১. আবুল কাশেম', share: '১৫.০০ শতাংশ (১.০০০ হিস্যা)' }]
+        ownerList: [{ name: '1. Abul Kashem', share: '15.00 Decimal (1.000 Share)' }]
       },
       '108': {
         mouza: 'Chorbagh',
@@ -130,8 +130,8 @@
         owners: '2 Persons',
         dims: { top: '120.00 ft', bottom: '118.00 ft', left: '72.00 ft', right: '74.00 ft' },
         ownerList: [
-          { name: '১. রফিকুল ইসলাম', share: '১০.০০ শতাংশ (০.৫০০ হিস্যা)' },
-          { name: '২. জহিরুল হক', share: '১০.০০ শতাংশ (০.৫০০ হিস্যা)' }
+          { name: '1. Rafiqul Islam', share: '10.00 Decimal (0.500 Share)' },
+          { name: '2. Zahirul Haque', share: '10.00 Decimal (0.500 Share)' }
         ]
       },
       '123': {
@@ -147,8 +147,8 @@
         owners: '2 Persons',
         dims: { top: '125.00 ft', bottom: '120.00 ft', left: '75.00 ft', right: '78.00 ft' },
         ownerList: [
-          { name: '১. সিরাজুল হক', share: '১১.০০ শতাংশ' },
-          { name: '২. মমতাজ বেগম', share: '১১.০০ শতাংশ' }
+          { name: '1. Sirajul Haque', share: '11.00 Decimal' },
+          { name: '2. Momtaz Begum', share: '11.00 Decimal' }
         ]
       },
       '128': {
@@ -164,8 +164,8 @@
         owners: '2 Persons',
         dims: { top: '140.00 ft', bottom: '135.00 ft', left: '78.00 ft', right: '80.00 ft' },
         ownerList: [
-          { name: '১. ফাতেমা খাতুন', share: '১৫.০০ শতাংশ (০.৬০০ হিস্যা)' },
-          { name: '২. আমেনা খাতুন', share: '১০.০০ শতাংশ (০.৪০০ হিস্যা)' }
+          { name: '1. Fatema Khatun', share: '15.00 Decimal (0.600 Share)' },
+          { name: '2. Amena Khatun', share: '10.00 Decimal (0.400 Share)' }
         ]
       },
       '130': {
@@ -180,7 +180,7 @@
         perimeter: 440.00,
         owners: '2 Persons',
         dims: { top: '150.00 ft', bottom: '145.00 ft', left: '78.00 ft', right: '80.00 ft' },
-        ownerList: [{ name: '১. রশীদ খান', share: '২৭.০০ শতাংশ' }]
+        ownerList: [{ name: '1. Rashid Khan', share: '27.00 Decimal' }]
       },
       '133': {
         mouza: 'Chorbagh',
@@ -194,7 +194,7 @@
         perimeter: 360.00,
         owners: '1 Person',
         dims: { top: '115.00 ft', bottom: '112.00 ft', left: '68.00 ft', right: '70.00 ft' },
-        ownerList: [{ name: '১. নাসির উদ্দিন', share: '১৮.০০ শতাংশ (১.০০০ হিস্যা)' }]
+        ownerList: [{ name: '1. Nasir Uddin', share: '18.00 Decimal (1.000 Share)' }]
       },
       '137': {
         mouza: 'Chorbagh',
@@ -209,9 +209,9 @@
         owners: '3 Persons',
         dims: { top: '130.00 ft', bottom: '128.00 ft', left: '74.00 ft', right: '75.00 ft' },
         ownerList: [
-          { name: '১. শাহ আলম', share: '১০.০০ শতাংশ' },
-          { name: '২. মোজাম্মেল হক', share: '৭.০০ শতাংশ' },
-          { name: '৩. পারভীন আক্তার', share: '৫.০০ শতাংশ' }
+          { name: '1. Shah Alam', share: '10.00 Decimal' },
+          { name: '2. Mozammel Haque', share: '7.00 Decimal' },
+          { name: '3. Parveen Akter', share: '5.00 Decimal' }
         ]
       },
       '138': {
@@ -226,7 +226,7 @@
         perimeter: 375.00,
         owners: '1 Person',
         dims: { top: '120.00 ft', bottom: '115.00 ft', left: '70.00 ft', right: '68.00 ft' },
-        ownerList: [{ name: '১. আনোয়ার হোসেন', share: '১৯.০০ শতাংশ' }]
+        ownerList: [{ name: '1. Anwar Hossain', share: '19.00 Decimal' }]
       },
       '143': {
         mouza: 'Chorbagh',
@@ -241,8 +241,8 @@
         owners: '2 Persons',
         dims: { top: '145.00 ft', bottom: '142.00 ft', left: '80.00 ft', right: '78.00 ft' },
         ownerList: [
-          { name: '১. হাবিবুর রহমান', share: '১৩.০০ শতাংশ' },
-          { name: '২. লতিফা বানু', share: '১৩.০০ শতাংশ' }
+          { name: '1. Habibur Rahman', share: '13.00 Decimal' },
+          { name: '2. Latifa Banu', share: '13.00 Decimal' }
         ]
       },
       '148': {
@@ -258,10 +258,10 @@
         owners: '4 Persons',
         dims: { top: '165.00 ft', bottom: '160.00 ft', left: '88.00 ft', right: '86.00 ft' },
         ownerList: [
-          { name: '১. মোশাররফ হোসেন', share: '১০.০০ শতাংশ' },
-          { name: '২. দেলোয়ার হোসেন', share: '১০.০০ শতাংশ' },
-          { name: '৩. সেলিনা আক্তার', share: '৮.০০ শতাংশ' },
-          { name: '৪. রোকেয়া বেগম', share: '৫.০০ শতাংশ' }
+          { name: '1. Mosharraf Hossain', share: '10.00 Decimal' },
+          { name: '2. Delowar Hossain', share: '10.00 Decimal' },
+          { name: '3. Selina Akter', share: '8.00 Decimal' },
+          { name: '4. Rokeya Begum', share: '5.00 Decimal' }
         ]
       },
       '158': {
@@ -277,8 +277,8 @@
         owners: '2 Persons',
         dims: { top: '135.00 ft', bottom: '130.00 ft', left: '76.00 ft', right: '78.00 ft' },
         ownerList: [
-          { name: '১. আসাদুল্লাহ', share: '১২.০০ শতাংশ' },
-          { name: '২. রাশেদা বেগম', share: '১২.০০ শতাংশ' }
+          { name: '1. Asadullah', share: '12.00 Decimal' },
+          { name: '2. Rasheda Begum', share: '12.00 Decimal' }
         ]
       }
     }
@@ -422,7 +422,7 @@
     viewport.width = 1000;
     viewport.height = 650;
     updateViewBox();
-    logCommand('ZOOM: Extents 100% (ফিট ভিউ)');
+    logCommand('ZOOM: Extents 100% (Fit View)');
   }
 
   let demoPlotsVisible = false;
@@ -440,14 +440,14 @@
 
     if (demoPlotsVisible) {
       if (eyeEl) eyeEl.textContent = '👁️';
-      if (textEl) textEl.textContent = 'ডিফল্ট দাগ: দৃশ্যমান';
+      if (textEl) textEl.textContent = 'Default Plots: Visible';
       if (btn) btn.classList.remove('bg-amber-900', 'border-amber-500', 'text-amber-200');
-      logCommand('DEMO PLOTS: Restored (ডিফল্ট দাগ দৃশ্যমান)');
+      logCommand('DEMO PLOTS: Restored ');
     } else {
       if (eyeEl) eyeEl.textContent = '👁️‍🗨️';
-      if (textEl) textEl.textContent = 'ডিফল্ট দাগ: লুকানো (ক্লিন ক্যানভাস)';
+      if (textEl) textEl.textContent = 'Default Plots: Hidden ( )';
       if (btn) btn.classList.add('bg-amber-900', 'border-amber-500', 'text-amber-200');
-      logCommand('DEMO PLOTS: Hidden (শুধুমাত্র আপনার ইমপোর্টকৃত নকশায় কাজ করুন)');
+      logCommand('DEMO PLOTS: Hidden ');
     }
   }
 
@@ -464,7 +464,7 @@
     clearUserDrawings();
 
     const topProjName = document.querySelector('.font-bold.text-slate-200');
-    if (topProjName) topProjName.textContent = 'Drawing1.dwg (খালি ক্যানভাস)';
+    if (topProjName) topProjName.textContent = 'Drawing1.dwg (Model)';
 
     viewport.x = 0;
     viewport.y = 0;
@@ -661,7 +661,7 @@
 
   function undo() {
     if (undoStack.length <= 1) {
-      logCommand('UNDO: Nothing to undo (শুরুর পর্যায়ে আছেন).');
+      logCommand('UNDO: Nothing to undo .');
       return false;
     }
 
@@ -678,7 +678,7 @@
 
   function redo() {
     if (redoStack.length === 0) {
-      logCommand('REDO: Nothing to redo (পুনরায় করার কিছু নেই).');
+      logCommand('REDO: Nothing to redo .');
       return false;
     }
 
@@ -764,13 +764,13 @@
     const bannerText = document.getElementById('toolGuidanceText');
     if (banner && bannerText) {
       if (toolName === 'magicwand') {
-        bannerText.textContent = '🪄 মৌজা নকশার যেকোনো দাগের মাঝখানে ক্লিক করুন (অটো দাগ বাউন্ডারি ডিটেক্ট)';
+        bannerText.textContent = '🪄 Mouza   Plot    ';
         banner.classList.remove('hidden');
       } else if (toolName === 'polyline' || toolName === 'polygon' || toolName === 'autopolyline') {
-        bannerText.textContent = '✏️ আইলের কোণায় কোণায় ক্লিক করে দাগ আঁকুন (Enter বা ১ম পয়েন্টে ক্লিক করে শেষ করুন)';
+        bannerText.textContent = '✏️      Plot  ';
         banner.classList.remove('hidden');
       } else if (toolName === 'dimension') {
-        bannerText.textContent = '📏 বাউন্ডারির লাইনে ক্লিক করুন বা দুটি কোণা সিলেক্ট করুন (AutoCAD Aligned Dimension)';
+        bannerText.textContent = '📏          ';
         banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
@@ -883,7 +883,7 @@
       eyeBtn.classList.toggle('text-sky-400', isVisible);
       eyeBtn.classList.toggle('text-slate-600', !isVisible);
       eyeBtn.style.opacity = isVisible ? '1' : '0.35';
-      eyeBtn.title = isVisible ? 'Visibility (হাইড করতে ক্লিক করুন)' : 'Visibility (শো করতে ক্লিক করুন)';
+      eyeBtn.title = isVisible ? 'Visibility ' : 'Visibility ';
     }
 
     logCommand(`LAYER: ${k.toUpperCase()} is now ${isVisible ? 'VISIBLE' : 'HIDDEN'}.`);
@@ -900,7 +900,7 @@
       lockBtn.textContent = isLocked ? '🔒' : '🔓';
       lockBtn.classList.toggle('text-amber-400', isLocked);
       lockBtn.classList.toggle('text-slate-500', !isLocked);
-      lockBtn.title = isLocked ? 'Layer Locked (আনলক করতে ক্লিক করুন)' : 'Layer Unlocked (লক করতে ক্লিক করুন)';
+      lockBtn.title = isLocked ? 'Layer Locked ' : 'Layer Unlocked ';
     }
 
     const applyLock = (elems) => {
@@ -919,7 +919,7 @@
       applyLock(document.querySelectorAll(`[data-layer="${k}"]`));
     }
 
-    logCommand(`LAYER: ${k.toUpperCase()} is now ${isLocked ? 'LOCKED (সুরক্ষিত)' : 'UNLOCKED'}.`);
+    logCommand(`LAYER: ${k.toUpperCase()} is now ${isLocked ? 'LOCKED ' : 'UNLOCKED'}.`);
   }
 
   function setActiveLayer(layerKey) {
@@ -952,7 +952,7 @@
 
     const lblBtn = document.getElementById('btnTogglePlotLabels');
     const lblText = document.getElementById('plotLabelsText');
-    if (lblText) lblText.textContent = isVisible ? 'লেবেল: অন' : 'লেবেল: লুকানো';
+    if (lblText) lblText.textContent = isVisible ? 'Labels: ON' : 'Labels: Hidden';
     if (lblBtn) {
       lblBtn.classList.toggle('text-amber-300', isVisible);
       lblBtn.classList.toggle('bg-slate-800', isVisible);
@@ -1081,9 +1081,7 @@
   // HELPER UTILITIES & SVG MATH
   // =========================================================================
   function toBengaliNum(val) {
-    if (val === null || val === undefined) return '';
-    const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-    return String(val).replace(/[0-9]/g, d => bnDigits[d]);
+    return String(val);
   }
 
   function parseSvgPoints(ptsAttr) {
@@ -1274,7 +1272,7 @@
         let inches = Math.round((segFeet - feet) * 12);
         if (inches === 12) { feet += 1; inches = 0; }
 
-        // Sleek compact text: e.g. ২৯' - ৮" (NO [৮৪৩৯"] bracket!)
+        // Sleek compact text: e.g. 29' - 8" (NO [8439"] bracket!)
         const dimText = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
 
         const mx = (p1.x + p2.x) / 2;
@@ -1329,8 +1327,8 @@
 
     gLabel.innerHTML = `
       <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(2.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.92)" stroke="#f59e0b" stroke-width="1.0" vector-effect="non-scaling-stroke"/>
-      <text x="${cx.toFixed(1)}" y="${(cy - badgeH * 0.08).toFixed(1)}" fill="#fbbf24" font-size="${font1.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${dag === '__mw__' ? 'মৌজা' : 'দাগ ' + toBengaliNum(dag)}</text>
-      <text x="${cx.toFixed(1)}" y="${(cy + badgeH * 0.36).toFixed(1)}" fill="#38bdf8" font-size="${font2.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${toBengaliNum(decStr)} শতক</text>
+      <text x="${cx.toFixed(1)}" y="${(cy - badgeH * 0.08).toFixed(1)}" fill="#fbbf24" font-size="${font1.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${dag === '__mw__' ? 'Mouza' : 'Plot ' + toBengaliNum(dag)}</text>
+      <text x="${cx.toFixed(1)}" y="${(cy + badgeH * 0.36).toFixed(1)}" fill="#38bdf8" font-size="${font2.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${toBengaliNum(decStr)} Decimal</text>
     `;
     drawingsGroup.appendChild(gLabel);
 
@@ -1342,6 +1340,14 @@
   // INTERACTIVE VERTEX / CORNER GRIP DRAGGING ENGINE
   // Allows users to drag and adjust corners to reshape or scale the plot
   // =========================================================================
+  const moveDrawingsState = {
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    currentDx: 0,
+    currentDy: 0
+  };
+
   const vertexDragState = {
     isDragging: false,
     dag: null,
@@ -1458,7 +1464,7 @@
         texts[0].setAttribute('y', (cy - badgeH * 0.08).toFixed(1));
         texts[1].setAttribute('x', cx.toFixed(1));
         texts[1].setAttribute('y', (cy + badgeH * 0.36).toFixed(1));
-        texts[1].textContent = `${toBengaliNum(metrics.areaDecimal.toFixed(2))} শতক`;
+        texts[1].textContent = `${toBengaliNum(metrics.areaDecimal.toFixed(2))} Decimal`;
       }
     }
   }
@@ -1480,12 +1486,43 @@
       const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
       renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
       selectPlot(dag);
-      pushUndo(`Corner Grip Adjusted (দাগ ${dag})`);
+      pushUndo(`Corner Grip Adjusted (Plot ${dag})`);
       logCommand(`GRIP EDIT: Corner point updated. New Area = ${metrics.areaSqFt.toFixed(2)} sq.ft (${metrics.areaDecimal.toFixed(2)} Decimal), Perimeter = ${metrics.perimeter.toFixed(2)} ft.`);
     }
   }
 
   // =========================================================================
+  function clearSelectedPlotInfo() {
+    document.querySelectorAll('.mouza-plot.selected, .user-plot-boundary.selected, .cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
+    state.selectedDag = null;
+    state.selectedDim = null;
+
+    const centerNum = document.getElementById('selectedDagCenterNum');
+    const centerSqft = document.getElementById('selectedDagCenterSqft');
+    const centerDec = document.getElementById('selectedDagCenterDec');
+    if (centerNum) centerNum.textContent = '—';
+    if (centerSqft) centerSqft.textContent = '—';
+    if (centerDec) centerDec.textContent = '—';
+
+    const infoDag = document.getElementById('infoDagNo');
+    const infoArea = document.getElementById('infoArea');
+    const infoPerimeter = document.getElementById('infoPerimeter');
+    if (infoDag) infoDag.textContent = '—';
+    if (infoArea) infoArea.textContent = '—';
+    if (infoPerimeter) infoPerimeter.textContent = '—';
+
+    const propDagNo = document.getElementById('propDagNo');
+    const propArea = document.getElementById('propArea');
+    const propDecimal = document.getElementById('propDecimal');
+    const propKathaBigha = document.getElementById('propKathaBigha');
+    const propPerimeter = document.getElementById('propPerimeter');
+    if (propDagNo) propDagNo.textContent = '—';
+    if (propArea) propArea.textContent = '—';
+    if (propDecimal) propDecimal.textContent = '—';
+    if (propKathaBigha) propKathaBigha.textContent = '—';
+    if (propPerimeter) propPerimeter.textContent = '—';
+  }
+
   function selectPlot(dagNo) {
     state.selectedDag = dagNo;
     const data = state.plots[dagNo] || {
@@ -1500,7 +1537,7 @@
       perimeter: 380.00,
       owners: '1 Person',
       dims: { top: '120.00 ft', bottom: '118.00 ft', left: '72.00 ft', right: '74.00 ft' },
-      ownerList: [{ name: '১. রেকর্ডীয় মালিক', share: '২০.০০ শতাংশ' }]
+      ownerList: [{ name: '1. Recorded Owner', share: '20.00 Decimal' }]
     };
 
     // Update Plot Polygon Visual Selection
@@ -1553,15 +1590,15 @@
     const propPerimeter = document.getElementById('propPerimeter');
     if (propDagNo) propDagNo.textContent = data.dag;
     if (propArea) propArea.textContent = `${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft`;
-    if (propDecimal) propDecimal.textContent = `${Number(data.areaDecimal).toFixed(2)} শতাংশ`;
-    if (propKathaBigha) propKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} কাঠা (${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} বিঘা)`;
+    if (propDecimal) propDecimal.textContent = `${Number(data.areaDecimal).toFixed(2)} Decimal`;
+    if (propKathaBigha) propKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} Katha (${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} Bigha)`;
     if (propPerimeter) propPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft`;
 
     // Update Partition Modal Inputs
     const partDagNo = document.getElementById('partDagNo');
     const partTotalArea = document.getElementById('partTotalArea');
     if (partDagNo) partDagNo.textContent = data.dag;
-    if (partTotalArea) partTotalArea.textContent = `${Number(data.areaDecimal).toFixed(2)} শতাংশ (${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft)`;
+    if (partTotalArea) partTotalArea.textContent = `${Number(data.areaDecimal).toFixed(2)} Decimal (${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft)`;
 
     // Update Report Modal Fields
     const repDag = document.getElementById('repDag');
@@ -1569,9 +1606,9 @@
     const repKathaBigha = document.getElementById('repKathaBigha');
     const repPerimeter = document.getElementById('repPerimeter');
     if (repDag) repDag.textContent = data.dag;
-    if (repArea) repArea.textContent = `${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} বর্গফুট (${Number(data.areaDecimal).toFixed(2)} শতাংশ)`;
-    if (repKathaBigha) repKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} কাঠা | ${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} বিঘা | ${(data.acre || data.areaSqFt / SQFT_PER_ACRE).toFixed(3)} একর`;
-    if (repPerimeter) repPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ফুট (${(data.perimeter / FEET_PER_LINK).toFixed(1)} লিংক)`;
+    if (repArea) repArea.textContent = `${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft (${Number(data.areaDecimal).toFixed(2)} Decimal)`;
+    if (repKathaBigha) repKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} Katha | ${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} Bigha | ${(data.acre || data.areaSqFt / SQFT_PER_ACRE).toFixed(3)} Acre`;
+    if (repPerimeter) repPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft (${(data.perimeter / FEET_PER_LINK).toFixed(1)} Links)`;
 
     // Update Owner Table
     const ownerTable = document.getElementById('khatianOwnerList');
@@ -1700,17 +1737,17 @@
 
     g.innerHTML = `
       <!-- Extension lines -->
-      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ffffff" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
-      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ffffff" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#f97316" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.9"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#f97316" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.9"/>
       <!-- Dimension line -->
-      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ffffff" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
       <!-- Oblique ticks -->
-      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ffffff" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
-      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + ty).toFixed(1)}" stroke="#ffffff" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
-      <!-- Label with dark knockout background -->
+      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + tx).toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <!-- Label with clean knockout matching Image 5 -->
       <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
-        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${1.5 * s2w}" fill="#0f172a" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/>
-        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.2 * s2w).toFixed(1)}" fill="#ffffff" font-size="${10.5 * s2w}" font-weight="bold" font-family="'Fira Code', 'Consolas', monospace" text-anchor="middle">${formattedText}</text>
+        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${1.5 * s2w}" fill="#212830" fill-opacity="0.85" stroke="none"/>
+        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.5 * s2w).toFixed(1)}" fill="#f97316" font-size="${11 * s2w}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
       </g>
     `;
 
@@ -1760,7 +1797,7 @@
       if (infoPerimeter) infoPerimeter.textContent = '—';
     }
 
-    pushUndo(`Delete Plot (দাগ ${dagStr})`);
+    pushUndo(`Delete Plot (Plot ${dagStr})`);
     logCommand(`ERASE: Plot boundary ${dagStr} deleted.`);
   }
 
@@ -1832,7 +1869,7 @@
 
   // =========================================================================
   // CADASTRAL 4-CORNER BOUNDARY RECOGNITION (MAGIC WAND)
-  // Accurately detects small, medium, and large parcels with 4 clean corners (চারিকোনা)
+  // Accurately detects small, medium, and large parcels with 4 clean corners 
   // Bypasses interior dag-number glyphs, captures exact parcel boundary walls
   // =========================================================================
   function detectSmallParcelFromRaster(pt, rx, ry, rw, rh) {
@@ -2143,11 +2180,11 @@
             left: `${dLeft} ft`,
             right: `${dRight} ft`
           },
-          ownerList: [{ name: `১. রেকর্ডীয় মালিক (দাগ নং ${newDag})`, share: `${realDecimal.toFixed(2)} শতাংশ (১.০০০ হিস্যা)` }]
+          ownerList: [{ name: `1. Recorded Owner (Plot No. ${newDag})`, share: `${realDecimal.toFixed(2)} Decimal (1.000 Share)` }]
         };
 
         renderParcelPolygon(newVertices, newDag, realAreaSqFt, realDecimal, realPerimeter, true);
-        pushUndo(`Magic Wand Detect (দাগ ${newDag})`);
+        pushUndo(`Magic Wand Detect (Plot ${newDag})`);
         selectPlot(newDag);
         logCommand(`MAGIC WAND: Scanned Mouza boundary auto-detected for Dag ${newDag}! Area = ${realAreaSqFt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} sq.ft (${realDecimal.toFixed(2)} Decimal), Perimeter = ${realPerimeter.toFixed(2)} ft (AutoCAD Scale 1:${u.scale}).`);
         return true;
@@ -2226,9 +2263,9 @@
     if (banner && bannerText) {
       banner.classList.remove('hidden');
       if (pts.length < 3) {
-        bannerText.textContent = `✏️ পয়েন্ট ${pts.length} যোগ হয়েছে। পরবর্তী পয়েন্টে ক্লিক করুন (✕ বাতিল)`;
+        bannerText.textContent = `✏️ Point ${pts.length}  ।  Point   `;
       } else {
-        bannerText.textContent = `পয়েন্ট ${pts.length} যোগ হয়েছে। প্রথম পয়েন্টে ক্লিক করে দাগ বন্ধ করুন (অথবা Double Click / Enter চাপুন)`;
+        bannerText.textContent = `Point ${pts.length}  ।  Point   Plot   (or press Enter)`;
       }
     }
   }
@@ -2279,9 +2316,28 @@
 
     // 3. Select Tool
     if (state.activeTool === 'select') {
-      document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
-      state.selectedDim = null;
-      detectPlotBoundaryFromClick(pt, true);
+      const hitPlot = e.target && e.target.closest && e.target.closest('.user-plot-boundary, .mouza-plot');
+      const hitDim = e.target && e.target.closest && e.target.closest('.cad-dim-elem');
+      const hitOther = e.target && e.target.closest && e.target.closest('#userDrawingsGroup > *');
+
+      if (hitPlot) {
+        const dag = hitPlot.getAttribute('data-dag');
+        if (dag) selectPlot(dag);
+        return;
+      } else if (hitDim) {
+        document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
+        hitDim.classList.add('selected');
+        state.selectedDim = hitDim;
+        logCommand('DIMENSION: Selected dimension. Press Delete to remove.');
+        return;
+      } else if (hitOther) {
+        document.querySelectorAll('#userDrawingsGroup .selected').forEach(el => el.classList.remove('selected'));
+        hitOther.classList.add('selected');
+        return;
+      }
+
+      // Clicked on empty space -> deselect all
+      clearSelectedPlotInfo();
       return;
     }
 
@@ -2446,12 +2502,12 @@
         left: `${(realPerimeter * 0.20).toFixed(2)} ft`,
         right: `${(realPerimeter * 0.18).toFixed(2)} ft`
       },
-      ownerList: [{ name: `১. নতুন পরিমাপকৃত প্লট (দাগ নং ${newDagNum})`, share: `${realDecimal.toFixed(2)} শতাংশ (১.০০০ হিস্যা)` }]
+      ownerList: [{ name: `1. New Measured Plot (Plot No. ${newDagNum})`, share: `${realDecimal.toFixed(2)} Decimal (1.000 Share)` }]
     };
 
     renderParcelPolygon(pts, newDagNum, realAreaSqFt, realDecimal, realPerimeter);
     selectPlot(newDagNum);
-    pushUndo(`Polyline Draw (দাগ ${newDagNum})`);
+    pushUndo(`Polyline Draw (Plot ${newDagNum})`);
     logCommand(`PLINE: Closed boundary created for Dag ${newDagNum}! Area = ${realAreaSqFt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} sq.ft (${realDecimal.toFixed(2)} Decimal), Perimeter = ${realPerimeter.toFixed(2)} ft (AutoCAD Scale 1:${u.scale}).`);
   }
 
@@ -2541,7 +2597,7 @@
 
     pushUndo(`Import Map (${filename})`);
     logCommand(`MAP IMPORTED: ${filename} attached.`);
-    logCommand(`TIP: হেডার ধরে ড্র্যাগ করে ম্যাপটি যেকোনো জায়গায় সাজান, অথবা 'ডিফল্ট দাগ' লুকান বাটনে ক্লিক করে কাজ করুন।`);
+    logCommand(`TIP:        ,  ' Plot'      ।`);
   }
 
   function placeRasterSideBySide() {
@@ -2953,104 +3009,104 @@ const ribbonTemplates = {
   // =========================================================================
   const classicMenuData = {
     file: [
-      { label: 'New Project (নতুন প্রজেক্ট)', shortcut: 'Ctrl+N', action: () => openModal('modalNewProject') },
-      { label: 'Open Project (প্রজেক্ট ফাইল খুলুন)', shortcut: 'Ctrl+O', action: () => openModal('modalOpenProject') },
-      { label: 'Open Drawing (DWG/DXF / ইমেজ)', shortcut: '', action: () => { const inp = document.getElementById('mouzaMapFileInput'); if (inp) inp.click(); } },
+      { label: 'New Project ( )', shortcut: 'Ctrl+N', action: () => openModal('modalNewProject') },
+      { label: 'Open Project (  )', shortcut: 'Ctrl+O', action: () => openModal('modalOpenProject') },
+      { label: 'Open Drawing (DWG/DXF / )', shortcut: '', action: () => { const inp = document.getElementById('mouzaMapFileInput'); if (inp) inp.click(); } },
       { divider: true },
-      { label: 'Import Mouza Map (মৌজা ম্যাপ সংযুক্তকরণ)', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (নমুনা চরভাগ নকশা)', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
-      { label: 'Save Project (সংরক্ষণ)', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
-      { label: 'Save As (নতুন নামে সংরক্ষণ)', shortcut: 'Ctrl+Shift+S', action: () => logCommand('FILE: Save As Project.') },
-      { label: 'Export DXF (AutoCAD DXF তৈরি)', shortcut: '', action: () => exportDXFFile() },
-      { label: 'Export PDF (PDF রিপোর্ট তৈরি)', shortcut: '', action: () => openModal('modalSurveyReport') },
+      { label: 'Save Project ()', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
+      { label: 'Save As (  )', shortcut: 'Ctrl+Shift+S', action: () => logCommand('FILE: Save As Project.') },
+      { label: 'Export DXF (AutoCAD DXF )', shortcut: '', action: () => exportDXFFile() },
+      { label: 'Export PDF (PDF  )', shortcut: '', action: () => openModal('modalSurveyReport') },
       { divider: true },
-      { label: 'Print (সরাসরি প্রিন্ট)', shortcut: 'Ctrl+P', action: () => window.print() },
-      { label: 'Recent Projects (সাম্প্রতিক প্রজেক্ট)', shortcut: '', action: () => openModal('modalOpenProject') },
-      { label: 'Close Project (প্রজেক্ট বন্ধ)', shortcut: '', action: () => logCommand('FILE: Project Closed.') },
-      { label: 'Exit (সফটওয়্যার বন্ধ)', shortcut: 'Alt+F4', action: () => logCommand('FILE: SurveyCAD Pro Exited.') }
+      { label: 'Print ( )', shortcut: 'Ctrl+P', action: () => window.print() },
+      { label: 'Recent Projects ( )', shortcut: '', action: () => openModal('modalOpenProject') },
+      { label: 'Close Project ( )', shortcut: '', action: () => logCommand('FILE: Project Closed.') },
+      { label: 'Exit ( )', shortcut: 'Alt+F4', action: () => logCommand('FILE: SurveyCAD Pro Exited.') }
     ],
     home: [
-      { label: 'Import Mouza Map (মৌজা ম্যাপ সংযুক্তকরণ)', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (নমুনা নকশা লোড)', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
-      { label: 'Select Plot (দাগ নির্বাচন টুল)', shortcut: 'ESC', action: () => setActiveTool('select') },
-      { label: 'Polyline Boundary (পলিলাইন দাগ ট্রেস)', shortcut: 'PL', action: () => setActiveTool('polyline') },
-      { label: 'Magic Wand (ম্যাজিক ওয়ান্ড অটো দাগ)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Linear Dimension (দূরত্ব পরিমাপ)', shortcut: 'DLI', action: () => setActiveTool('dimension') },
+      { label: 'Select Plot (Plot  )', shortcut: 'ESC', action: () => setActiveTool('select') },
+      { label: 'Polyline Boundary ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Linear Dimension ( )', shortcut: 'DLI', action: () => setActiveTool('dimension') },
       { divider: true },
-      { label: 'Scale Calculator (স্কেল ক্যালকুলেটর)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Erase / Clear (মুছে ফেলা)', shortcut: 'Del', action: () => clearUserDrawings() }
+      { label: 'Scale Calculator ( )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Erase / Clear ( )', shortcut: 'Del', action: () => clearUserDrawings() }
     ],
     draw: [
-      { label: 'Polyline Boundary (পলিলাইন দাগ ট্রেস)', shortcut: 'PL', action: () => setActiveTool('polyline') },
-      { label: 'Magic Wand (ম্যাজিক ওয়ান্ড অটো দাগ)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Auto Polyline (অটো সীমানা ট্রেস)', shortcut: 'APL', action: () => setActiveTool('autopolyline') },
+      { label: 'Polyline Boundary ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Auto Polyline (  )', shortcut: 'APL', action: () => setActiveTool('autopolyline') },
       { divider: true },
-      { label: 'Line / Segment (রেখা)', shortcut: 'L', action: () => setActiveTool('polyline') },
-      { label: 'Rectangle (আয়তক্ষেত্র)', shortcut: 'REC', action: () => setActiveTool('rectangle') },
-      { label: 'Circle (বৃত্ত / বাফার)', shortcut: 'C', action: () => setActiveTool('circle') },
-      { label: 'Arc (বাঁকা রেখা)', shortcut: 'A', action: () => setActiveTool('arc') },
-      { label: 'Hatch (প্যাটার্ন বা হ্যাচ)', shortcut: 'H', action: () => logCommand('DRAW: Hatch Applied.') }
+      { label: 'Line / Segment ()', shortcut: 'L', action: () => setActiveTool('polyline') },
+      { label: 'Rectangle ()', shortcut: 'REC', action: () => setActiveTool('rectangle') },
+      { label: 'Circle ( / )', shortcut: 'C', action: () => setActiveTool('circle') },
+      { label: 'Arc ( )', shortcut: 'A', action: () => setActiveTool('arc') },
+      { label: 'Hatch (  )', shortcut: 'H', action: () => logCommand('DRAW: Hatch Applied.') }
     ],
     modify: [
-      { label: 'Move (স্থানান্তর)', shortcut: 'M', action: () => setActiveTool('move') },
-      { label: 'Copy (অনুলিপি তৈরি)', shortcut: 'CO', action: () => setActiveTool('copy') },
-      { label: 'Rotate (ঘোরানো)', shortcut: 'RO', action: () => setActiveTool('rotate') },
-      { label: 'Scale (আকার পরিবর্তন)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Trim (কাটা)', shortcut: 'TR', action: () => setActiveTool('trim') },
-      { label: 'Extend (সীমানা বাড়ানো)', shortcut: 'EX', action: () => setActiveTool('extend') },
-      { label: 'Mirror (প্রতিচ্ছবি)', shortcut: 'MI', action: () => logCommand('MODIFY: Mirror object across axis.') },
-      { label: 'Split (দাগ ভাগ করা)', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Offset (সমান্তরাল রেখা)', shortcut: 'O', action: () => logCommand('MODIFY: Offset created.') },
-      { label: 'Erase (মুছে ফেলা)', shortcut: 'E', action: () => clearUserDrawings() }
+      { label: 'Move ()', shortcut: 'M', action: () => setActiveTool('move') },
+      { label: 'Copy ( )', shortcut: 'CO', action: () => setActiveTool('copy') },
+      { label: 'Rotate ()', shortcut: 'RO', action: () => setActiveTool('rotate') },
+      { label: 'Scale ( )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Trim ()', shortcut: 'TR', action: () => setActiveTool('trim') },
+      { label: 'Extend ( )', shortcut: 'EX', action: () => setActiveTool('extend') },
+      { label: 'Mirror ()', shortcut: 'MI', action: () => logCommand('MODIFY: Mirror object across axis.') },
+      { label: 'Split (Plot  )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Offset ( )', shortcut: 'O', action: () => logCommand('MODIFY: Offset created.') },
+      { label: 'Erase ( )', shortcut: 'E', action: () => clearUserDrawings() }
     ],
     annotate: [
-      { label: 'Linear Dimension (রৈখিক পরিমাপ)', shortcut: 'DLI', action: () => setActiveTool('dimension') },
-      { label: 'Aligned Dimension (অ্যালাইন্ড পরিমাপ)', shortcut: 'DAL', action: () => setActiveTool('dimension') },
-      { label: 'Dag Number Labels (দাগ নম্বর লেবেল)', shortcut: '', action: () => togglePlotLabels() },
-      { label: 'Insert Text Note (টেক্সট নোট)', shortcut: 'T', action: () => setActiveTool('text') }
+      { label: 'Linear Dimension ( )', shortcut: 'DLI', action: () => setActiveTool('dimension') },
+      { label: 'Aligned Dimension ( )', shortcut: 'DAL', action: () => setActiveTool('dimension') },
+      { label: 'Dag Number Labels (Plot No. Labels)', shortcut: '', action: () => togglePlotLabels() },
+      { label: 'Insert Text Note ( )', shortcut: 'T', action: () => setActiveTool('text') }
     ],
     mouza: [
-      { label: 'Import Mouza Map (মৌজা নকশা আমদানি)', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (নমুনা চরভাগ নকশা)', shortcut: '', action: () => loadSampleMouzaRaster() },
-      { label: 'Scale Mouza Map (১৬" = ১ মাইল স্কেল)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Scale Mouza Map (16" = 1  )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
       { divider: true },
-      { label: 'Magic Wand Auto Dag (ম্যাজিক ওয়ান্ড অটো দাগ)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Trace Polyline (ম্যানুয়াল দাগ ট্রেস)', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand Auto Dag (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Trace Polyline ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
       { divider: true },
-      { label: 'Toggle Scanned Map (মৌজা ইমেজ লুকান/দেখান)', shortcut: '', action: () => toggleMouzaRaster() },
-      { label: 'Side-by-Side View (ডানপাশে শিট সাজান)', shortcut: '', action: () => placeRasterSideBySide() },
-      { label: 'Detach Map Image (ছবি বাদ দিন)', shortcut: '', action: () => detachMouzaRaster() }
+      { label: 'Toggle Scanned Map (Mouza  /)', shortcut: '', action: () => toggleMouzaRaster() },
+      { label: 'Side-by-Side View (  )', shortcut: '', action: () => placeRasterSideBySide() },
+      { label: 'Detach Map Image (  )', shortcut: '', action: () => detachMouzaRaster() }
     ],
     survey: [
-      { label: 'Area Calculation (জমির পরিমাপ / শতক)', shortcut: 'AA', action: () => handleCommandInput('AREA') },
-      { label: 'Distance & Bearing (দূরত্ব ও বিয়ারিং)', shortcut: 'DIST', action: () => setActiveTool('dimension') },
-      { label: 'Virtual Guniya Scale (ভার্চুয়াল গুনিয়া)', shortcut: 'G', action: () => toggleVirtualGuniya() },
-      { label: 'Unit Converter (ভূমি রূপান্তর)', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
-      { label: 'Faraiz Partition (ফারায়েজ বন্টন)', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Survey Report (সার্ভে রিপোর্ট প্রস্তুত)', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') }
+      { label: 'Area Calculation (  / Decimal)', shortcut: 'AA', action: () => handleCommandInput('AREA') },
+      { label: 'Distance & Bearing (  )', shortcut: 'DIST', action: () => setActiveTool('dimension') },
+      { label: 'Virtual Guniya Scale (Virtual Guniya)', shortcut: 'G', action: () => toggleVirtualGuniya() },
+      { label: 'Unit Converter ( )', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
+      { label: 'Faraiz Partition ( )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Survey Report (  )', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') }
     ],
     partition: [
-      { label: 'Faraiz Land Partition (ফারায়েজ বন্টন)', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Divide Plot Equally (সমান অংশে ভাগ)', shortcut: '', action: () => logCommand('PARTITION: Equal division wizard.') },
-      { label: 'Road Widening Deduct (রাস্তা সম্প্রসারণ কর্তন)', shortcut: '', action: () => logCommand('PARTITION: Road widening offset applied.') }
+      { label: 'Faraiz Land Partition ( )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Divide Plot Equally (  )', shortcut: '', action: () => logCommand('PARTITION: Equal division wizard.') },
+      { label: 'Road Widening Deduct (  )', shortcut: '', action: () => logCommand('PARTITION: Road widening offset applied.') }
     ],
     pentagraph: [
-      { label: 'Pentagraph Scale Overlay (পেন্টাগ্রাফ ওভারলে)', shortcut: '', action: () => openModal('modalPentagraphOverlay') },
-      { label: 'Compare Sheets 1:1 (শিট তুলনা)', shortcut: '', action: () => logCommand('PENTAGRAPH: Sheet comparison mode active.') }
+      { label: 'Pentagraph Scale Overlay ( )', shortcut: '', action: () => openModal('modalPentagraphOverlay') },
+      { label: 'Compare Sheets 1:1 ( )', shortcut: '', action: () => logCommand('PENTAGRAPH: Sheet comparison mode active.') }
     ],
     mapcombine: [
-      { label: 'Combine Multiple Sheets (একাধিক শিট জোড়া)', shortcut: '', action: () => logCommand('MAP COMBINE: Sheet 01 & Sheet 02 mosaic synchronized.') },
-      { label: 'Edge Matching Alignment (সীমানা মেলানো)', shortcut: '', action: () => logCommand('MAP COMBINE: Edge matching aligned.') }
+      { label: 'Combine Multiple Sheets (  )', shortcut: '', action: () => logCommand('MAP COMBINE: Sheet 01 & Sheet 02 mosaic synchronized.') },
+      { label: 'Edge Matching Alignment ( )', shortcut: '', action: () => logCommand('MAP COMBINE: Edge matching aligned.') }
     ],
     rtk: [
-      { label: 'Connect RTK GPS Receiver (RTK সংযোগ)', shortcut: '', action: () => logCommand('RTK: Connected to ComNav GNSS Receiver (Fix 3D).') },
+      { label: 'Connect RTK GPS Receiver (RTK )', shortcut: '', action: () => logCommand('RTK: Connected to ComNav GNSS Receiver (Fix 3D).') },
       { label: 'Import Total Station Points (.csv / .dat)', shortcut: '', action: () => logCommand('TOTAL STATION: 48 station points imported.') }
     ],
     data: [
-      { label: 'Khatian & Dag Ledger (খতিয়ান ও দাগ খতিয়ান)', shortcut: '', action: () => logCommand('DATA: Khatian & Dag ledger active.') },
-      { label: 'Owner Records Database (মালিকানা ডাটাবেজ)', shortcut: '', action: () => logCommand('DATA: 15 Landowner records loaded.') }
+      { label: 'Khatian & Dag Ledger (  Plot )', shortcut: '', action: () => logCommand('DATA: Khatian & Dag ledger active.') },
+      { label: 'Owner Records Database ( )', shortcut: '', action: () => logCommand('DATA: 15 Landowner records loaded.') }
     ],
     gis: [
       { label: 'BTM / Everest 1830 Datum Sync', shortcut: '', action: () => logCommand('GIS: BTM (Bangladesh Transverse Mercator) synced.') },
@@ -3058,45 +3114,45 @@ const ribbonTemplates = {
       { label: 'Export Google Earth KML / KMZ', shortcut: '', action: () => exportKMLFile() }
     ],
     analysis: [
-      { label: 'Encroachment Analysis (দখলদারিত্ব বিশ্লেষণ)', shortcut: '', action: () => logCommand('ANALYSIS: Boundary overlap / encroachment check complete.') },
-      { label: 'Dispute Measurement (সীমানা বিরোধ পরিমাপ)', shortcut: '', action: () => logCommand('ANALYSIS: Dispute dimension line generated.') }
+      { label: 'Encroachment Analysis ( )', shortcut: '', action: () => logCommand('ANALYSIS: Boundary overlap / encroachment check complete.') },
+      { label: 'Dispute Measurement (  )', shortcut: '', action: () => logCommand('ANALYSIS: Dispute dimension line generated.') }
     ],
     report: [
-      { label: 'Generate Survey PDF Report (সার্ভে রিপোর্ট প্রস্তুত)', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') },
-      { label: 'Print Current Canvas (ক্যানভাস প্রিন্ট)', shortcut: 'Ctrl+P', action: () => window.print() },
-      { label: 'Area Statement Table (শতক তালিকা প্রিন্ট)', shortcut: '', action: () => logCommand('REPORT: Area Statement table ready.') }
+      { label: 'Generate Survey PDF Report (  )', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') },
+      { label: 'Print Current Canvas ( )', shortcut: 'Ctrl+P', action: () => window.print() },
+      { label: 'Area Statement Table (Decimal  )', shortcut: '', action: () => logCommand('REPORT: Area Statement table ready.') }
     ],
     tools: [
-      { label: 'Virtual Guniya Scale (ভার্চুয়াল গুনিয়া)', shortcut: 'G', action: () => toggleVirtualGuniya() },
-      { label: 'Scale Calculator (মৌজা স্কেল 63360/W)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Area Calculator (ক্ষেত্রফল ক্যালকুলেটর)', shortcut: 'AA', action: () => handleCommandInput('AREA') },
-      { label: 'Unit Converter (ভূমি একক রূপান্তর)', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
+      { label: 'Virtual Guniya Scale (Virtual Guniya)', shortcut: 'G', action: () => toggleVirtualGuniya() },
+      { label: 'Scale Calculator (Mouza  63360/W)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Area Calculator ( )', shortcut: 'AA', action: () => handleCommandInput('AREA') },
+      { label: 'Unit Converter (  )', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
       { label: 'Coordinate Converter (BTM/WGS84)', shortcut: '', action: () => logCommand('TOOLS: Coordinates converted BTM <-> WGS84.') },
       { divider: true },
-      { label: 'Survey Utilities (জরিপ ইউটিলিটি)', shortcut: '', action: () => logCommand('TOOLS: Traverse balancing & Bearing.') }
+      { label: 'Survey Utilities ( )', shortcut: '', action: () => logCommand('TOOLS: Traverse balancing & Bearing.') }
     ],
     view: [
-      { label: 'Zoom In (বড় করে দেখা)', shortcut: 'Ctrl++', action: () => zoomCenter(0.8) },
-      { label: 'Zoom Out (ছোট করে দেখা)', shortcut: 'Ctrl+-', action: () => zoomCenter(1.25) },
-      { label: 'Zoom Extents (সম্পূর্ণ ড্রয়িং)', shortcut: 'Z E', action: () => zoomExtents() },
-      { label: 'Pan (ক্যানভাস সরানো)', shortcut: 'P', action: () => setActiveTool('pan') },
+      { label: 'Zoom In (  )', shortcut: 'Ctrl++', action: () => zoomCenter(0.8) },
+      { label: 'Zoom Out (  )', shortcut: 'Ctrl+-', action: () => zoomCenter(1.25) },
+      { label: 'Zoom Extents ( )', shortcut: 'Z E', action: () => zoomExtents() },
+      { label: 'Pan ( )', shortcut: 'P', action: () => setActiveTool('pan') },
       { divider: true },
-      { label: 'Toggle Demo Plots (ডিফল্ট দাগ অন/অফ)', shortcut: '', action: () => toggleDemoPlots() },
-      { label: 'Grid On/Off (গ্রিড প্রদর্শন)', shortcut: '#', action: () => toggleGrid() },
-      { label: 'Full Screen (ফুল স্ক্রিন)', shortcut: 'F11', action: () => toggleFullscreen() },
-      { label: 'Show/Hide Sidebar (সাইডবার)', shortcut: 'Ctrl+B', action: () => toggleSidebar() }
+      { label: 'Toggle Demo Plots ( Plot /)', shortcut: '', action: () => toggleDemoPlots() },
+      { label: 'Grid On/Off ( )', shortcut: '#', action: () => toggleGrid() },
+      { label: 'Full Screen ( )', shortcut: 'F11', action: () => toggleFullscreen() },
+      { label: 'Show/Hide Sidebar ()', shortcut: 'Ctrl+B', action: () => toggleSidebar() }
     ],
     edit: [
-      { label: 'Undo (পূর্বাবস্থায় ফেরা)', shortcut: 'Ctrl+Z', action: () => undo() },
-      { label: 'Redo (পুনরায় করা)', shortcut: 'Ctrl+Y', action: () => redo() },
+      { label: 'Undo ( )', shortcut: 'Ctrl+Z', action: () => undo() },
+      { label: 'Redo ( )', shortcut: 'Ctrl+Y', action: () => redo() },
       { divider: true },
-      { label: 'Select All (সব নির্বাচন)', shortcut: 'Ctrl+A', action: () => selectPlot('126') },
-      { label: 'Erase / Delete (মুছে ফেলা)', shortcut: 'Del', action: () => clearUserDrawings() }
+      { label: 'Select All ( )', shortcut: 'Ctrl+A', action: () => selectPlot('126') },
+      { label: 'Erase / Delete ( )', shortcut: 'Del', action: () => clearUserDrawings() }
     ],
     help: [
-      { label: 'User Manual (ব্যবহারকারী নির্দেশিকা)', shortcut: '', action: () => logCommand('HELP: User Manual: docs/surveycad-guide.pdf') },
-      { label: 'Keyboard Shortcuts (কীবোর্ড শর্টকাট)', shortcut: 'F1', action: () => openModal('modalHelpShortcuts') },
-      { label: 'About SurveyCAD Pro (সফটওয়্যার পরিচিতি)', shortcut: '', action: () => logCommand('HELP: SurveyCAD Pro v1.0 Enterprise Edition.') }
+      { label: 'User Manual ( )', shortcut: '', action: () => logCommand('HELP: User Manual: docs/surveycad-guide.pdf') },
+      { label: 'Keyboard Shortcuts ( )', shortcut: 'F1', action: () => openModal('modalHelpShortcuts') },
+      { label: 'About SurveyCAD Pro ( )', shortcut: '', action: () => logCommand('HELP: SurveyCAD Pro v1.0 Enterprise Edition.') }
     ]
   };
 
@@ -3240,7 +3296,7 @@ const ribbonTemplates = {
 
   function addNewSheetTab() {
     const defaultName = `Sheet_0${Object.keys(state.sheets || {}).length + 1}.dwg`;
-    const sheetName = prompt('নতুন শিট / ড্রয়িং নাম লিখুন (Enter Sheet Name):', defaultName);
+    const sheetName = prompt('  /    (Enter Sheet Name):', defaultName);
     if (!sheetName || !sheetName.trim()) return;
 
     const cleanName = sheetName.trim();
@@ -3350,8 +3406,8 @@ const ribbonTemplates = {
   <Document>
     <name>Chorbagh_Survey_Dag${state.selectedDag}.kml</name>
     <Placemark>
-      <name>দাগ নং ${state.selectedDag}</name>
-      <description>মৌজা: চরবাগ | ক্ষেত্রফল: ${state.plots[state.selectedDag]?.areaDecimal || '30.00'} শতাংশ</description>
+      <name>Plot No. ${state.selectedDag}</name>
+      <description>Mouza:  | : ${state.plots[state.selectedDag]?.areaDecimal || '30.00'} Decimal</description>
       <Point>
         <coordinates>90.6631,23.2321,0</coordinates>
       </Point>
@@ -3462,6 +3518,8 @@ const ribbonTemplates = {
   // =========================================================================
   // 9. Command Line Parser & Execution
   // =========================================================================
+  let cmdHistoryFadeTimer = null;
+
   function logCommand(text) {
     const history = document.getElementById('cmdHistory');
     if (!history) return;
@@ -3476,6 +3534,16 @@ const ribbonTemplates = {
     line.textContent = text;
     history.appendChild(line);
     history.scrollTop = history.scrollHeight;
+
+    // Show command history and auto-hide after 3.5s
+    history.classList.remove('cmd-history-hidden');
+    clearTimeout(cmdHistoryFadeTimer);
+    cmdHistoryFadeTimer = setTimeout(() => {
+      const cmdInput = document.getElementById('cmdInput');
+      if (document.activeElement !== cmdInput) {
+        history.classList.add('cmd-history-hidden');
+      }
+    }, 3500);
   }
 
   function handleCommandInput(cmdRaw) {
@@ -3687,7 +3755,7 @@ const ribbonTemplates = {
     if (btnCreateProj) {
       btnCreateProj.addEventListener('click', () => {
         const name = document.getElementById('newProjFileName')?.value || 'New_Survey.prj';
-        const mouza = document.getElementById('newProjMouza')?.value || 'মৌজা';
+        const mouza = document.getElementById('newProjMouza')?.value || 'Mouza';
         const scaleVal = document.getElementById('newProjScale')?.value || '16';
         
         const topName = document.querySelector('.font-bold.text-slate-200');
@@ -3695,7 +3763,7 @@ const ribbonTemplates = {
         
         applyMouzaScale(scaleVal);
         closeModal('modalNewProject');
-        logCommand(`NEW PROJECT: Created ${name} (মৌজা: ${mouza}, স্কেল: ${scaleVal}"=১ মাইল).`);
+        logCommand(`NEW PROJECT: Created ${name} (Mouza: ${mouza}, : ${scaleVal}"=1 ).`);
       });
     }
 
@@ -3772,8 +3840,8 @@ const ribbonTemplates = {
       btnApplyPartition.addEventListener('click', () => {
         closeModal('modalPartitionFaraiz');
         drawPartitionOnCanvas(state.selectedDag);
-        pushUndo(`Partition (দাগ ${state.selectedDag})`);
-        logCommand(`PARTITION: Dag ${state.selectedDag} split into 3 sub-dags (ক, খ, গ) of 10.00 Decimal each.`);
+        pushUndo(`Partition (Plot ${state.selectedDag})`);
+        logCommand(`PARTITION: Dag ${state.selectedDag} split into 3 sub-dags (, , ) of 10.00 Decimal each.`);
       });
     }
 
@@ -3878,7 +3946,7 @@ const ribbonTemplates = {
       const textEl = document.getElementById('demoPlotsText');
       const btn = document.getElementById('btnToggleDemoPlots');
       if (eyeEl) eyeEl.textContent = '👁️‍🗨️';
-      if (textEl) textEl.textContent = 'ডিফল্ট দাগ: লুকানো (ক্লিন ক্যানভাস)';
+      if (textEl) textEl.textContent = 'Default Plots: Hidden ( )';
       if (btn) btn.classList.add('bg-amber-900', 'border-amber-500', 'text-amber-200');
     }
 
@@ -4199,8 +4267,8 @@ const ribbonTemplates = {
         const links = (sqft / (FEET_PER_LINK * FEET_PER_LINK)).toFixed(0);
 
         document.getElementById('quickResSqFt').textContent = `${sqft.toLocaleString('en-US')} sq.ft`;
-        document.getElementById('quickResDec').textContent = `${dec.toFixed(2)} শতাংশ`;
-        document.getElementById('quickResKatha').textContent = `${katha.toFixed(2)} কাঠা`;
+        document.getElementById('quickResDec').textContent = `${dec.toFixed(2)} Decimal`;
+        document.getElementById('quickResKatha').textContent = `${katha.toFixed(2)} Katha`;
         if (document.getElementById('quickResLinks')) {
           document.getElementById('quickResLinks').textContent = `${links} sq.links`;
         }
@@ -4788,6 +4856,19 @@ const ribbonTemplates = {
         return;
       }
 
+      // Move Tool: Drag all drawings together (Mouza raster map stays fixed)
+      if (state.activeTool === 'move' && e.button === 0) {
+        const pt = getCanvasCoords(e);
+        moveDrawingsState.isDragging = true;
+        moveDrawingsState.startX = pt.x;
+        moveDrawingsState.startY = pt.y;
+        moveDrawingsState.currentDx = 0;
+        moveDrawingsState.currentDy = 0;
+        cadWorkspace.style.cursor = 'grabbing';
+        e.stopPropagation();
+        return;
+      }
+
       const isMiddleClick = (e.button === 1);
       const isPanTool = (state.activeTool === 'pan');
       const isSpaceDown = (state.isSpacePressed === true);
@@ -4804,6 +4885,18 @@ const ribbonTemplates = {
     });
 
     window.addEventListener('mousemove', (e) => {
+      if (moveDrawingsState.isDragging) {
+        const pt = getCanvasCoords(e);
+        const dx = pt.x - moveDrawingsState.startX;
+        const dy = pt.y - moveDrawingsState.startY;
+        moveDrawingsState.currentDx = dx;
+        moveDrawingsState.currentDy = dy;
+        const uGroup = document.getElementById('userDrawingsGroup');
+        if (uGroup) {
+          uGroup.setAttribute('transform', `translate(${dx.toFixed(2)}, ${dy.toFixed(2)})`);
+        }
+        return;
+      }
       if (vertexDragState.isDragging) {
         handleVertexDragMove(e);
         return;
@@ -4819,6 +4912,62 @@ const ribbonTemplates = {
     });
 
     window.addEventListener('mouseup', (e) => {
+      if (moveDrawingsState.isDragging) {
+        moveDrawingsState.isDragging = false;
+        cadWorkspace.style.cursor = state.activeTool === 'move' ? 'grab' : 'crosshair';
+        const dx = moveDrawingsState.currentDx;
+        const dy = moveDrawingsState.currentDy;
+        const uGroup = document.getElementById('userDrawingsGroup');
+        if (uGroup) {
+          uGroup.removeAttribute('transform');
+        }
+
+        if (Math.hypot(dx, dy) > 0.5) {
+          // Permanently shift all parcel polygon vertices
+          for (const [dag, pData] of Object.entries(state.plots)) {
+            if (pData.vertices) {
+              pData.vertices = pData.vertices.map(v => ({ x: v.x + dx, y: v.y + dy }));
+              const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+              renderParcelPolygon(pData.vertices, dag, pData.areaSqFt, pData.areaDecimal, pData.perimeter, isMW);
+            }
+          }
+
+          // Permanently shift all dimensions and other objects in userDrawingsGroup
+          if (uGroup) {
+            uGroup.querySelectorAll('.cad-dim-elem').forEach(g => {
+              g.querySelectorAll('line').forEach(l => {
+                l.setAttribute('x1', (parseFloat(l.getAttribute('x1')) + dx).toFixed(1));
+                l.setAttribute('y1', (parseFloat(l.getAttribute('y1')) + dy).toFixed(1));
+                l.setAttribute('x2', (parseFloat(l.getAttribute('x2')) + dx).toFixed(1));
+                l.setAttribute('y2', (parseFloat(l.getAttribute('y2')) + dy).toFixed(1));
+              });
+              g.querySelectorAll('rect').forEach(r => {
+                r.setAttribute('x', (parseFloat(r.getAttribute('x')) + dx).toFixed(1));
+                r.setAttribute('y', (parseFloat(r.getAttribute('y')) + dy).toFixed(1));
+              });
+              g.querySelectorAll('text').forEach(t => {
+                t.setAttribute('x', (parseFloat(t.getAttribute('x')) + dx).toFixed(1));
+                t.setAttribute('y', (parseFloat(t.getAttribute('y')) + dy).toFixed(1));
+              });
+              const rotG = g.querySelector('g[transform]');
+              if (rotG) {
+                const tAttr = rotG.getAttribute('transform');
+                const m = tAttr.match(/rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/);
+                if (m) {
+                  const ang = m[1];
+                  const cx = parseFloat(m[2]) + dx;
+                  const cy = parseFloat(m[3]) + dy;
+                  rotG.setAttribute('transform', `rotate(${ang} ${cx.toFixed(1)} ${cy.toFixed(1)})`);
+                }
+              }
+            });
+          }
+
+          pushUndo('Move Drawings');
+          const u = getUnitsPerPixel();
+          logCommand(`MOVE: All drawings shifted by dx=${(dx * u.upp_svg_x).toFixed(2)} ft, dy=${(dy * u.upp_svg_y).toFixed(2)} ft (Mouza map fixed).`);
+        }
+      }
       if (vertexDragState.isDragging) {
         handleVertexDragEnd(e);
       }
@@ -4993,8 +5142,8 @@ const ribbonTemplates = {
         const icon = document.getElementById('ribbonToggleIcon');
         const txt = document.getElementById('ribbonToggleText');
         if (icon) icon.textContent = isMin ? '▼' : '▲';
-        if (txt) txt.textContent = isMin ? 'রিবন খুলুন' : 'রিবন ছোট';
-        logCommand(isMin ? 'RIBBON: Minimized (ক্যানভাস উচ্চতা বাড়ানো হলো)' : 'RIBBON: Expanded');
+        if (txt) txt.textContent = isMin ? 'Expand' : 'Minimize';
+        logCommand(isMin ? 'RIBBON: Minimized' : 'RIBBON: Expanded');
         updateViewBox();
       });
     }
@@ -5005,8 +5154,8 @@ const ribbonTemplates = {
       btnMaximizeWorkspace.addEventListener('click', () => {
         document.body.classList.toggle('workspace-maximized');
         const isMax = document.body.classList.contains('workspace-maximized');
-        btnMaximizeWorkspace.innerHTML = isMax ? '<span>✕ রিস্টোর</span>' : '<span>⛶ ফুল ক্যানভাস</span>';
-        logCommand(isMax ? 'WORKSPACE: Clean Screen Enabled (সর্বোচ্চ ক্যানভাস স্পেস)' : 'WORKSPACE: Restored');
+        btnMaximizeWorkspace.innerHTML = isMax ? '<span>✕ Exit Clean</span>' : '<span>⛶ Clean Screen</span>';
+        logCommand(isMax ? 'WORKSPACE: Clean Screen Enabled' : 'WORKSPACE: Restored');
         updateViewBox();
       });
     }
@@ -5034,6 +5183,7 @@ const ribbonTemplates = {
   window.deleteSelectedPlot = deleteSelectedPlot;
   window.deleteSelectedObject = deleteSelectedObject;
   window.createAlignedDimension = createAlignedDimension;
+  window.logCommand = logCommand;
 
     // Expose clean public API for UI triggers, extensions, and automated tests
   window.SurveyCAD = {
@@ -5046,6 +5196,7 @@ const ribbonTemplates = {
     deleteSelectedPlot,
     deleteSelectedObject,
     createAlignedDimension,
+    logCommand,
     toggleDemoPlots,
     togglePlotLabels,
     toggleVirtualGuniya,

@@ -107,7 +107,7 @@
   <div class="bg-[#161920] border-b border-[#242934] flex flex-col flex-shrink-0 z-20">
     <!-- Ribbon Tabs Row -->
     <div class="flex items-center px-2 pt-1 gap-1 border-b border-[#242934] overflow-x-auto">
-      <button id="btnApplicationFileMenu" class="menu-item flex items-center gap-1 font-bold bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded-t text-[11px] cursor-pointer shadow mr-1 select-none" data-menu="file" title="File Menu (প্রজেক্ট ও মৌজা ম্যাপ ইমপোর্ট)">
+      <button id="btnApplicationFileMenu" class="menu-item flex items-center gap-1 font-bold bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded-t text-[11px] cursor-pointer shadow mr-1 select-none" data-menu="file" title="File Menu (Project & Mouza Map Import)">
         <span>File</span>
         <span class="text-[9px] opacity-80">▼</span>
       </button>
@@ -389,7 +389,7 @@
   <div class="flex-1 flex overflow-hidden relative">
 
     <!-- 5.1 Left Vertical Toolbar (Strictly Icon Only - 14 Tools) -->
-    <div class="w-10 bg-[#161920] border-r border-[#222630] flex flex-col items-center py-2 gap-1 flex-shrink-0 z-20">
+    <div class="w-9 bg-[#1c2026] border-r border-[#222630] flex flex-col items-center py-2 gap-1 flex-shrink-0 z-20">
       <!-- 1. Select / Pointer -->
       <button class="left-tool-btn active" data-tool="select" data-tooltip="Select / Pointer (Space)">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
@@ -449,62 +449,17 @@
     </div>
 
     <!-- 5.2 Drawing Workspace Canvas (Full Central Area) -->
-    <div id="cadWorkspace" class="flex-1 relative bg-[#090c10] overflow-hidden">
+    <div id="cadWorkspace" class="flex-1 relative bg-[#212830] overflow-hidden">
       
       <!-- Top-Left Viewport Label -->
       <div class="absolute top-3 left-4 z-20 text-[11px] font-mono text-slate-400 pointer-events-none select-none tracking-wide">
         <span>[-][Top][2D Wireframe]</span>
       </div>
 
-      <!-- Floating HUD Controls for View & Mouza Map -->
-      <div id="canvasFloatingControls" class="absolute top-2.5 left-48 z-30 flex items-center gap-2 bg-[#12161f]/95 border border-slate-700/80 rounded px-2.5 py-1 shadow-2xl backdrop-blur select-none">
-        <!-- New Blank Canvas / Clear Button -->
-        <button id="btnBlankCanvas" class="flex items-center gap-1 text-[11px] font-medium text-amber-300 hover:text-amber-100 bg-amber-950/70 hover:bg-amber-900 border border-amber-600/70 px-2 py-0.5 rounded transition cursor-pointer" title="সব ডেমো দাগ সরিয়ে একদম ফ্রেশ নতুন খালি ক্যানভাস শুরু করুন">
-          <span>🗑️ খালি ক্যানভাস</span>
-        </button>
-
-        <!-- Toggle Default Demo Plots -->
-        <button id="btnToggleDemoPlots" class="flex items-center gap-1.5 text-[11px] font-medium text-amber-200 bg-amber-900 border border-amber-500 px-2 py-0.5 rounded transition cursor-pointer" title="ডিফল্ট নমুনা দাগ চালু বা বন্ধ করুন">
-          <span id="demoPlotsEye">👁️‍🗨️</span>
-          <span id="demoPlotsText">ডিফল্ট দাগ: লুকানো (ক্লিন ক্যানভাস)</span>
-        </button>
-
-        <!-- Toggle Plot Labels (Dag No & Badges) -->
-        <button id="btnTogglePlotLabels" class="flex items-center gap-1.5 text-[11px] font-medium text-slate-300 hover:text-amber-300 bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2 py-0.5 rounded transition cursor-pointer" title="ক্যানভাসে দাগ নম্বর ও এরিয়ার ব্যাজ লেবেল দেখান বা লুকান">
-          <span id="plotLabelsIcon">🏷️</span>
-          <span id="plotLabelsText">লেবেল: অন</span>
-        </button>
-        
-        <div class="h-4 w-px bg-slate-700"></div>
-
-        <!-- Zoom In -->
-        <button id="hudZoomIn" class="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded text-xs font-bold cursor-pointer" title="Zoom In (+)">➕</button>
-        <!-- Zoom Out -->
-        <button id="hudZoomOut" class="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded text-xs font-bold cursor-pointer" title="Zoom Out (-)">➖</button>
-        <!-- Zoom Extents / Reset -->
-        <button id="hudZoomExtents" class="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white hover:bg-slate-700 px-1.5 py-0.5 rounded cursor-pointer" title="Zoom Extents (100% ফিট ভিউ)">
-          <span>⛶ ফিট ভিউ</span>
-        </button>
-        
-        <!-- Zoom Level indicator -->
-        <span id="hudZoomPercent" class="text-[10px] font-mono text-sky-400 font-bold ml-1">100%</span>
-
-        <!-- Raster map specific quick actions (shown when map is loaded) -->
-        <div id="hudRasterTools" class="hidden flex items-center gap-2 ml-2 pl-2 border-l border-slate-700">
-          <span class="text-[10px] text-amber-300 font-bold">ম্যাপ:</span>
-          <button id="hudRasterSideBySide" class="text-[10px] bg-sky-950 hover:bg-sky-800 border border-sky-600 text-sky-200 px-2 py-0.5 rounded cursor-pointer" title="নকশাটি ডানের খালি অংশে সরিয়ে পাশাপাশি রাখুন">পাশাপাশি সাজান</button>
-          <label class="flex items-center gap-1 text-[10px] text-slate-300">
-            <span>স্বচ্ছতা:</span>
-            <input type="range" id="hudRasterOpacity" min="10" max="100" value="80" class="w-14 h-1 accent-sky-400 cursor-pointer">
-          </label>
-          <button id="hudRasterDetach" class="text-[10px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/50 px-1.5 py-0.5 rounded cursor-pointer" title="ম্যাপ বাদ দিন">✕</button>
-        </div>
-      </div>
-
       <!-- Floating Tool Guidance Banner (Magic Wand & Polyline mode like Image 1) -->
       <div id="toolGuidanceBanner" class="hidden absolute top-12 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#0f172a]/95 border border-amber-500/80 rounded-full px-4 py-1.5 shadow-2xl backdrop-blur select-none">
-        <span id="toolGuidanceText" class="text-xs font-medium text-amber-200">🪄 মৌজা নকশার যেকোনো দাগের মাঝখানে ক্লিক করুন (অটো দাগ বাউন্ডারি ডিটেক্ট)</span>
-        <button id="btnCancelActiveTool" class="text-[11px] font-bold text-rose-300 hover:text-rose-100 bg-rose-950/70 hover:bg-rose-900 border border-rose-600/70 px-2.5 py-0.5 rounded-full transition cursor-pointer">✕ বাতিল</button>
+        <span id="toolGuidanceText" class="text-xs font-medium text-amber-200">🪄 Click inside any parcel to auto-detect boundary</span>
+        <button id="btnCancelActiveTool" class="text-[11px] font-bold text-rose-300 hover:text-rose-100 bg-rose-950/70 hover:bg-rose-900 border border-rose-600/70 px-2.5 py-0.5 rounded-full transition cursor-pointer">✕ Cancel</button>
       </div>
 
       <!-- Top-Right 3D View Cube -->
@@ -562,11 +517,11 @@
         <defs>
           <!-- Grid Pattern -->
           <pattern id="cadGridSmall" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#141822" stroke-width="0.7"/>
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#28313d" stroke-width="0.7"/>
           </pattern>
           <pattern id="cadGridMajor" width="100" height="100" patternUnits="userSpaceOnUse">
             <rect width="100" height="100" fill="url(#cadGridSmall)"/>
-            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#1c2230" stroke-width="1.2"/>
+            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#323d4c" stroke-width="1.2"/>
           </pattern>
           <!-- Cadastral Hatch Patterns -->
           <pattern id="cadHatchDiagonal" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
@@ -714,11 +669,11 @@
             <!-- Drag Header Bar -->
             <g id="rasterDragHeader" class="cursor-grab active:cursor-grabbing select-none" style="pointer-events: auto;">
               <rect id="rasterHeaderBg" x="180" y="174" width="600" height="24" rx="4" fill="#0f172a" stroke="#38bdf8" stroke-width="1.2"/>
-              <text id="rasterHeaderTitle" x="192" y="190" fill="#38bdf8" font-size="11" font-weight="bold" font-family="sans-serif">📑 ইমপোর্টকৃত মৌজা নকশা (টেনে যেকোনো স্থানে সাজান / Drag to Move)</text>
+              <text id="rasterHeaderTitle" x="192" y="190" fill="#38bdf8" font-size="11" font-weight="bold" font-family="sans-serif">📑 Imported Mouza Map (Drag to Align)</text>
               <rect id="btnRasterSideBySideSvg" x="520" y="177" width="90" height="18" rx="3" fill="#1e293b" stroke="#0ea5e9" stroke-width="1" class="cursor-pointer hover:fill-sky-700"/>
-              <text x="565" y="189" fill="#e0f2fe" font-size="9" font-weight="bold" text-anchor="middle" class="pointer-events-none">ডানপাশে সরান ➔</text>
+              <text x="565" y="189" fill="#e0f2fe" font-size="9" font-weight="bold" text-anchor="middle" class="pointer-events-none">Shift Right ➔</text>
               <rect id="btnRasterHideSvg" x="618" y="177" width="54" height="18" rx="3" fill="#3f1d24" stroke="#f43f5e" stroke-width="1" class="cursor-pointer hover:fill-rose-700"/>
-              <text x="645" y="189" fill="#fecdd3" font-size="9" font-weight="bold" text-anchor="middle" class="pointer-events-none">বাদ দিন ✕</text>
+              <text x="645" y="189" fill="#fecdd3" font-size="9" font-weight="bold" text-anchor="middle" class="pointer-events-none">Detach ✕</text>
             </g>
             <!-- Resize Handle in Bottom Right -->
             <g id="rasterResizeHandleGroup" class="cursor-nwse-resize" style="pointer-events: auto;">
@@ -791,7 +746,7 @@
     </div>
 
     <!-- 5.3 Right Dockable Sidebar (Layers, Properties, Measure, Survey) -->
-    <div class="w-80 bg-[#161920] border-l border-[#222630] flex flex-col flex-shrink-0 z-20 text-xs overflow-hidden">
+    <div class="w-64 bg-[#1e2229] border-l border-[#222630] flex flex-col flex-shrink-0 z-20 text-xs overflow-hidden">
       
       <!-- Top 4 Tabs -->
       <div class="flex items-center border-b border-[#222630] bg-[#12141a]">
@@ -812,17 +767,17 @@
               <svg class="w-3 h-3 text-slate-400 absolute left-2 top-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
               <input type="text" id="layerSearchInput" placeholder="Search layers..." class="bg-[#101217] border border-[#2b3140] rounded text-[11px] pl-6 pr-2 py-1 text-slate-200 placeholder-slate-500 w-full focus:outline-none focus:border-sky-500 transition">
             </div>
-            <button id="btnAddLayer" class="titlebar-btn text-slate-400 hover:text-white" title="Add Layer (+ নতুন লেয়ার)">+</button>
-            <button id="btnDuplicateLayer" class="titlebar-btn text-slate-400 hover:text-white" title="Duplicate Layer (লেয়ার ডুপ্লিকেট)">❐</button>
-            <button id="btnDeleteLayer" class="titlebar-btn text-slate-400 hover:text-rose-400" title="Delete Layer (লেয়ার মুছুন)">🗑</button>
+            <button id="btnAddLayer" class="titlebar-btn text-slate-400 hover:text-white" title="Add Layer (+ New Layer)">+</button>
+            <button id="btnDuplicateLayer" class="titlebar-btn text-slate-400 hover:text-white" title="Duplicate Layer (Duplicate Layer)">❐</button>
+            <button id="btnDeleteLayer" class="titlebar-btn text-slate-400 hover:text-rose-400" title="Delete Layer (Delete Layer)">🗑</button>
           </div>
 
           <!-- Layer List Matching Reference UI -->
           <div id="layerListContainer" class="space-y-1">
             <div class="layer-row cursor-pointer" data-layer-key="mouza_map">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="mouza_map" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="mouza_map" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="mouza_map" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="mouza_map" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#d946ef] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Mouza_Map</span>
               </div>
@@ -830,8 +785,8 @@
 
             <div class="layer-row active cursor-pointer" data-layer-key="plot_boundary">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="plot_boundary" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="plot_boundary" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="plot_boundary" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="plot_boundary" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e] flex-shrink-0"></span>
                 <span class="font-medium text-white">Plot_Boundary</span>
               </div>
@@ -839,8 +794,8 @@
 
             <div class="layer-row cursor-pointer" data-layer-key="plot_no">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="plot_no" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="plot_no" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="plot_no" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="plot_no" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#facc15] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Plot_No</span>
               </div>
@@ -848,8 +803,8 @@
 
             <div class="layer-row cursor-pointer" data-layer-key="road">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="road" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="road" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="road" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="road" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#ef4444] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Road</span>
               </div>
@@ -857,8 +812,8 @@
 
             <div class="layer-row cursor-pointer" data-layer-key="river">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="river" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="river" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="river" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="river" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#06b6d4] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">River</span>
               </div>
@@ -866,8 +821,8 @@
 
             <div class="layer-row cursor-pointer" data-layer-key="dimension">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="dimension" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="dimension" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="dimension" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="dimension" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#facc15] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Dimension</span>
               </div>
@@ -875,8 +830,8 @@
 
             <div class="layer-row cursor-pointer" data-layer-key="text">
               <div class="flex items-center gap-2">
-                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="text" title="Visibility (হাইড/শো)">👁</span>
-                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="text" title="Lock (লক/আনলক)">🔓</span>
+                <span class="text-sky-400 hover:text-white cursor-pointer layer-eye-btn" data-layer-key="text" title="Visibility (Hide/Show)">👁</span>
+                <span class="text-slate-500 hover:text-slate-300 cursor-pointer layer-lock-btn" data-layer-key="text" title="Lock (Lock/Unlock)">🔓</span>
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#ffffff] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Text</span>
               </div>
@@ -887,44 +842,44 @@
         <!-- Tab 2: Properties Content (Hidden by default) -->
         <div id="panelProperties" class="p-3 space-y-3 hidden text-[11px] font-mono">
           <div class="text-xs font-bold text-sky-400 font-sans border-b border-slate-800 pb-1 flex items-center justify-between">
-            <span>দাগের জ্যামিতিক বৈশিষ্ট্য</span>
+            <span>Plot Geometric Properties</span>
             <span class="text-slate-400 text-[10px]">Property Inspector</span>
           </div>
           <div class="space-y-1.5">
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">দাগ নম্বর</span>
+              <span class="text-slate-400 font-sans">Plot No.</span>
               <span class="text-amber-300 font-bold" id="propDagNo">126</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">মৌজা ও জে.এল</span>
-              <span class="text-white">চরবাগ (JL-42)</span>
+              <span class="text-slate-400 font-sans">Mouza & J.L.</span>
+              <span class="text-white">Chorbagh (JL-42)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">শীট নম্বর</span>
-              <span class="text-white">০১ (CS জরিপ)</span>
+              <span class="text-slate-400 font-sans">Sheet No.</span>
+              <span class="text-white">01 (CS Survey)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">মোট ক্ষেত্রফল</span>
+              <span class="text-slate-400 font-sans">Total Area</span>
               <span class="text-emerald-400 font-bold" id="propArea">12,960 sq.ft</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">শতাংশ / ডেসিমেল</span>
-              <span class="text-emerald-400 font-bold" id="propDecimal">30.00 শতাংশ</span>
+              <span class="text-slate-400 font-sans">Decimal</span>
+              <span class="text-emerald-400 font-bold" id="propDecimal">30.00 Decimal</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">কাঠা ও বিঘা</span>
-              <span class="text-white" id="propKathaBigha">১৮.০০ কাঠা (০.৯০ বিঘা)</span>
+              <span class="text-slate-400 font-sans">Katha & Bigha</span>
+              <span class="text-white" id="propKathaBigha">18.00 Katha (0.90 Bigha)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">পরিসীমা (Perimeter)</span>
+              <span class="text-slate-400 font-sans">Perimeter (Perimeter)</span>
               <span class="text-slate-200" id="propPerimeter">482.00 ft</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">শীর্ষবিন্দু (Vertices)</span>
+              <span class="text-slate-400 font-sans">Vertices (Vertices)</span>
               <span class="text-sky-300">4 Points (Polygon)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">সক্রিয় লেয়ার</span>
+              <span class="text-slate-400 font-sans">Active Layer</span>
               <span class="text-emerald-400">Plot_Boundary</span>
             </div>
           </div>
@@ -933,36 +888,36 @@
         <!-- Tab 3: Measure Content (Hidden by default) -->
         <div id="panelMeasure" class="p-3 space-y-3 hidden text-[11px]">
           <div class="text-xs font-bold text-teal-400 border-b border-slate-800 pb-1 flex items-center justify-between">
-            <span>দ্রুত পরিমাপ ও রূপান্তর</span>
+            <span>Quick Measure & Conversion</span>
             <span class="text-slate-400 text-[10px]">Quick Calc</span>
           </div>
           <div class="space-y-2">
             <div>
-              <span class="text-slate-400 text-[10px]">দৈর্ঘ্য (ফুট):</span>
+              <span class="text-slate-400 text-[10px]">Length (ft):</span>
               <input type="number" id="quickLength" value="160" class="cad-input mt-1">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]">প্রস্থ (ফুট):</span>
+              <span class="text-slate-400 text-[10px]">Width (ft):</span>
               <input type="number" id="quickWidth" value="81" class="cad-input mt-1">
             </div>
             <button id="btnQuickCalcArea" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold rounded border border-slate-700 text-xs">
-              ক্ষেত্রফল নির্ণয় করুন
+              Calculate Area
             </button>
             <div class="p-2 rounded bg-slate-900 border border-slate-800 space-y-1 font-mono text-[10.5px]">
               <div class="flex justify-between">
-                <span class="text-slate-400">বর্গফুট:</span>
+                <span class="text-slate-400">sq.ft:</span>
                 <span class="text-white font-bold" id="quickResSqFt">12,960.0 sq.ft</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-400">শতাংশ:</span>
-                <span class="text-emerald-400 font-bold" id="quickResDec">30.00 শতাংশ</span>
+                <span class="text-slate-400">Decimal:</span>
+                <span class="text-emerald-400 font-bold" id="quickResDec">30.00 Decimal</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-400">কাঠা:</span>
-                <span class="text-amber-300 font-bold" id="quickResKatha">18.00 কাঠা</span>
+                <span class="text-slate-400">Katha:</span>
+                <span class="text-amber-300 font-bold" id="quickResKatha">18.00 Katha</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-400">গান্টার লিংক:</span>
+                <span class="text-slate-400">Gunter Links:</span>
                 <span class="text-sky-300 font-bold" id="quickResLinks">30,000 sq.links</span>
               </div>
             </div>
@@ -972,33 +927,33 @@
         <!-- Tab 4: Survey Content (Hidden by default) -->
         <div id="panelSurvey" class="p-3 space-y-3 hidden text-[11px]">
           <div class="text-xs font-bold text-violet-400 border-b border-slate-800 pb-1 flex items-center justify-between">
-            <span>খতিয়ান ও রেকর্ড তথ্যাদি</span>
+            <span>Khatian & Record Details</span>
             <span class="text-slate-400 text-[10px]">Cadastral Ledger</span>
           </div>
           <div class="space-y-1.5 font-mono">
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">সি.এস খতিয়ান নং</span>
-              <span class="text-white font-bold">৮৮</span>
+              <span class="text-slate-400 font-sans">CS Khatian No.</span>
+              <span class="text-white font-bold">88</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">আর.এস খতিয়ান নং</span>
-              <span class="text-white font-bold">১৪২</span>
+              <span class="text-slate-400 font-sans">RS Khatian No.</span>
+              <span class="text-white font-bold">142</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">তৌজি নম্বর</span>
-              <span class="text-white">১২৪</span>
+              <span class="text-slate-400 font-sans">Tauzi No.</span>
+              <span class="text-white">124</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">জমির শ্রেণি</span>
-              <span class="text-amber-300 font-bold">নাল (Nal)</span>
+              <span class="text-slate-400 font-sans">Land Class</span>
+              <span class="text-amber-300 font-bold">Nal (Cultivable)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">নামজারি অবস্থা</span>
-              <span class="text-emerald-400 font-bold">সম্পন্ন (DCR Paid)</span>
+              <span class="text-slate-400 font-sans">Mutation Status</span>
+              <span class="text-emerald-400 font-bold">Completed (DCR Paid)</span>
             </div>
             <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">মন্তব্য</span>
-              <span class="text-sky-300">দখলীয় ও নিষ্কণ্টক</span>
+              <span class="text-slate-400 font-sans">Remarks</span>
+              <span class="text-sky-300">Possessed & Clear Title</span>
             </div>
           </div>
         </div>
@@ -1061,16 +1016,16 @@
           <div id="accContentOwnership" class="accordion-content hidden">
             <div class="space-y-1.5 font-sans">
               <div class="flex justify-between text-[10.5px] p-1.5 rounded bg-slate-900 border border-slate-800">
-                <span class="font-bold text-white">১. রহিম আলী</span>
-                <span class="text-amber-300 font-mono font-bold">১০.০০ শতাংশ (০.৩৩৩ হিস্যা)</span>
+                <span class="font-bold text-white">1. Rahim Ali</span>
+                <span class="text-amber-300 font-mono font-bold">10.00 Decimal (0.333 Share)</span>
               </div>
               <div class="flex justify-between text-[10.5px] p-1.5 rounded bg-slate-900 border border-slate-800">
-                <span class="font-bold text-white">২. করিম মিয়া</span>
-                <span class="text-amber-300 font-mono font-bold">১০.০০ শতাংশ (০.৩৩৩ হিস্যা)</span>
+                <span class="font-bold text-white">2. Karim Mia</span>
+                <span class="text-amber-300 font-mono font-bold">10.00 Decimal (0.333 Share)</span>
               </div>
               <div class="flex justify-between text-[10.5px] p-1.5 rounded bg-slate-900 border border-slate-800">
-                <span class="font-bold text-white">৩. সালমা বেগম</span>
-                <span class="text-amber-300 font-mono font-bold">১০.০০ শতাংশ (০.৩৩৪ হিস্যা)</span>
+                <span class="font-bold text-white">3. Salma Begum</span>
+                <span class="text-amber-300 font-mono font-bold">10.00 Decimal (0.334 Share)</span>
               </div>
             </div>
           </div>
@@ -1086,20 +1041,20 @@
           <div id="accContentCalculation" class="accordion-content hidden">
             <div class="grid grid-cols-2 gap-2 font-mono text-[10.5px]">
               <div class="p-2 rounded bg-slate-900 border border-slate-800">
-                <div class="text-slate-400 text-[9px] font-sans">Katha (কাঠা)</div>
-                <div class="text-white font-bold text-sm">১৮.০০</div>
+                <div class="text-slate-400 text-[9px] font-sans">Katha (Katha)</div>
+                <div class="text-white font-bold text-sm">18.00</div>
               </div>
               <div class="p-2 rounded bg-slate-900 border border-slate-800">
-                <div class="text-slate-400 text-[9px] font-sans">Bigha (বিঘা)</div>
-                <div class="text-white font-bold text-sm">০.৯০</div>
+                <div class="text-slate-400 text-[9px] font-sans">Bigha (Bigha)</div>
+                <div class="text-white font-bold text-sm">0.90</div>
               </div>
               <div class="p-2 rounded bg-slate-900 border border-slate-800">
-                <div class="text-slate-400 text-[9px] font-sans">Acre (একর)</div>
-                <div class="text-white font-bold text-sm">০.৩০</div>
+                <div class="text-slate-400 text-[9px] font-sans">Acre (Acre)</div>
+                <div class="text-white font-bold text-sm">0.30</div>
               </div>
               <div class="p-2 rounded bg-slate-900 border border-slate-800">
-                <div class="text-slate-400 text-[9px] font-sans">Sq. Meter (বর্গমিটার)</div>
-                <div class="text-white font-bold text-sm">১,২০৪.০</div>
+                <div class="text-slate-400 text-[9px] font-sans">Sq. Meter (sq.m)</div>
+                <div class="text-white font-bold text-sm">1,204.0</div>
               </div>
             </div>
           </div>
@@ -1246,8 +1201,15 @@
 
     <!-- Right: Zoom & Status Icons -->
     <div class="flex items-center gap-2 pl-3 border-l border-[#242a36]">
-      <div class="cursor-pointer hover:text-white" title="Current Zoom Percentage">100% ▾</div>
-      <button class="titlebar-btn" title="Full Screen Workspace">⛶</button>
+      <div class="flex items-center gap-1.5 pl-3 border-l border-[#242a36]">
+      <button id="hudZoomOut" class="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700/60 rounded text-xs font-bold cursor-pointer" title="Zoom Out (-)">−</button>
+      <span id="hudZoomPercent" class="text-[11px] font-mono text-sky-400 font-bold min-w-[38px] text-center select-none">100%</span>
+      <button id="hudZoomIn" class="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700/60 rounded text-xs font-bold cursor-pointer" title="Zoom In (+)">+</button>
+      <button id="hudZoomExtents" class="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white hover:bg-slate-700/60 px-1.5 py-0.5 rounded cursor-pointer ml-1 select-none" title="Zoom Extents (Fit View)">
+        <span>⛶ Fit View</span>
+      </button>
+      <button id="btnFullscreenToggle" class="titlebar-btn" title="Full Screen Workspace">⛶</button>
+    </div>
       <button class="titlebar-btn" title="Lock Workspace">🔒</button>
     </div>
 
@@ -1264,12 +1226,12 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Import Mouza Map (মৌজা ম্যাপ সংযুক্তকরণ)</span>
+          <span>Import Mouza Map (Attach Cadastral Map)</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalMouzaImport">✕</button>
       </div>
       <div class="cad-modal-body space-y-3.5 text-xs font-sans">
-        <p class="text-slate-300">ক্যাড ড্রয়িং ক্যানভাসে মৌজা নকশা যুক্ত করার জন্য নিচের যেকোনো একটি পদ্ধতি নির্বাচন করুন:</p>
+        <p class="text-slate-300">Select an option below to load a Mouza map onto the CAD canvas:</p>
         
         <!-- Option 1: Built-in CS Sample Map -->
         <div class="p-3.5 rounded-lg bg-[#141824] border border-[#2d3748] hover:border-emerald-500/60 transition cursor-pointer flex items-center justify-between group" id="btnLoadSampleMouza">
@@ -1278,11 +1240,11 @@
               🗺️
             </div>
             <div>
-              <div class="font-bold text-white text-[12px] group-hover:text-emerald-400">১. বিল্ট-ইন প্রমিত সি. এস. মৌজা নকশা (Sheet 01 - 1920)</div>
-              <div class="text-slate-400 text-[10.5px]">চাঁদপুর, ফরিদগঞ্জ, চরবাগ মৌজা জে.এল. ৪৫ — ডেমো টেস্টিং ও স্কেল পরিমাপের জন্য তৈরি</div>
+              <div class="font-bold text-white text-[12px] group-hover:text-emerald-400">1. -  . . Mouza  (Sheet 01 - 1920)</div>
+              <div class="text-slate-400 text-[10.5px]">, , Chorbagh Mouza .. 45 —       </div>
             </div>
           </div>
-          <button class="cad-btn-primary px-3 py-1 text-[11px] flex-shrink-0">লোড করুন</button>
+          <button class="cad-btn-primary px-3 py-1 text-[11px] flex-shrink-0">Load Map</button>
         </div>
 
         <!-- Option 2: Upload User Image File -->
@@ -1292,15 +1254,15 @@
               📁
             </div>
             <div>
-              <div class="font-bold text-white text-[12px] group-hover:text-sky-400">২. কম্পিউটার থেকে নিজস্ব নকশা ফাইল (JPG, PNG, TIFF)</div>
-              <div class="text-slate-400 text-[10.5px]">আপনার লোকাল পিসি থেকে যে কোনো স্ক্যানকৃত মৌজা নকশা বা স্যাটেলাইট ইমেজ আপলোড করুন</div>
+              <div class="font-bold text-white text-[12px] group-hover:text-sky-400">2.      (JPG, PNG, TIFF)</div>
+              <div class="text-slate-400 text-[10.5px]">       Mouza     Load Map</div>
             </div>
           </div>
-          <button class="cad-btn-secondary px-3 py-1 text-[11px] flex-shrink-0">ব্রাউজ করুন</button>
+          <button class="cad-btn-secondary px-3 py-1 text-[11px] flex-shrink-0">Browse File</button>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalMouzaImport">বাতিল</button>
+        <button class="cad-btn-secondary" data-close-modal="modalMouzaImport">Cancel</button>
       </div>
     </div>
   </div>
@@ -1311,7 +1273,7 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v1M5 19h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2z"/></svg>
-          <span>Open Project (প্রজেক্ট ফাইল খুলুন)</span>
+          <span>Open Project (.dwg, .dxf, .lscad)</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalOpenProject">✕</button>
       </div>
@@ -1324,17 +1286,17 @@
               📂
             </div>
             <div>
-              <div class="font-bold text-white text-[12px] group-hover:text-sky-400">কম্পিউটার থেকে নিজস্ব প্রজেক্ট ফাইল নির্বাচন করুন</div>
-              <div class="text-slate-400 text-[10.5px]">সমর্থিত ফরম্যাট: .lscad (Native Project), .json, .prj, .dxf</div>
+              <div class="font-bold text-white text-[12px] group-hover:text-sky-400">Select an existing project file from your computer</div>
+              <div class="text-slate-400 text-[10.5px]">Supported formats: .lscad (Native), .json, .prj, .dxf</div>
             </div>
           </div>
-          <button class="cad-btn-primary px-3 py-1 text-[11px] flex-shrink-0">ফাইল ব্রাউজ করুন</button>
+          <button class="cad-btn-primary px-3 py-1 text-[11px] flex-shrink-0"> Browse File</button>
         </div>
 
         <!-- Section B: Ready-made Sample Projects -->
         <div>
           <div class="text-slate-400 font-semibold mb-2 flex items-center gap-1.5">
-            <span>অথবা প্রস্তুতকৃত সার্ভে প্রজেক্ট থেকে নির্বাচন করুন:</span>
+            <span>Or choose from recent survey projects:</span>
           </div>
           <div class="space-y-2">
             <!-- Sample 1 -->
@@ -1344,9 +1306,9 @@
                   <span class="text-emerald-400 font-mono">Chorbagh_Survey.prj</span>
                   <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">CS 1920 (Active)</span>
                 </div>
-                <div class="text-slate-400 text-[10.5px]">চাঁদপুর, ফরিদগঞ্জ — ১৫টি দাগ, ২টি শিট, ১৬" = ১ মাইল (১:৩৯৬০)</div>
+                <div class="text-slate-400 text-[10.5px]">,  — 15 Plot, 2 , 16" = 1  (1:3960)</div>
               </div>
-              <button class="cad-btn-secondary px-3 py-1 text-[11px]">লোড করুন</button>
+              <button class="cad-btn-secondary px-3 py-1 text-[11px]">Load Map</button>
             </div>
 
             <!-- Sample 2 -->
@@ -1356,9 +1318,9 @@
                   <span class="text-sky-400 font-mono">Dakshinpara_Survey.prj</span>
                   <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-800">RS 1985</span>
                 </div>
-                <div class="text-slate-400 text-[10.5px]">কুমিল্লা, দাউদকান্দি — ২০টি দাগ, ৩২" = ১ মাইল (১:১৯৮০)</div>
+                <div class="text-slate-400 text-[10.5px]">,  — 20 Plot, 32" = 1  (1:1980)</div>
               </div>
-              <button class="cad-btn-secondary px-3 py-1 text-[11px]">লোড করুন</button>
+              <button class="cad-btn-secondary px-3 py-1 text-[11px]">Load Map</button>
             </div>
 
             <!-- Sample 3 -->
@@ -1368,16 +1330,16 @@
                   <span class="text-amber-400 font-mono">Rupganj_CityCadastral.prj</span>
                   <span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-800">BS 2010</span>
                 </div>
-                <div class="text-slate-400 text-[10.5px]">নারায়ণগঞ্জ, রূপগঞ্জ — ৮০" = ১ মাইল (১:৭৯২) সিটি ক্যাডাস্ট্রাল</div>
+                <div class="text-slate-400 text-[10.5px]">,  — 80" = 1  (1:792)  </div>
               </div>
-              <button class="cad-btn-secondary px-3 py-1 text-[11px]">লোড করুন</button>
+              <button class="cad-btn-secondary px-3 py-1 text-[11px]">Load Map</button>
             </div>
           </div>
         </div>
 
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalOpenProject">বন্ধ করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalOpenProject">Close</button>
       </div>
     </div>
   </div>
@@ -1388,59 +1350,59 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          <span>New Project (নতুন প্রজেক্ট তৈরি)</span>
+          <span>New Project </span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalNewProject">✕</button>
       </div>
       <div class="cad-modal-body space-y-3 font-sans text-xs">
         <div>
-          <label class="block text-slate-300 font-semibold mb-1">প্রজেক্ট ফাইল নাম (.prj):</label>
+          <label class="block text-slate-300 font-semibold mb-1">  Name (.prj):</label>
           <input type="text" id="newProjFileName" value="New_Survey_Project.prj" class="cad-input font-mono">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">মৌজা নাম:</label>
-            <input type="text" id="newProjMouza" value="চরবাগ" class="cad-input">
+            <label class="block text-slate-300 font-semibold mb-1">Mouza Name:</label>
+            <input type="text" id="newProjMouza" value="Chorbagh" class="cad-input">
           </div>
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">জে. এল. নং:</label>
-            <input type="text" id="newProjJL" value="৪৫" class="cad-input font-mono">
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-slate-300 font-semibold mb-1">উপজেলা / থানা:</label>
-            <input type="text" id="newProjThana" value="ফরিদগঞ্জ" class="cad-input">
-          </div>
-          <div>
-            <label class="block text-slate-300 font-semibold mb-1">জেলা:</label>
-            <input type="text" id="newProjDistrict" value="চাঁদপুর" class="cad-input">
+            <label class="block text-slate-300 font-semibold mb-1">. . :</label>
+            <input type="text" id="newProjJL" value="45" class="cad-input font-mono">
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">জরিপের ধরন:</label>
+            <label class="block text-slate-300 font-semibold mb-1"> / :</label>
+            <input type="text" id="newProjThana" value="" class="cad-input">
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">:</label>
+            <input type="text" id="newProjDistrict" value="" class="cad-input">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">Survey :</label>
             <select id="newProjSurveyType" class="cad-input">
-              <option value="CS">সি. এস. (CS 1920)</option>
-              <option value="SA">এস. এ. (SA 1962)</option>
-              <option value="RS">আর. এস. (RS 1985)</option>
-              <option value="BS">বি. এস. (BS / City Survey)</option>
+              <option value="CS">. . (CS 1920)</option>
+              <option value="SA">. . (SA 1962)</option>
+              <option value="RS">. . (RS 1985)</option>
+              <option value="BS">. . (BS / City Survey)</option>
             </select>
           </div>
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">মৌজা শিট স্কেল:</label>
+            <label class="block text-slate-300 font-semibold mb-1">Mouza  Scale:</label>
             <select id="newProjScale" class="cad-input font-mono">
-              <option value="16">১৬" = ১ মাইল (১:৩৯৬০)</option>
-              <option value="32">৩২" = ১ মাইল (১:১৯৮০)</option>
-              <option value="64">৬৪" = ১ মাইল (১:৯৯০)</option>
-              <option value="80">৮০" = ১ মাইল (১:৭৯২)</option>
+              <option value="16">16" = 1  (1:3960)</option>
+              <option value="32">32" = 1  (1:1980)</option>
+              <option value="64">64" = 1  (1:990)</option>
+              <option value="80">80" = 1  (1:792)</option>
             </select>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalNewProject">বাতিল</button>
-        <button id="btnCreateNewProjectConfirm" class="cad-btn-primary">নতুন প্রজেক্ট শুরু করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalNewProject">Cancel</button>
+        <button id="btnCreateNewProjectConfirm" class="cad-btn-primary"> Start Project</button>
       </div>
     </div>
   </div>
@@ -1451,7 +1413,7 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M2 12l4-4m-4 4l4 4m16-4l-4-4m4 4l-4 4"/></svg>
-          <span>AutoCAD Mouza Scale Calculator (স্কেল নির্ধারণ)</span>
+          <span>AutoCAD Mouza Scale Calculator </span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalScaleCalculator">✕</button>
       </div>
@@ -1462,194 +1424,194 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-2">স্ট্যান্ডার্ড নকশা স্কেল প্রিসেট নির্বাচন করুন:</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">     :</label>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-sky-500/40 text-left scale-preset-btn transition-colors" data-scale-width="16">
-              <div class="font-bold text-sky-400">১৬" = ১ মাইল (16 Inch)</div>
+              <div class="font-bold text-sky-400">16" = 1  (16 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:3960</span></div>
-              <div class="text-[9.5px] text-emerald-400">১" = ৩৩০ ফুট (৫০০ লতি) [CS/SA]</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 330  (500 Links) [CS/SA]</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="32">
-              <div class="font-bold text-sky-400">৩২" = ১ মাইল (32 Inch)</div>
+              <div class="font-bold text-sky-400">32" = 1  (32 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:1980</span></div>
-              <div class="text-[9.5px] text-emerald-400">১" = ১৬৫ ফুট (২৫০ লতি) [পৌরসভা]</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 165  (250 Links) []</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="64">
-              <div class="font-bold text-sky-400">৬৪" = ১ মাইল (64 Inch)</div>
+              <div class="font-bold text-sky-400">64" = 1  (64 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:990</span></div>
-              <div class="text-[9.5px] text-emerald-400">১" = ৮২.৫ ফুট (১২৫ লতি) [RS/BS]</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 82.5  (125 Links) [RS/BS]</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="80">
-              <div class="font-bold text-sky-400">৮০" = ১ মাইল (80 Inch)</div>
+              <div class="font-bold text-sky-400">80" = 1  (80 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:792</span></div>
-              <div class="text-[9.5px] text-emerald-400">১" = ৬৬ ফুট (১ গান্টার চেইন)</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 66  (1  )</div>
             </button>
           </div>
         </div>
 
         <!-- Custom AutoCAD Scale Factor Direct Input -->
         <div class="border-t border-slate-800 pt-3 space-y-2">
-          <label class="block text-xs font-semibold text-slate-300">কাস্টম স্কেল ফ্যাক্টর ও DPI (AutoCAD সরাসরি মিল):</label>
+          <label class="block text-xs font-semibold text-slate-300">    DPI (AutoCAD  ):</label>
           <div class="grid grid-cols-3 gap-2 text-xs">
             <div>
-              <span class="text-slate-400 text-[10px]">স্কেল ফ্যাক্টর (Scale):</span>
+              <span class="text-slate-400 text-[10px]">  (Scale):</span>
               <input type="number" id="inputCustomScaleFactor" value="3960" step="1" class="cad-input mt-1 font-mono font-bold text-sky-400" title="e.g. 3960, 1980, 990, 792">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]">ম্যাপের DPI (AutoCAD):</span>
+              <span class="text-slate-400 text-[10px]"> DPI (AutoCAD):</span>
               <input type="number" id="inputCustomScaleDpi" value="300" step="1" class="cad-input mt-1 font-mono" title="300 for scanner, 96 for screen">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]">পরিমাপ ইউনিট:</span>
+              <span class="text-slate-400 text-[10px]"> Unit:</span>
               <select id="selectScaleUnit" class="cad-input mt-1 text-[11px] bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
-                <option value="ft" selected>ফুট (Feet)</option>
-                <option value="m">মিটার (Meters)</option>
-                <option value="links">লিংক (Links)</option>
-                <option value="in">ইঞ্চি (Inches)</option>
+                <option value="ft" selected>Feet (ft)</option>
+                <option value="m">Meters (m)</option>
+                <option value="links">Links (Links)</option>
+                <option value="in"> (Inches)</option>
               </select>
             </div>
           </div>
           <button id="btnApplyDirectScaleFactor" class="w-full py-1.5 px-3 bg-sky-600 hover:bg-sky-500 text-white rounded text-[11px] font-bold transition cursor-pointer">
-            AutoCAD স্কেল ও DPI প্রয়োগ করুন
+            AutoCAD   DPI  
           </button>
         </div>
 
         <div class="border-t border-slate-800 pt-3">
-          <label class="block text-xs font-semibold text-slate-300 mb-2">অথবা ২-পয়েন্ট ফিল্ড ক্যালিবারেশন (Custom Points):</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-2"> 2-   (Custom Points):</label>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="text-slate-400 text-[10px]">ম্যাপের দূরত্ব (ইঞ্চি):</span>
+              <span class="text-slate-400 text-[10px]">  :</span>
               <input type="number" id="inputCalibMapInches" value="2.5" step="0.1" class="cad-input mt-1">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]">জমিনের বাস্তব দূরত্ব (ফুট):</span>
+              <span class="text-slate-400 text-[10px]">   :</span>
               <input type="number" id="inputCalibGroundFeet" value="825" class="cad-input mt-1">
             </div>
           </div>
           <button id="btnApplyCalibCustom" class="mt-2 w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded border border-slate-700 text-[11px] font-bold">
-            কাস্টম স্কেল ফ্যাক্টর গণনা ও প্রয়োগ করুন
+                  
           </button>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalScaleCalculator">বন্ধ করুন</button>
-        <button id="btnConfirmScaleApply" class="cad-btn-primary">স্কেল প্রয়োগ করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalScaleCalculator">Close</button>
+        <button id="btnConfirmScaleApply" class="cad-btn-primary">  </button>
       </div>
     </div>
   </div>
 
-  <!-- Modal 2: Land Unit Converter (ভূমি পরিমাপ ও রূপান্তর ক্যালকুলেটর) -->
+  <!-- Modal 2: Land Unit Converter  -->
   <div id="modalUnitConverter" class="cad-modal-backdrop">
     <div class="cad-modal-window max-w-lg">
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/></svg>
-          <span>Land Unit Converter (ভূমি একক রূপান্তর)</span>
+          <span>Land Unit Converter </span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalUnitConverter">✕</button>
       </div>
       <div class="cad-modal-body space-y-3 font-mono">
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">শতাংশ / ডেসিমেল (Decimal)</label>
+            <label class="text-[10px] text-slate-400 font-sans">Decimal (Decimal)</label>
             <input type="number" id="convDecimal" value="30.00" step="0.01" class="cad-input mt-0.5 text-emerald-400 font-bold">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">বর্গফুট (Sq. Feet) [১ শ = ৪৩৫.৬]</label>
+            <label class="text-[10px] text-slate-400 font-sans">sq.ft (Sq. Feet) [1  = 435.6]</label>
             <input type="number" id="convSqFt" value="12960.00" step="0.1" class="cad-input mt-0.5 text-sky-300 font-bold">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">কাঠা (Katha) [১ কাঠা = ৭২০ ব:ফু]</label>
+            <label class="text-[10px] text-slate-400 font-sans">Katha (Katha) [1 Katha = 720 :]</label>
             <input type="number" id="convKatha" value="18.00" step="0.01" class="cad-input mt-0.5 text-white">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">বিঘা (Bigha) [১ বিঘা = ২০ কাঠা]</label>
+            <label class="text-[10px] text-slate-400 font-sans">Bigha (Bigha) [1 Bigha = 20 Katha]</label>
             <input type="number" id="convBigha" value="0.90" step="0.01" class="cad-input mt-0.5 text-white">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">একর (Acre) [১ একর = ১০০ শতাংশ]</label>
+            <label class="text-[10px] text-slate-400 font-sans">Acre (Acre) [1 Acre = 100 Decimal]</label>
             <input type="number" id="convAcre" value="0.30" step="0.001" class="cad-input mt-0.5 text-amber-300 font-bold">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">বর্গমিটার (Sq. Meter)</label>
+            <label class="text-[10px] text-slate-400 font-sans">sq.m (Sq. Meter)</label>
             <input type="number" id="convSqMeter" value="1204.0" step="0.1" class="cad-input mt-0.5 text-white">
           </div>
         </div>
 
         <div class="p-2.5 rounded bg-slate-900 border border-slate-800 text-[10.5px] font-sans text-slate-300 space-y-1 mt-2">
-          <div class="font-bold text-sky-300">💡 প্রমিত পরিমাপ সূত্রাবলী:</div>
-          <div>• ১ গান্টার চেইন = ৬৬ ফুট = ১০০ লিংক/লতি (১ লিংক = ০.৬৬ ফুট)</div>
-          <div>• ১,০০০ বর্গলিংক = ১ শতাংশ = ৪৩৫.৬০ বর্গফুট</div>
-          <div>• ৩ বিঘা ৮ ছটাক = ১ একর = ৪৩,৫৬০ বর্গফুট</div>
+          <div class="font-bold text-sky-300">💡   :</div>
+          <div>• 1   = 66  = 100 Links/Links (1 Links = 0.66 )</div>
+          <div>• 1,000 Links = 1 Decimal = 435.60 sq.ft</div>
+          <div>• 3 Bigha 8  = 1 Acre = 43,560 sq.ft</div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalUnitConverter">বন্ধ করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalUnitConverter">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal 3: Land Partition & Faraiz Calculator (বণ্টন ও ফারায়েজ) -->
+  <!-- Modal 3: Land Partition & Faraiz Calculator  -->
   <div id="modalPartitionFaraiz" class="cad-modal-backdrop">
     <div class="cad-modal-window max-w-lg">
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><path d="M12 12l7 7"/></svg>
-          <span>Land Partition & Faraiz (হিস্যা ও বণ্টন ক্যালকুলেটর)</span>
+          <span>Land Partition & Faraiz (Share   )</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalPartitionFaraiz">✕</button>
       </div>
       <div class="cad-modal-body space-y-3 font-sans">
         <div class="p-2.5 rounded bg-slate-900 border border-slate-800 flex justify-between items-center text-xs">
-          <div>নির্বাচিত দাগ: <span class="font-bold text-amber-300 font-mono" id="partDagNo">126</span></div>
-          <div>মোট জমি: <span class="font-bold text-emerald-400 font-mono" id="partTotalArea">30.00 শতাংশ (12,960 sq.ft)</span></div>
+          <div> Plot: <span class="font-bold text-amber-300 font-mono" id="partDagNo">126</span></div>
+          <div>Total Land: <span class="font-bold text-emerald-400 font-mono" id="partTotalArea">30.00 Decimal (12,960 sq.ft)</span></div>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1.5">বণ্টনের পদ্ধতি নির্বাচন করুন:</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">   :</label>
           <div class="grid grid-cols-3 gap-2 text-xs">
-            <button class="p-2 rounded bg-slate-800 border border-sky-400 text-sky-300 font-bold part-mode-btn active" data-part-mode="equal">সমান ভাগ (Equal)</button>
-            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="hisya">হিস্যা অনুযায়ী</button>
-            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="faraiz">ওয়ারিশান ফারায়েজ</button>
+            <button class="p-2 rounded bg-slate-800 border border-sky-400 text-sky-300 font-bold part-mode-btn active" data-part-mode="equal">  (Equal)</button>
+            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="hisya">Share </button>
+            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="faraiz"> </button>
           </div>
         </div>
 
         <div id="partResultContainer" class="space-y-1.5 font-mono text-[11px] pt-1">
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold">প্লট ১২৬/ক (১ম অংশীদার)</span>
-            <span class="text-emerald-400 font-bold">১০.০০ শতাংশ (০.৩৩৩ হিস্যা)</span>
+            <span class="text-white font-sans font-bold"> 126/ (1 )</span>
+            <span class="text-emerald-400 font-bold">10.00 Decimal (0.333 Share)</span>
           </div>
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold">প্লট ১২৬/খ (২য় অংশীদার)</span>
-            <span class="text-emerald-400 font-bold">১০.০০ শতাংশ (০.৩৩৩ হিস্যা)</span>
+            <span class="text-white font-sans font-bold"> 126/ (2 )</span>
+            <span class="text-emerald-400 font-bold">10.00 Decimal (0.333 Share)</span>
           </div>
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold">প্লট ১২৬/গ (৩য় অংশীদার)</span>
-            <span class="text-emerald-400 font-bold">১০.০০ শতাংশ (০.৩৩৪ হিস্যা)</span>
+            <span class="text-white font-sans font-bold"> 126/ (3 )</span>
+            <span class="text-emerald-400 font-bold">10.00 Decimal (0.334 Share)</span>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalPartitionFaraiz">বাতিল</button>
-        <button id="btnApplyPartitionToCanvas" class="cad-btn-primary">নকশায় দাগ ভাগ করুন (Split Dag)</button>
+        <button class="cad-btn-secondary" data-close-modal="modalPartitionFaraiz">Cancel</button>
+        <button id="btnApplyPartitionToCanvas" class="cad-btn-primary">Split Parcel on Canvas</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal 4: CS-BS Pentagraph Overlay Comparison (পেন্টাগ্রাফ তুলনা) -->
+  <!-- Modal 4: CS-BS Pentagraph Overlay Comparison  -->
   <div id="modalPentagraphOverlay" class="cad-modal-backdrop">
     <div class="cad-modal-window max-w-lg">
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="12" height="12"/><rect x="9" y="9" width="12" height="12"/></svg>
-          <span>Pentagraph Map Overlay (CS বনাম RS/BS নকশা তুলনা)</span>
+          <span>Pentagraph Map Overlay (CS vs RS/BS Comparison)</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalPentagraphOverlay">✕</button>
       </div>
       <div class="cad-modal-body space-y-4 text-xs font-sans">
         <div>
           <div class="flex justify-between text-slate-300 mb-1">
-            <span>পেন্টাগ্রাফ ওভারলে স্বচ্ছতা (Transparency):</span>
+            <span>Pentagraph Overlay Opacity:</span>
             <span id="pentaOpacityVal" class="text-sky-400 font-mono font-bold">50%</span>
           </div>
           <input type="range" id="pentaOpacityRange" min="0" max="100" value="50" class="w-full cursor-pointer accent-sky-400">
@@ -1657,26 +1619,26 @@
 
         <div class="p-3 rounded bg-slate-900 border border-slate-800 space-y-2 text-[11px]">
           <div class="flex justify-between border-b border-slate-800 pb-1.5">
-            <span class="text-slate-400">বেস নকশা (Base Map):</span>
-            <span class="text-white font-bold">CS নকশা (Sheet 01 - 1920)</span>
+            <span class="text-slate-400">Base Map:</span>
+            <span class="text-white font-bold">CS Map Sheet 01 (1920)</span>
           </div>
           <div class="flex justify-between border-b border-slate-800 pb-1.5">
-            <span class="text-slate-400">তুলনামূলক নকশা (Overlay Map):</span>
-            <span class="text-amber-400 font-bold">RS / BS নকশা (Sheet 01 - 1985)</span>
+            <span class="text-slate-400">Overlay Comparison Map:</span>
+            <span class="text-amber-400 font-bold">RS / BS Map Sheet 01 (1985)</span>
           </div>
           <div class="flex justify-between border-b border-slate-800 pb-1.5">
-            <span class="text-slate-400">সীমানা পরিবর্তন (Shift Delta):</span>
-            <span class="text-emerald-400 font-bold font-mono">+1.82 ft (উত্তর-পশ্চিম সীমানা)</span>
+            <span class="text-slate-400">Boundary Shift Delta:</span>
+            <span class="text-emerald-400 font-bold font-mono">+1.82 ft (North-West Boundary)</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-slate-400">দাগের ক্ষেত্রফল তারতম্য:</span>
-            <span class="text-sky-300 font-bold font-mono">০.০৫ শতাংশ বিচ্যুতি (নগণ্য)</span>
+            <span class="text-slate-400">Area Variance:</span>
+            <span class="text-sky-300 font-bold font-mono">0.05 Decimal Variance (Negligible)</span>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalPentagraphOverlay">বন্ধ করুন</button>
-        <button id="btnToggleOverlayVisual" class="cad-btn-primary">ক্যানভাসে ওভারলে প্রদর্শন করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalPentagraphOverlay">Close</button>
+        <button id="btnToggleOverlayVisual" class="cad-btn-primary">Display Overlay on Canvas</button>
       </div>
     </div>
   </div>
@@ -1687,70 +1649,70 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span>Certified Survey Measurement Report (ভূমি জরিপ সনদ)</span>
+          <span>Certified Survey Measurement Report</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalSurveyReport">✕</button>
       </div>
       <div class="cad-modal-body space-y-3 font-sans" id="printableReportArea">
         <!-- Certificate Header -->
         <div class="p-3 bg-white text-slate-900 rounded shadow text-center space-y-1">
-          <div class="text-[13px] font-black tracking-wide text-slate-800">গণপ্রজাতন্ত্রী বাংলাদেশ অনুমোদিত পেশাদার ডিজিটাল ভূমি জরিপ সনদ</div>
+          <div class="text-[13px] font-black tracking-wide text-slate-800">Digital Cadastral Survey & Area Verification Certificate</div>
           <div class="text-[10px] text-slate-600 font-semibold">SurveyCAD Pro Enterprise Land Measurement & Cadastral Verification System</div>
           <div class="h-0.5 bg-slate-800 w-full my-2"></div>
           
           <div class="grid grid-cols-3 gap-2 text-left text-[10px] py-1">
-            <div><span class="text-slate-500">মৌজা:</span> <strong id="repMouza">চরবাগ</strong></div>
-            <div><span class="text-slate-500">জে.এল নং:</span> <strong>৪২</strong></div>
-            <div><span class="text-slate-500">শীট নং:</span> <strong id="repSheet">০১ (CS)</strong></div>
-            <div><span class="text-slate-500">দাগ নং:</span> <strong id="repDag" class="text-blue-600 text-[12px]">১২৬</strong></div>
-            <div><span class="text-slate-500">খতিয়ান নং:</span> <strong>৮৮</strong></div>
-            <div><span class="text-slate-500">স্কেল:</span> <strong id="repScale">১৬" = ১ মাইল (১:৩৯৬০)</strong></div>
+            <div><span class="text-slate-500">Mouza:</span> <strong id="repMouza">Chorbagh</strong></div>
+            <div><span class="text-slate-500">J.L. No:</span> <strong>42</strong></div>
+            <div><span class="text-slate-500">Sheet No:</span> <strong id="repSheet">01 (CS)</strong></div>
+            <div><span class="text-slate-500">Plot No:</span> <strong id="repDag" class="text-blue-600 text-[12px]">126</strong></div>
+            <div><span class="text-slate-500">Khatian No:</span> <strong>88</strong></div>
+            <div><span class="text-slate-500">Scale:</span> <strong id="repScale">16" = 1  (1:3960)</strong></div>
           </div>
 
           <div class="bg-slate-100 p-2 rounded text-left text-[10px] space-y-1 font-mono">
             <div class="flex justify-between">
-              <span>পরিমাপকৃত মোট ক্ষেত্রফল:</span>
-              <strong class="text-emerald-700" id="repArea">১২,৯৬০.০০ বর্গফুট (৩০.০০ শতাংশ)</strong>
+              <span>Measured Total Area:</span>
+              <strong class="text-emerald-700" id="repArea">12,960.00 sq.ft (30.00 Decimal)</strong>
             </div>
             <div class="flex justify-between">
-              <span>কাঠা / বিঘা / একর:</span>
-              <strong id="repKathaBigha">১৮.০০ কাঠা | ০.৯০ বিঘা | ০.৩০ একর</strong>
+              <span>Katha / Bigha / Acre:</span>
+              <strong id="repKathaBigha">18.00 Katha | 0.90 Bigha | 0.30 Acre</strong>
             </div>
             <div class="flex justify-between">
-              <span>সীমানার মোট পরিসীমা:</span>
-              <strong id="repPerimeter">৪৮২.০০ ফুট (৭৩০.৩০ লতি)</strong>
+              <span>Total Boundary Perimeter:</span>
+              <strong id="repPerimeter">482.00  (730.30 Links)</strong>
             </div>
           </div>
 
           <!-- Registered Owners -->
           <div class="text-left text-[10px] pt-1">
-            <div class="font-bold text-slate-700 mb-1">অংশীদার ও রেকর্ডীয় মালিকগণের বিবরণ:</div>
+            <div class="font-bold text-slate-700 mb-1">  Recorded Owner Description:</div>
             <div class="border border-slate-300 rounded overflow-hidden">
               <table class="w-full text-left border-collapse">
                 <thead class="bg-slate-100 border-b border-slate-300">
-                  <tr><th class="p-1">ক্রমিক ও মালিকের নাম</th><th class="p-1">হিস্যা</th><th class="p-1">প্রাপ্ত জমি (শতাংশ)</th></tr>
+                  <tr><th class="p-1">SL & Owner Name</th><th class="p-1">Share</th><th class="p-1">Allocated Land (Decimal)</th></tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200">
-                  <tr><td class="p-1">১. রহিম আলী</td><td class="p-1 font-mono">০.৩৩৩</td><td class="p-1 font-mono font-bold">১০.০০</td></tr>
-                  <tr><td class="p-1">২. করিম মিয়া</td><td class="p-1 font-mono">০.৩৩৩</td><td class="p-1 font-mono font-bold">১০.০০</td></tr>
-                  <tr><td class="p-1">৩. সালমা বেগম</td><td class="p-1 font-mono">০.৩৩৪</td><td class="p-1 font-mono font-bold">১০.০০</td></tr>
+                  <tr><td class="p-1">1. Rahim Ali</td><td class="p-1 font-mono">0.333</td><td class="p-1 font-mono font-bold">10.00</td></tr>
+                  <tr><td class="p-1">2. Karim Mia</td><td class="p-1 font-mono">0.333</td><td class="p-1 font-mono font-bold">10.00</td></tr>
+                  <tr><td class="p-1">3. Salma Begum</td><td class="p-1 font-mono">0.334</td><td class="p-1 font-mono font-bold">10.00</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
 
           <div class="flex justify-between items-end pt-4 text-[9px] text-slate-500">
-            <div>যাচাই তারিখ: <strong>০৫ নভেম্বর ২০২৬</strong></div>
+            <div>Verification Date: <strong>05  2026</strong></div>
             <div class="text-center">
               <div class="w-24 border-b border-slate-600 mb-1"></div>
-              <div>সার্ভেয়ার ও আমিন স্বাক্ষর</div>
+              <div>Surveyor & Cadastral Officer Sign</div>
             </div>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalSurveyReport">বন্ধ করুন</button>
-        <button id="btnPrintSurveyReport" class="cad-btn-primary">🖨 সনদ প্রিন্ট করুন (Print)</button>
+        <button class="cad-btn-secondary" data-close-modal="modalSurveyReport">Close</button>
+        <button id="btnPrintSurveyReport" class="cad-btn-primary">🖨 Print Survey Certificate</button>
       </div>
     </div>
   </div>
@@ -1769,32 +1731,32 @@
         <div class="grid grid-cols-2 gap-2">
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">PL / POLYLINE:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">প্লটের সীমানা ও বহুভুজ রেখা আঁকা</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Draw boundary polylines & polygons</span>
           </div>
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">AREA / AA:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">দাগের সঠিক ক্ষেত্রফল ও পরিসীমা নির্ণয়</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Calculate accurate area and perimeter</span>
           </div>
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">DIST / DI:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">যেকোনো দুই বিন্দুর রৈখিক দূরত্ব পরিমাপ</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Measure distance between two points</span>
           </div>
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">G / GUNIYA:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">ভার্চুয়াল গুনিয়া স্কেল অন/অফ</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Toggle virtual Guniya scale on/off</span>
           </div>
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">SCALE / SC:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">মৌজা স্কেল (16/32/64/80) প্রয়োগ</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Apply standard Mouza scale factor</span>
           </div>
           <div class="p-2 rounded bg-slate-900 border border-slate-800">
             <span class="text-amber-300 font-bold">E / ERASE:</span>
-            <span class="text-slate-300 block font-sans text-[10px]">ড্রয়িং বা দাগের অঙ্কন মুছে ফেলা</span>
+            <span class="text-slate-300 block font-sans text-[10px]">Erase drawing or plot boundary</span>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
-        <button class="cad-btn-secondary" data-close-modal="modalHelpShortcuts">বন্ধ করুন</button>
+        <button class="cad-btn-secondary" data-close-modal="modalHelpShortcuts">Close</button>
       </div>
     </div>
   </div>
