@@ -3009,104 +3009,104 @@ const ribbonTemplates = {
   // =========================================================================
   const classicMenuData = {
     file: [
-      { label: 'New Project ( )', shortcut: 'Ctrl+N', action: () => openModal('modalNewProject') },
-      { label: 'Open Project (  )', shortcut: 'Ctrl+O', action: () => openModal('modalOpenProject') },
-      { label: 'Open Drawing (DWG/DXF / )', shortcut: '', action: () => { const inp = document.getElementById('mouzaMapFileInput'); if (inp) inp.click(); } },
+      { label: 'New Project', shortcut: 'Ctrl+N', action: () => openModal('modalNewProject') },
+      { label: 'Open Project', shortcut: 'Ctrl+O', action: () => openModal('modalOpenProject') },
+      { label: 'Open Drawing (DWG/DXF)', shortcut: '', action: () => { const inp = document.getElementById('mouzaMapFileInput'); if (inp) inp.click(); } },
       { divider: true },
-      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
-      { label: 'Save Project ()', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
-      { label: 'Save As (  )', shortcut: 'Ctrl+Shift+S', action: () => logCommand('FILE: Save As Project.') },
-      { label: 'Export DXF (AutoCAD DXF )', shortcut: '', action: () => exportDXFFile() },
-      { label: 'Export PDF (PDF  )', shortcut: '', action: () => openModal('modalSurveyReport') },
+      { label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
+      { label: 'Save As', shortcut: 'Ctrl+Shift+S', action: () => logCommand('FILE: Save As Project.') },
+      { label: 'Export DXF', shortcut: '', action: () => exportDXFFile() },
+      { label: 'Export PDF', shortcut: '', action: () => openModal('modalSurveyReport') },
       { divider: true },
-      { label: 'Print ( )', shortcut: 'Ctrl+P', action: () => window.print() },
-      { label: 'Recent Projects ( )', shortcut: '', action: () => openModal('modalOpenProject') },
-      { label: 'Close Project ( )', shortcut: '', action: () => logCommand('FILE: Project Closed.') },
-      { label: 'Exit ( )', shortcut: 'Alt+F4', action: () => logCommand('FILE: SurveyCAD Pro Exited.') }
+      { label: 'Print Drawing', shortcut: 'Ctrl+P', action: () => window.print() },
+      { label: 'Recent Projects', shortcut: '', action: () => openModal('modalOpenProject') },
+      { label: 'Close Project', shortcut: '', action: () => logCommand('FILE: Project Closed.') },
+      { label: 'Exit', shortcut: 'Alt+F4', action: () => logCommand('FILE: SurveyCAD Pro Exited.') }
     ],
     home: [
-      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
-      { label: 'Select Plot (Plot  )', shortcut: 'ESC', action: () => setActiveTool('select') },
-      { label: 'Polyline Boundary ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
-      { label: 'Magic Wand (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Linear Dimension ( )', shortcut: 'DLI', action: () => setActiveTool('dimension') },
+      { label: 'Select Plot', shortcut: 'ESC', action: () => setActiveTool('select') },
+      { label: 'Polyline Boundary', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand (Auto Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Linear Dimension', shortcut: 'DLI', action: () => setActiveTool('dimension') },
       { divider: true },
-      { label: 'Scale Calculator ( )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Erase / Clear ( )', shortcut: 'Del', action: () => clearUserDrawings() }
+      { label: 'Scale Calculator', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Erase / Clear', shortcut: 'Del', action: () => clearUserDrawings() }
     ],
     draw: [
-      { label: 'Polyline Boundary ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
-      { label: 'Magic Wand (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Auto Polyline (  )', shortcut: 'APL', action: () => setActiveTool('autopolyline') },
+      { label: 'Polyline Boundary', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand (Auto Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Auto Polyline', shortcut: 'APL', action: () => setActiveTool('autopolyline') },
       { divider: true },
-      { label: 'Line / Segment ()', shortcut: 'L', action: () => setActiveTool('polyline') },
-      { label: 'Rectangle ()', shortcut: 'REC', action: () => setActiveTool('rectangle') },
-      { label: 'Circle ( / )', shortcut: 'C', action: () => setActiveTool('circle') },
-      { label: 'Arc ( )', shortcut: 'A', action: () => setActiveTool('arc') },
-      { label: 'Hatch (  )', shortcut: 'H', action: () => logCommand('DRAW: Hatch Applied.') }
+      { label: 'Line / Segment', shortcut: 'L', action: () => setActiveTool('polyline') },
+      { label: 'Rectangle', shortcut: 'REC', action: () => setActiveTool('rectangle') },
+      { label: 'Circle', shortcut: 'C', action: () => setActiveTool('circle') },
+      { label: 'Arc', shortcut: 'A', action: () => setActiveTool('arc') },
+      { label: 'Hatch Pattern', shortcut: 'H', action: () => logCommand('DRAW: Hatch Applied.') }
     ],
     modify: [
-      { label: 'Move ()', shortcut: 'M', action: () => setActiveTool('move') },
-      { label: 'Copy ( )', shortcut: 'CO', action: () => setActiveTool('copy') },
-      { label: 'Rotate ()', shortcut: 'RO', action: () => setActiveTool('rotate') },
-      { label: 'Scale ( )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Trim ()', shortcut: 'TR', action: () => setActiveTool('trim') },
-      { label: 'Extend ( )', shortcut: 'EX', action: () => setActiveTool('extend') },
-      { label: 'Mirror ()', shortcut: 'MI', action: () => logCommand('MODIFY: Mirror object across axis.') },
-      { label: 'Split (Plot  )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Offset ( )', shortcut: 'O', action: () => logCommand('MODIFY: Offset created.') },
-      { label: 'Erase ( )', shortcut: 'E', action: () => clearUserDrawings() }
+      { label: 'Move', shortcut: 'M', action: () => setActiveTool('move') },
+      { label: 'Copy', shortcut: 'CO', action: () => setActiveTool('copy') },
+      { label: 'Rotate', shortcut: 'RO', action: () => setActiveTool('rotate') },
+      { label: 'Scale', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Trim', shortcut: 'TR', action: () => setActiveTool('trim') },
+      { label: 'Extend', shortcut: 'EX', action: () => setActiveTool('extend') },
+      { label: 'Mirror', shortcut: 'MI', action: () => logCommand('MODIFY: Mirror object across axis.') },
+      { label: 'Split Plot', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Offset', shortcut: 'O', action: () => logCommand('MODIFY: Offset created.') },
+      { label: 'Erase', shortcut: 'E', action: () => clearUserDrawings() }
     ],
     annotate: [
-      { label: 'Linear Dimension ( )', shortcut: 'DLI', action: () => setActiveTool('dimension') },
-      { label: 'Aligned Dimension ( )', shortcut: 'DAL', action: () => setActiveTool('dimension') },
-      { label: 'Dag Number Labels (Plot No. Labels)', shortcut: '', action: () => togglePlotLabels() },
-      { label: 'Insert Text Note ( )', shortcut: 'T', action: () => setActiveTool('text') }
+      { label: 'Linear Dimension', shortcut: 'DLI', action: () => setActiveTool('dimension') },
+      { label: 'Aligned Dimension', shortcut: 'DAL', action: () => setActiveTool('dimension') },
+      { label: 'Dag Number Labels', shortcut: '', action: () => togglePlotLabels() },
+      { label: 'Insert Text Note', shortcut: 'T', action: () => setActiveTool('text') }
     ],
     mouza: [
-      { label: 'Import Mouza Map (Mouza  )', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map (  )', shortcut: '', action: () => loadSampleMouzaRaster() },
-      { label: 'Scale Mouza Map (16" = 1  )', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
+      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
+      { label: 'Scale Mouza Map (16" = 1 Mile)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
       { divider: true },
-      { label: 'Magic Wand Auto Dag (   Plot)', shortcut: 'MW', action: () => setActiveTool('magicwand') },
-      { label: 'Trace Polyline ( Plot )', shortcut: 'PL', action: () => setActiveTool('polyline') },
+      { label: 'Magic Wand Auto Dag', shortcut: 'MW', action: () => setActiveTool('magicwand') },
+      { label: 'Trace Polyline Boundary', shortcut: 'PL', action: () => setActiveTool('polyline') },
       { divider: true },
-      { label: 'Toggle Scanned Map (Mouza  /)', shortcut: '', action: () => toggleMouzaRaster() },
-      { label: 'Side-by-Side View (  )', shortcut: '', action: () => placeRasterSideBySide() },
-      { label: 'Detach Map Image (  )', shortcut: '', action: () => detachMouzaRaster() }
+      { label: 'Toggle Scanned Map', shortcut: '', action: () => toggleMouzaRaster() },
+      { label: 'Side-by-Side View', shortcut: '', action: () => placeRasterSideBySide() },
+      { label: 'Detach Map Image', shortcut: '', action: () => detachMouzaRaster() }
     ],
     survey: [
-      { label: 'Area Calculation (  / Decimal)', shortcut: 'AA', action: () => handleCommandInput('AREA') },
-      { label: 'Distance & Bearing (  )', shortcut: 'DIST', action: () => setActiveTool('dimension') },
-      { label: 'Virtual Guniya Scale (Virtual Guniya)', shortcut: 'G', action: () => toggleVirtualGuniya() },
-      { label: 'Unit Converter ( )', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
-      { label: 'Faraiz Partition ( )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Survey Report (  )', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') }
+      { label: 'Area Calculation', shortcut: 'AA', action: () => handleCommandInput('AREA') },
+      { label: 'Distance & Bearing', shortcut: 'DIST', action: () => setActiveTool('dimension') },
+      { label: 'Virtual Guniya Scale', shortcut: 'G', action: () => toggleVirtualGuniya() },
+      { label: 'Unit Converter', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
+      { label: 'Faraiz Partition', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Survey Report', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') }
     ],
     partition: [
-      { label: 'Faraiz Land Partition ( )', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
-      { label: 'Divide Plot Equally (  )', shortcut: '', action: () => logCommand('PARTITION: Equal division wizard.') },
-      { label: 'Road Widening Deduct (  )', shortcut: '', action: () => logCommand('PARTITION: Road widening offset applied.') }
+      { label: 'Faraiz Land Partition', shortcut: '', action: () => openModal('modalPartitionFaraiz') },
+      { label: 'Divide Plot Equally', shortcut: '', action: () => logCommand('PARTITION: Equal division wizard.') },
+      { label: 'Road Widening Deduct', shortcut: '', action: () => logCommand('PARTITION: Road widening offset applied.') }
     ],
     pentagraph: [
-      { label: 'Pentagraph Scale Overlay ( )', shortcut: '', action: () => openModal('modalPentagraphOverlay') },
-      { label: 'Compare Sheets 1:1 ( )', shortcut: '', action: () => logCommand('PENTAGRAPH: Sheet comparison mode active.') }
+      { label: 'Pentagraph Scale Overlay', shortcut: '', action: () => openModal('modalPentagraphOverlay') },
+      { label: 'Compare Sheets 1:1', shortcut: '', action: () => logCommand('PENTAGRAPH: Sheet comparison mode active.') }
     ],
     mapcombine: [
-      { label: 'Combine Multiple Sheets (  )', shortcut: '', action: () => logCommand('MAP COMBINE: Sheet 01 & Sheet 02 mosaic synchronized.') },
-      { label: 'Edge Matching Alignment ( )', shortcut: '', action: () => logCommand('MAP COMBINE: Edge matching aligned.') }
+      { label: 'Combine Multiple Sheets', shortcut: '', action: () => logCommand('MAP COMBINE: Sheet 01 & Sheet 02 mosaic synchronized.') },
+      { label: 'Edge Matching Alignment', shortcut: '', action: () => logCommand('MAP COMBINE: Edge matching aligned.') }
     ],
     rtk: [
-      { label: 'Connect RTK GPS Receiver (RTK )', shortcut: '', action: () => logCommand('RTK: Connected to ComNav GNSS Receiver (Fix 3D).') },
+      { label: 'Connect RTK GPS Receiver', shortcut: '', action: () => logCommand('RTK: Connected to ComNav GNSS Receiver (Fix 3D).') },
       { label: 'Import Total Station Points (.csv / .dat)', shortcut: '', action: () => logCommand('TOTAL STATION: 48 station points imported.') }
     ],
     data: [
-      { label: 'Khatian & Dag Ledger (  Plot )', shortcut: '', action: () => logCommand('DATA: Khatian & Dag ledger active.') },
-      { label: 'Owner Records Database ( )', shortcut: '', action: () => logCommand('DATA: 15 Landowner records loaded.') }
+      { label: 'Khatian & Dag Ledger', shortcut: '', action: () => logCommand('DATA: Khatian & Dag ledger active.') },
+      { label: 'Owner Records Database', shortcut: '', action: () => logCommand('DATA: 15 Landowner records loaded.') }
     ],
     gis: [
       { label: 'BTM / Everest 1830 Datum Sync', shortcut: '', action: () => logCommand('GIS: BTM (Bangladesh Transverse Mercator) synced.') },
@@ -3114,45 +3114,45 @@ const ribbonTemplates = {
       { label: 'Export Google Earth KML / KMZ', shortcut: '', action: () => exportKMLFile() }
     ],
     analysis: [
-      { label: 'Encroachment Analysis ( )', shortcut: '', action: () => logCommand('ANALYSIS: Boundary overlap / encroachment check complete.') },
-      { label: 'Dispute Measurement (  )', shortcut: '', action: () => logCommand('ANALYSIS: Dispute dimension line generated.') }
+      { label: 'Encroachment Analysis', shortcut: '', action: () => logCommand('ANALYSIS: Boundary overlap / encroachment check complete.') },
+      { label: 'Dispute Measurement', shortcut: '', action: () => logCommand('ANALYSIS: Dispute dimension line generated.') }
     ],
     report: [
-      { label: 'Generate Survey PDF Report (  )', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') },
-      { label: 'Print Current Canvas ( )', shortcut: 'Ctrl+P', action: () => window.print() },
-      { label: 'Area Statement Table (Decimal  )', shortcut: '', action: () => logCommand('REPORT: Area Statement table ready.') }
+      { label: 'Generate Survey PDF Report', shortcut: 'Ctrl+R', action: () => openModal('modalSurveyReport') },
+      { label: 'Print Current Canvas', shortcut: 'Ctrl+P', action: () => window.print() },
+      { label: 'Area Statement Table', shortcut: '', action: () => logCommand('REPORT: Area Statement table ready.') }
     ],
     tools: [
-      { label: 'Virtual Guniya Scale (Virtual Guniya)', shortcut: 'G', action: () => toggleVirtualGuniya() },
-      { label: 'Scale Calculator (Mouza  63360/W)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
-      { label: 'Area Calculator ( )', shortcut: 'AA', action: () => handleCommandInput('AREA') },
-      { label: 'Unit Converter (  )', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
+      { label: 'Virtual Guniya Scale', shortcut: 'G', action: () => toggleVirtualGuniya() },
+      { label: 'Scale Calculator (63360/W)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Area Calculator', shortcut: 'AA', action: () => handleCommandInput('AREA') },
+      { label: 'Unit Converter', shortcut: 'UN', action: () => openModal('modalUnitConverter') },
       { label: 'Coordinate Converter (BTM/WGS84)', shortcut: '', action: () => logCommand('TOOLS: Coordinates converted BTM <-> WGS84.') },
       { divider: true },
-      { label: 'Survey Utilities ( )', shortcut: '', action: () => logCommand('TOOLS: Traverse balancing & Bearing.') }
+      { label: 'Survey Utilities', shortcut: '', action: () => logCommand('TOOLS: Traverse balancing & Bearing.') }
     ],
     view: [
-      { label: 'Zoom In (  )', shortcut: 'Ctrl++', action: () => zoomCenter(0.8) },
-      { label: 'Zoom Out (  )', shortcut: 'Ctrl+-', action: () => zoomCenter(1.25) },
-      { label: 'Zoom Extents ( )', shortcut: 'Z E', action: () => zoomExtents() },
-      { label: 'Pan ( )', shortcut: 'P', action: () => setActiveTool('pan') },
+      { label: 'Zoom In', shortcut: 'Ctrl++', action: () => zoomCenter(0.8) },
+      { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => zoomCenter(1.25) },
+      { label: 'Zoom Extents', shortcut: 'Z E', action: () => zoomExtents() },
+      { label: 'Pan', shortcut: 'P', action: () => setActiveTool('pan') },
       { divider: true },
-      { label: 'Toggle Demo Plots ( Plot /)', shortcut: '', action: () => toggleDemoPlots() },
-      { label: 'Grid On/Off ( )', shortcut: '#', action: () => toggleGrid() },
-      { label: 'Full Screen ( )', shortcut: 'F11', action: () => toggleFullscreen() },
-      { label: 'Show/Hide Sidebar ()', shortcut: 'Ctrl+B', action: () => toggleSidebar() }
+      { label: 'Toggle Demo Plots', shortcut: '', action: () => toggleDemoPlots() },
+      { label: 'Grid On/Off', shortcut: '#', action: () => toggleGrid() },
+      { label: 'Full Screen', shortcut: 'F11', action: () => toggleFullscreen() },
+      { label: 'Show/Hide Sidebar', shortcut: 'Ctrl+B', action: () => toggleSidebar() }
     ],
     edit: [
-      { label: 'Undo ( )', shortcut: 'Ctrl+Z', action: () => undo() },
-      { label: 'Redo ( )', shortcut: 'Ctrl+Y', action: () => redo() },
+      { label: 'Undo', shortcut: 'Ctrl+Z', action: () => undo() },
+      { label: 'Redo', shortcut: 'Ctrl+Y', action: () => redo() },
       { divider: true },
-      { label: 'Select All ( )', shortcut: 'Ctrl+A', action: () => selectPlot('126') },
-      { label: 'Erase / Delete ( )', shortcut: 'Del', action: () => clearUserDrawings() }
+      { label: 'Select All', shortcut: 'Ctrl+A', action: () => selectPlot('126') },
+      { label: 'Erase / Delete', shortcut: 'Del', action: () => clearUserDrawings() }
     ],
     help: [
-      { label: 'User Manual ( )', shortcut: '', action: () => logCommand('HELP: User Manual: docs/surveycad-guide.pdf') },
-      { label: 'Keyboard Shortcuts ( )', shortcut: 'F1', action: () => openModal('modalHelpShortcuts') },
-      { label: 'About SurveyCAD Pro ( )', shortcut: '', action: () => logCommand('HELP: SurveyCAD Pro v1.0 Enterprise Edition.') }
+      { label: 'User Manual', shortcut: '', action: () => logCommand('HELP: User Manual: docs/surveycad-guide.pdf') },
+      { label: 'Keyboard Shortcuts', shortcut: 'F1', action: () => openModal('modalHelpShortcuts') },
+      { label: 'About SurveyCAD Pro', shortcut: '', action: () => logCommand('HELP: SurveyCAD Pro v1.0 Enterprise Edition.') }
     ]
   };
 

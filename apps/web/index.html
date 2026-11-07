@@ -1371,38 +1371,38 @@
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-slate-300 font-semibold mb-1"> / :</label>
+            <label class="block text-slate-300 font-semibold mb-1">Thana / Upazila:</label>
             <input type="text" id="newProjThana" value="" class="cad-input">
           </div>
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">:</label>
+            <label class="block text-slate-300 font-semibold mb-1">District:</label>
             <input type="text" id="newProjDistrict" value="" class="cad-input">
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">Survey :</label>
+            <label class="block text-slate-300 font-semibold mb-1">Survey Type:</label>
             <select id="newProjSurveyType" class="cad-input">
-              <option value="CS">. . (CS 1920)</option>
-              <option value="SA">. . (SA 1962)</option>
-              <option value="RS">. . (RS 1985)</option>
-              <option value="BS">. . (BS / City Survey)</option>
+              <option value="CS">Cadastral Survey (CS 1920)</option>
+              <option value="SA">State Acquisition (SA 1962)</option>
+              <option value="RS">Revisional Survey (RS 1985)</option>
+              <option value="BS">City Survey (BS / City Survey)</option>
             </select>
           </div>
           <div>
-            <label class="block text-slate-300 font-semibold mb-1">Mouza  Scale:</label>
+            <label class="block text-slate-300 font-semibold mb-1">Mouza Map Scale:</label>
             <select id="newProjScale" class="cad-input font-mono">
-              <option value="16">16" = 1  (1:3960)</option>
-              <option value="32">32" = 1  (1:1980)</option>
-              <option value="64">64" = 1  (1:990)</option>
-              <option value="80">80" = 1  (1:792)</option>
+              <option value="16">16" = 1 Mile (1:3960)</option>
+              <option value="32">32" = 1 Mile (1:1980)</option>
+              <option value="64">64" = 1 Mile (1:990)</option>
+              <option value="80">80" = 1 Mile (1:792)</option>
             </select>
           </div>
         </div>
       </div>
       <div class="cad-modal-footer">
         <button class="cad-btn-secondary" data-close-modal="modalNewProject">Cancel</button>
-        <button id="btnCreateNewProjectConfirm" class="cad-btn-primary"> Start Project</button>
+        <button id="btnCreateNewProjectConfirm" class="cad-btn-primary">Start Project</button>
       </div>
     </div>
   </div>
@@ -1424,78 +1424,78 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-2">     :</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">Standard Mouza Sheet Scales:</label>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-sky-500/40 text-left scale-preset-btn transition-colors" data-scale-width="16">
-              <div class="font-bold text-sky-400">16" = 1  (16 Inch)</div>
+              <div class="font-bold text-sky-400">16" = 1 Mile (16 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:3960</span></div>
-              <div class="text-[9.5px] text-emerald-400">1" = 330  (500 Links) [CS/SA]</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 330 ft (500 Links) [CS/SA]</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="32">
-              <div class="font-bold text-sky-400">32" = 1  (32 Inch)</div>
+              <div class="font-bold text-sky-400">32" = 1 Mile (32 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:1980</span></div>
-              <div class="text-[9.5px] text-emerald-400">1" = 165  (250 Links) []</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 165 ft (250 Links) [SA/RS]</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="64">
-              <div class="font-bold text-sky-400">64" = 1  (64 Inch)</div>
+              <div class="font-bold text-sky-400">64" = 1 Mile (64 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:990</span></div>
-              <div class="text-[9.5px] text-emerald-400">1" = 82.5  (125 Links) [RS/BS]</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 82.5 ft (125 Links) [RS/BS]</div>
             </button>
             <button class="p-2.5 rounded bg-[#10131a] hover:bg-[#1a202c] border border-slate-700 text-left scale-preset-btn transition-colors" data-scale-width="80">
-              <div class="font-bold text-sky-400">80" = 1  (80 Inch)</div>
+              <div class="font-bold text-sky-400">80" = 1 Mile (80 Inch)</div>
               <div class="text-[10px] text-slate-400">AutoCAD Factor: <span class="text-white font-mono font-bold">1:792</span></div>
-              <div class="text-[9.5px] text-emerald-400">1" = 66  (1  )</div>
+              <div class="text-[9.5px] text-emerald-400">1" = 66 ft (100 Links / 1 Chain)</div>
             </button>
           </div>
         </div>
 
         <!-- Custom AutoCAD Scale Factor Direct Input -->
         <div class="border-t border-slate-800 pt-3 space-y-2">
-          <label class="block text-xs font-semibold text-slate-300">    DPI (AutoCAD  ):</label>
+          <label class="block text-xs font-semibold text-slate-300">Custom Scale Factor & DPI Calibration:</label>
           <div class="grid grid-cols-3 gap-2 text-xs">
             <div>
-              <span class="text-slate-400 text-[10px]">  (Scale):</span>
+              <span class="text-slate-400 text-[10px]">Ratio (Scale 1:X):</span>
               <input type="number" id="inputCustomScaleFactor" value="3960" step="1" class="cad-input mt-1 font-mono font-bold text-sky-400" title="e.g. 3960, 1980, 990, 792">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]"> DPI (AutoCAD):</span>
+              <span class="text-slate-400 text-[10px]">Scanner DPI:</span>
               <input type="number" id="inputCustomScaleDpi" value="300" step="1" class="cad-input mt-1 font-mono" title="300 for scanner, 96 for screen">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]"> Unit:</span>
+              <span class="text-slate-400 text-[10px]">Drawing Unit:</span>
               <select id="selectScaleUnit" class="cad-input mt-1 text-[11px] bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
                 <option value="ft" selected>Feet (ft)</option>
                 <option value="m">Meters (m)</option>
-                <option value="links">Links (Links)</option>
-                <option value="in"> (Inches)</option>
+                <option value="links">Links (Gunter)</option>
+                <option value="in">Inches (in)</option>
               </select>
             </div>
           </div>
           <button id="btnApplyDirectScaleFactor" class="w-full py-1.5 px-3 bg-sky-600 hover:bg-sky-500 text-white rounded text-[11px] font-bold transition cursor-pointer">
-            AutoCAD   DPI  
+            Apply AutoCAD DPI Scale
           </button>
         </div>
 
         <div class="border-t border-slate-800 pt-3">
-          <label class="block text-xs font-semibold text-slate-300 mb-2"> 2-   (Custom Points):</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">2-Point Custom Scale Calibration:</label>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="text-slate-400 text-[10px]">  :</span>
+              <span class="text-slate-400 text-[10px]">Map Distance (Inches):</span>
               <input type="number" id="inputCalibMapInches" value="2.5" step="0.1" class="cad-input mt-1">
             </div>
             <div>
-              <span class="text-slate-400 text-[10px]">   :</span>
+              <span class="text-slate-400 text-[10px]">Ground Distance (Feet):</span>
               <input type="number" id="inputCalibGroundFeet" value="825" class="cad-input mt-1">
             </div>
           </div>
           <button id="btnApplyCalibCustom" class="mt-2 w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded border border-slate-700 text-[11px] font-bold">
-                  
+            Calculate & Apply Custom Scale
           </button>
         </div>
       </div>
       <div class="cad-modal-footer">
         <button class="cad-btn-secondary" data-close-modal="modalScaleCalculator">Close</button>
-        <button id="btnConfirmScaleApply" class="cad-btn-primary">  </button>
+        <button id="btnConfirmScaleApply" class="cad-btn-primary">Apply Scale</button>
       </div>
     </div>
   </div>
@@ -1517,11 +1517,11 @@
             <input type="number" id="convDecimal" value="30.00" step="0.01" class="cad-input mt-0.5 text-emerald-400 font-bold">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">sq.ft (Sq. Feet) [1  = 435.6]</label>
+            <label class="text-[10px] text-slate-400 font-sans">sq.ft (Sq. Feet) [1 Decimal = 435.6 sq.ft]</label>
             <input type="number" id="convSqFt" value="12960.00" step="0.1" class="cad-input mt-0.5 text-sky-300 font-bold">
           </div>
           <div>
-            <label class="text-[10px] text-slate-400 font-sans">Katha (Katha) [1 Katha = 720 :]</label>
+            <label class="text-[10px] text-slate-400 font-sans">Katha (Katha) [1 Katha = 720 sq.ft]</label>
             <input type="number" id="convKatha" value="18.00" step="0.01" class="cad-input mt-0.5 text-white">
           </div>
           <div>
@@ -1539,10 +1539,10 @@
         </div>
 
         <div class="p-2.5 rounded bg-slate-900 border border-slate-800 text-[10.5px] font-sans text-slate-300 space-y-1 mt-2">
-          <div class="font-bold text-sky-300">💡   :</div>
-          <div>• 1   = 66  = 100 Links/Links (1 Links = 0.66 )</div>
-          <div>• 1,000 Links = 1 Decimal = 435.60 sq.ft</div>
-          <div>• 3 Bigha 8  = 1 Acre = 43,560 sq.ft</div>
+          <div class="font-bold text-sky-300">💡 Survey Unit Equivalents:</div>
+          <div>• 1 Chain = 66 Feet = 100 Links (1 Link = 0.66 ft)</div>
+          <div>• 1,000 sq.links = 1 Decimal = 435.60 sq.ft</div>
+          <div>• 3 Bigha 8 Chhatak = 1 Acre = 43,560 sq.ft</div>
         </div>
       </div>
       <div class="cad-modal-footer">
@@ -1557,36 +1557,36 @@
       <div class="cad-modal-header">
         <div class="cad-modal-title">
           <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><path d="M12 12l7 7"/></svg>
-          <span>Land Partition & Faraiz (Share   )</span>
+          <span>Land Partition & Faraiz (Share Distribution)</span>
         </div>
         <button class="cad-modal-close" data-close-modal="modalPartitionFaraiz">✕</button>
       </div>
       <div class="cad-modal-body space-y-3 font-sans">
         <div class="p-2.5 rounded bg-slate-900 border border-slate-800 flex justify-between items-center text-xs">
-          <div> Plot: <span class="font-bold text-amber-300 font-mono" id="partDagNo">126</span></div>
+          <div>Selected Plot: <span class="font-bold text-amber-300 font-mono" id="partDagNo">126</span></div>
           <div>Total Land: <span class="font-bold text-emerald-400 font-mono" id="partTotalArea">30.00 Decimal (12,960 sq.ft)</span></div>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1.5">   :</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Partition Mode:</label>
           <div class="grid grid-cols-3 gap-2 text-xs">
-            <button class="p-2 rounded bg-slate-800 border border-sky-400 text-sky-300 font-bold part-mode-btn active" data-part-mode="equal">  (Equal)</button>
-            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="hisya">Share </button>
-            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="faraiz"> </button>
+            <button class="p-2 rounded bg-slate-800 border border-sky-400 text-sky-300 font-bold part-mode-btn active" data-part-mode="equal">Equal Share</button>
+            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="hisya">Custom Share</button>
+            <button class="p-2 rounded bg-slate-800 border border-slate-700 text-slate-300 part-mode-btn" data-part-mode="faraiz">Faraiz Rules</button>
           </div>
         </div>
 
         <div id="partResultContainer" class="space-y-1.5 font-mono text-[11px] pt-1">
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold"> 126/ (1 )</span>
+            <span class="text-white font-sans font-bold">Plot 126/A (Part 1)</span>
             <span class="text-emerald-400 font-bold">10.00 Decimal (0.333 Share)</span>
           </div>
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold"> 126/ (2 )</span>
+            <span class="text-white font-sans font-bold">Plot 126/B (Part 2)</span>
             <span class="text-emerald-400 font-bold">10.00 Decimal (0.333 Share)</span>
           </div>
           <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-800">
-            <span class="text-white font-sans font-bold"> 126/ (3 )</span>
+            <span class="text-white font-sans font-bold">Plot 126/C (Part 3)</span>
             <span class="text-emerald-400 font-bold">10.00 Decimal (0.334 Share)</span>
           </div>
         </div>
