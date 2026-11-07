@@ -419,6 +419,28 @@
         }
       }
     });
+
+    // Rescale AutoCAD Text elements annotatively live during zoom
+    document.querySelectorAll('.cad-text-elem').forEach(g => {
+      const t = g.querySelector('text');
+      const r = g.querySelector('rect');
+      if (t) {
+        const tx = parseFloat(t.getAttribute('x'));
+        const ty = parseFloat(t.getAttribute('y'));
+        const fontSz = 12.0 * s2wBadges;
+        t.setAttribute('font-size', fontSz.toFixed(1));
+        if (r && !isNaN(tx) && !isNaN(ty)) {
+          const textChars = t.textContent.trim().length;
+          const bw = Math.max(28 * s2wBadges, (textChars * 7.5 + 12) * s2wBadges);
+          const bh = 16.0 * s2wBadges;
+          r.setAttribute('x', (tx - bw / 2).toFixed(1));
+          r.setAttribute('y', (ty - 4.0 * s2wBadges - bh / 2).toFixed(1));
+          r.setAttribute('width', bw.toFixed(1));
+          r.setAttribute('height', bh.toFixed(1));
+          r.setAttribute('rx', (2.5 * s2wBadges).toFixed(1));
+        }
+      }
+    });
   }
 
   function zoomAtPoint(factor, clientX, clientY) {
@@ -2582,11 +2604,159 @@
     if (banner && bannerText) {
       banner.classList.remove('hidden');
       if (pts.length < 3) {
-        bannerText.textContent = `✏️ Point ${pts.length}  ।  Point   `;
+        bannerText.textContent = `✏️ Point ${pts.length} added. Click next point...`;
       } else {
-        bannerText.textContent = `Point ${pts.length}  ।  Point   Plot   (or press Enter)`;
+        bannerText.textContent = `Point ${pts.length} added. Click Point 1 to close plot (or press Enter)`;
       }
     }
+  }
+
+  // =========================================================================
+  // UNIVERSAL AUTOCAD INPUT / PROMPT MODAL
+  // Replaces all native browser prompt() alerts with a sleek AutoCAD UI dialog
+  // =========================================================================
+  function showCadPrompt(options = {}) {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('modalCadPrompt');
+      const titleEl = document.getElementById('cadPromptTitle');
+      const msgEl = document.getElementById('cadPromptMessage');
+      const inputEl = document.getElementById('cadPromptInput');
+      const btnConfirm = document.getElementById('btnCadPromptConfirm');
+      const btnCancel = document.getElementById('btnCadPromptCancel');
+      const btnClose = document.getElementById('btnCadPromptClose');
+
+      if (!modal || !inputEl) {
+        resolve(null);
+        return;
+      }
+
+      if (titleEl) titleEl.textContent = options.title || 'AutoCAD Input';
+      if (msgEl) msgEl.textContent = options.message || 'Enter value:';
+      inputEl.value = options.defaultValue || '';
+      inputEl.placeholder = options.placeholder || '';
+
+      modal.classList.add('show');
+      setTimeout(() => {
+        inputEl.focus();
+        inputEl.select();
+      }, 50);
+
+      function cleanup() {
+        modal.classList.remove('show');
+        if (btnConfirm) btnConfirm.removeEventListener('click', onConfirm);
+        if (btnCancel) btnCancel.removeEventListener('click', onCancel);
+        if (btnClose) btnClose.removeEventListener('click', onCancel);
+        inputEl.removeEventListener('keydown', onKey);
+      }
+
+      function onConfirm() {
+        const val = inputEl.value;
+        cleanup();
+        resolve(val);
+      }
+
+      function onCancel() {
+        cleanup();
+        resolve(null);
+      }
+
+      function onKey(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onConfirm();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }
+
+      if (btnConfirm) btnConfirm.addEventListener('click', onConfirm);
+      if (btnCancel) btnCancel.addEventListener('click', onCancel);
+      if (btnClose) btnClose.addEventListener('click', onCancel);
+      inputEl.addEventListener('keydown', onKey);
+    });
+  }
+
+  // =========================================================================
+  // AUTOCAD INLINE CANVAS TEXT EDITOR (MTEXT/TEXT)
+  // Replaces native browser alert with floating CAD inline text box at click position
+  // =========================================================================
+  let activeInlineTextPt = null;
+  let activeInlineTextColor = '#facc15';
+
+  function openInlineTextEditor(pt) {
+    const editor = document.getElementById('cadInlineTextEditor');
+    const input = document.getElementById('inlineTextInput');
+    const svg = document.getElementById('cadSvgCanvas');
+    if (!editor || !input || !svg) return;
+
+    activeInlineTextPt = pt;
+    const screenPt = svgPointToScreen(pt.x, pt.y);
+    const containerRect = svg.parentElement.getBoundingClientRect();
+
+    const editorW = 300;
+    const editorH = 95;
+    const posX = Math.max(10, Math.min(containerRect.width - editorW - 10, screenPt.x - editorW / 2));
+    const posY = Math.max(10, Math.min(containerRect.height - editorH - 10, screenPt.y - editorH - 12));
+
+    editor.style.left = `${posX}px`;
+    editor.style.top = `${posY}px`;
+    editor.classList.remove('hidden');
+
+    input.value = 'Plot Note';
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+
+    logCommand('TEXT: Type annotation text and press Enter or Place.');
+  }
+
+  function commitInlineText() {
+    const editor = document.getElementById('cadInlineTextEditor');
+    const input = document.getElementById('inlineTextInput');
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (!editor || !input || !activeInlineTextPt || !drawingsGroup) return;
+
+    const textVal = input.value.trim();
+    if (textVal) {
+      const s2w = getScreenPixelToWorld();
+      const pt = activeInlineTextPt;
+      const textChars = textVal.length;
+      const fontSz = 12.0 * s2w;
+      const bgW = Math.max(28 * s2w, (textChars * 7.5 + 12) * s2w);
+      const bgH = 16.0 * s2w;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'cad-text-elem');
+      g.setAttribute('data-cad-text', textVal);
+      g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+
+      g.innerHTML = `
+        <rect x="${(pt.x - bgW / 2).toFixed(1)}" y="${(pt.y - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.5 * s2w}" fill="#0f172a" stroke="${activeInlineTextColor}" stroke-width="1.2" vector-effect="non-scaling-stroke" opacity="0.9"/>
+        <text x="${pt.x.toFixed(1)}" y="${(pt.y + 4.0 * s2w).toFixed(1)}" fill="${activeInlineTextColor}" font-size="${fontSz.toFixed(1)}" font-weight="700" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${textVal}</text>
+      `;
+
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.cad-dim-elem.selected, .cad-text-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected').forEach(el => el.classList.remove('selected'));
+        g.classList.add('selected');
+        state.selectedText = g;
+        logCommand(`TEXT: "${textVal}" selected. Press Delete or Erase to delete.`);
+      });
+
+      drawingsGroup.appendChild(g);
+      pushUndo(`Text: ${textVal}`);
+      logCommand(`TEXT: "${textVal}" placed at X=${pt.x.toFixed(1)}, Y=${pt.y.toFixed(1)}`);
+    }
+
+    closeInlineTextEditor();
+  }
+
+  function closeInlineTextEditor() {
+    const editor = document.getElementById('cadInlineTextEditor');
+    if (editor) editor.classList.add('hidden');
+    activeInlineTextPt = null;
   }
 
   // =========================================================================
@@ -2745,24 +2915,9 @@
       return;
     }
 
-    // 7. Text Tool (T)
+    // 7. Text Tool (T) - AutoCAD Inline Canvas Text Editor
     if (state.activeTool === 'text') {
-      const textVal = prompt('Enter annotation text:', 'Plot Note');
-      if (textVal) {
-        const drawingsGroup = document.getElementById('userDrawingsGroup');
-        if (drawingsGroup) {
-          const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          txt.setAttribute('x', pt.x);
-          txt.setAttribute('y', pt.y);
-          txt.setAttribute('fill', '#facc15');
-          txt.setAttribute('font-size', '12');
-          txt.setAttribute('font-weight', 'bold');
-          txt.textContent = textVal;
-          drawingsGroup.appendChild(txt);
-          pushUndo(`Text: ${textVal}`);
-          logCommand(`TEXT: "${textVal}" placed at X=${pt.x}, Y=${pt.y}`);
-        }
-      }
+      openInlineTextEditor(pt);
       return;
     }
   }
@@ -3605,16 +3760,21 @@ const ribbonTemplates = {
       const sheetKey = tab.getAttribute('data-sheet');
       const labelSpan = tab.querySelector('.tab-label') || tab.querySelector('span');
       const currentName = labelSpan?.textContent?.trim() || 'Sheet.dwg';
-      const newName = prompt('Rename Drawing Sheet (.dwg):', currentName);
-      if (newName && newName.trim() && newName.trim() !== currentName) {
-        let clean = newName.trim();
-        if (!clean.endsWith('.dwg')) clean += '.dwg';
-        if (labelSpan) labelSpan.textContent = clean;
-        if (state.sheets && state.sheets[sheetKey]) {
-          state.sheets[sheetKey].name = clean;
+      showCadPrompt({
+        title: 'Rename Drawing Sheet (.dwg)',
+        message: 'Enter new drawing sheet name:',
+        defaultValue: currentName
+      }).then(newName => {
+        if (newName && newName.trim() && newName.trim() !== currentName) {
+          let clean = newName.trim();
+          if (!clean.endsWith('.dwg')) clean += '.dwg';
+          if (labelSpan) labelSpan.textContent = clean;
+          if (state.sheets && state.sheets[sheetKey]) {
+            state.sheets[sheetKey].name = clean;
+          }
+          logCommand(`SHEET: Renamed to "${clean}".`);
         }
-        logCommand(`SHEET: Renamed to "${clean}".`);
-      }
+      });
     });
 
     const closeBtn = tab.querySelector('.dwg-tab-close');
@@ -3654,49 +3814,54 @@ const ribbonTemplates = {
 
   function addNewSheetTab() {
     const defaultName = `Sheet_0${Object.keys(state.sheets || {}).length + 1}.dwg`;
-    const sheetName = prompt('Enter New Sheet Drawing Name (.dwg):', defaultName);
-    if (!sheetName || !sheetName.trim()) return;
+    showCadPrompt({
+      title: 'New Drawing Sheet (.dwg)',
+      message: 'Enter new sheet drawing name:',
+      defaultValue: defaultName
+    }).then(sheetName => {
+      if (!sheetName || !sheetName.trim()) return;
 
-    let cleanName = sheetName.trim();
-    if (!cleanName.endsWith('.dwg')) cleanName += '.dwg';
-    const sheetKey = 'sheet_' + Date.now();
+      let cleanName = sheetName.trim();
+      if (!cleanName.endsWith('.dwg')) cleanName += '.dwg';
+      const sheetKey = 'sheet_' + Date.now();
 
-    saveCurrentSheetState();
+      saveCurrentSheetState();
 
-    if (!state.sheets) state.sheets = {};
-    state.sheets[sheetKey] = {
-      name: cleanName,
-      drawingsHtml: '',
-      plots: {},
-      selectedDag: null
-    };
+      if (!state.sheets) state.sheets = {};
+      state.sheets[sheetKey] = {
+        name: cleanName,
+        drawingsHtml: '',
+        plots: {},
+        selectedDag: null
+      };
 
-    const container = document.getElementById('dwgTabsContainer');
-    const addBtn = document.getElementById('btnNewDwgTab');
+      const container = document.getElementById('dwgTabsContainer');
+      const addBtn = document.getElementById('btnNewDwgTab');
 
-    document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
 
-    const newTab = document.createElement('div');
-    newTab.className = 'dwg-tab active cursor-pointer select-none';
-    newTab.setAttribute('data-sheet', sheetKey);
-    newTab.innerHTML = `
-      <span class="tab-label" title="Double-click to rename sheet">${cleanName}</span>
-      <span class="dwg-tab-close" title="Close Sheet">✕</span>
-    `;
-    bindTabEvents(newTab);
-    if (addBtn) {
-      container.insertBefore(newTab, addBtn);
-    } else {
-      container.appendChild(newTab);
-    }
+      const newTab = document.createElement('div');
+      newTab.className = 'dwg-tab active cursor-pointer select-none';
+      newTab.setAttribute('data-sheet', sheetKey);
+      newTab.innerHTML = `
+        <span class="tab-label" title="Double-click to rename sheet">${cleanName}</span>
+        <span class="dwg-tab-close" title="Close Sheet">✕</span>
+      `;
+      bindTabEvents(newTab);
+      if (addBtn) {
+        container.insertBefore(newTab, addBtn);
+      } else {
+        container.appendChild(newTab);
+      }
 
-    state.currentSheet = sheetKey;
-    // Clear drawings canvas for new blank sheet
-    const drawingsGroup = document.getElementById('userDrawingsGroup');
-    if (drawingsGroup) drawingsGroup.innerHTML = '';
-    state.plots = {};
-    clearSelectedPlotInfo();
-    logCommand(`SHEET: Created new drawing sheet "${cleanName}".`);
+      state.currentSheet = sheetKey;
+      // Clear drawings canvas for new blank sheet
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      if (drawingsGroup) drawingsGroup.innerHTML = '';
+      state.plots = {};
+      clearSelectedPlotInfo();
+      logCommand(`SHEET: Created new drawing sheet "${cleanName}".`);
+    });
   }
 
   // Project Save & Export Handlers (Desktop Native + Web Blob)
@@ -3746,14 +3911,19 @@ const ribbonTemplates = {
 
   function saveProjectAs() {
     const curName = (state.projectName || 'Chorbagh_Survey').replace(/\.prj$/i, '');
-    const newName = prompt('Enter Project Name to Save As:', curName);
-    if (!newName || !newName.trim()) return;
-    const cleanName = newName.trim().replace(/[\\/:*?"<>|]/g, '_');
-    state.projectName = cleanName;
-    const topTitle = document.getElementById('currentProjectTitle');
-    if (topTitle) topTitle.textContent = `${cleanName}.prj`;
-    saveCurrentProject(cleanName);
-    logCommand(`SAVE AS: Project saved under new name "${cleanName}.prj".`);
+    showCadPrompt({
+      title: 'Save Project As (.prj)',
+      message: 'Enter project name:',
+      defaultValue: curName
+    }).then(newName => {
+      if (!newName || !newName.trim()) return;
+      const cleanName = newName.trim().replace(/[\\/:*?"<>|]/g, '_');
+      state.projectName = cleanName;
+      const topTitle = document.getElementById('currentProjectTitle');
+      if (topTitle) topTitle.textContent = `${cleanName}.prj`;
+      saveCurrentProject(cleanName);
+      logCommand(`SAVE AS: Project saved under new name "${cleanName}.prj".`);
+    });
   }
 
   function exportDXFFile() {
@@ -4799,13 +4969,17 @@ const ribbonTemplates = {
       const btnAddLayer = document.getElementById('btnAddLayer');
       if (btnAddLayer) {
         btnAddLayer.addEventListener('click', () => {
-          const layerName = prompt('Enter new Layer Name (e.g. Drainage, Boundary_Pillars, Road_Reserve):', 'Survey_Notes');
-          if (layerName && layerName.trim()) {
-            const cleanName = layerName.trim().replace(/\s+/g, '_');
-            const layerKey = cleanName.toLowerCase();
-            state.layers[layerKey] = true;
-            if (!state.layerLocks) state.layerLocks = {};
-            state.layerLocks[layerKey] = false;
+          showCadPrompt({
+            title: 'New Layer',
+            message: 'Enter new Layer Name (e.g. Drainage, Boundary_Pillars):',
+            defaultValue: 'Survey_Notes'
+          }).then(layerName => {
+            if (layerName && layerName.trim()) {
+              const cleanName = layerName.trim().replace(/\s+/g, '_');
+              const layerKey = cleanName.toLowerCase();
+              state.layers[layerKey] = true;
+              if (!state.layerLocks) state.layerLocks = {};
+              state.layerLocks[layerKey] = false;
 
             const layerList = document.getElementById('layerListContainer');
             if (layerList) {
@@ -4836,7 +5010,8 @@ const ribbonTemplates = {
             logCommand(`LAYER: New layer '${cleanName}' created and activated.`);
           }
         });
-      }
+      });
+    }
 
       // Duplicate Layer Button
       const btnDuplicateLayer = document.getElementById('btnDuplicateLayer');
@@ -4902,25 +5077,31 @@ const ribbonTemplates = {
       const btnPropEditDag = document.getElementById('btnPropEditDag');
       if (btnPropEditDag) {
         btnPropEditDag.addEventListener('click', () => {
-          const newDag = prompt('Edit Dag Number:', state.selectedDag);
-          if (newDag && newDag.trim()) {
-            const oldDag = state.selectedDag;
-            const clean = newDag.trim();
-            if (state.plots[oldDag]) {
-              state.plots[clean] = { ...state.plots[oldDag], dag: clean };
-              delete state.plots[oldDag];
+          if (!state.selectedDag) return;
+          showCadPrompt({
+            title: 'Edit Dag Number',
+            message: 'Enter new plot/dag number:',
+            defaultValue: state.selectedDag
+          }).then(newDag => {
+            if (newDag && newDag.trim()) {
+              const oldDag = state.selectedDag;
+              const clean = newDag.trim();
+              if (state.plots[oldDag]) {
+                state.plots[clean] = { ...state.plots[oldDag], dag: clean };
+                delete state.plots[oldDag];
+              }
+              const poly = document.querySelector(`.mouza-plot[data-dag="${oldDag}"]`);
+              if (poly) poly.setAttribute('data-dag', clean);
+              const lbl = document.querySelector(`[data-dag-label="${oldDag}"]`);
+              if (lbl) {
+                lbl.setAttribute('data-dag-label', clean);
+                const textNode = lbl.querySelector('text');
+                if (textNode) textNode.textContent = clean;
+              }
+              selectPlot(clean);
+              logCommand(`DAG NUMBER: Renamed Dag ${oldDag} to ${clean}.`);
             }
-            const poly = document.querySelector(`.mouza-plot[data-dag="${oldDag}"]`);
-            if (poly) poly.setAttribute('data-dag', clean);
-            const lbl = document.querySelector(`[data-dag-label="${oldDag}"]`);
-            if (lbl) {
-              lbl.setAttribute('data-dag-label', clean);
-              const textNode = lbl.querySelector('text');
-              if (textNode) textNode.textContent = clean;
-            }
-            selectPlot(clean);
-            logCommand(`DAG NUMBER: Renamed Dag ${oldDag} to ${clean}.`);
-          }
+          });
         });
       }
 
@@ -5414,6 +5595,37 @@ const ribbonTemplates = {
         logCommand(`WORKSPACE: Switched to ${next} mode.`);
       });
     }
+
+    // Inline Canvas Text Editor Event Listeners
+    const btnCommitInline = document.getElementById('btnCommitInlineText');
+    const btnDismissInline = document.getElementById('btnDismissInlineText');
+    const btnCancelInline = document.getElementById('btnCancelInlineText');
+    const inputInline = document.getElementById('inlineTextInput');
+
+    if (btnCommitInline) btnCommitInline.addEventListener('click', commitInlineText);
+    if (btnDismissInline) btnDismissInline.addEventListener('click', closeInlineTextEditor);
+    if (btnCancelInline) btnCancelInline.addEventListener('click', closeInlineTextEditor);
+
+    if (inputInline) {
+      inputInline.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitInlineText();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeInlineTextEditor();
+        }
+      });
+    }
+
+    document.querySelectorAll('#inlineTextColorPicker button[data-color]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('#inlineTextColorPicker button').forEach(b => b.classList.remove('active-color-btn'));
+        btn.classList.add('active-color-btn');
+        activeInlineTextColor = btn.getAttribute('data-color') || '#facc15';
+      });
+    });
 
 
 

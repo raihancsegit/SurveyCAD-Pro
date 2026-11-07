@@ -861,6 +861,49 @@ html, body {
   gap: 4px;
 }
 
+/* AutoCAD Canvas Inline Text Editor (MTEXT) */
+.cad-inline-text-box {
+  position: absolute;
+  z-index: 55;
+  width: 300px;
+  background: #0f172a;
+  border: 1.5px solid #38bdf8;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), 0 0 18px rgba(56, 189, 248, 0.25);
+  font-family: 'Segoe UI', Roboto, -apple-system, sans-serif;
+  user-select: none;
+}
+.cad-inline-text-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  border-radius: 5px 5px 0 0;
+}
+.active-color-btn {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 1px !important;
+}
+
+/* AutoCAD SVG Text Element */
+.cad-text-elem {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s ease;
+}
+.cad-text-elem:hover text {
+  fill: #fef08a !important;
+}
+.cad-text-elem.selected rect {
+  stroke: #38bdf8 !important;
+  stroke-width: 1.8px !important;
+}
+.cad-text-elem.selected text {
+  fill: #38bdf8 !important;
+}
+
 /* AutoCAD Aligned Dimension Elements (Matching Image 4) */
 .cad-dim-elem {
   cursor: pointer;
