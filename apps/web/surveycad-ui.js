@@ -2015,6 +2015,112 @@
     };
   }
 
+  function svgPointToScreen(x, y) {
+    const svg = document.getElementById('cadSvgCanvas');
+    if (!svg) return { x, y };
+    const pt = svg.createSVGPoint();
+    pt.x = x;
+    pt.y = y;
+    const ctm = svg.getScreenCTM();
+    if (ctm) {
+      const sp = pt.matrixTransform(ctm);
+      const rect = svg.getBoundingClientRect();
+      return {
+        x: parseFloat((sp.x - rect.left).toFixed(2)),
+        y: parseFloat((sp.y - rect.top).toFixed(2))
+      };
+    }
+    return { x, y };
+  }
+
+  // =========================================================================
+  // AUTOCAD OBJECT SNAP (OSNAP) ENGINE
+  // Magnetically locks to endpoints, shared boundaries, corners, and start points
+  // =========================================================================
+  function findBestOsnapPoint(pt, snapThresh) {
+    let best = null;
+    let minD = snapThresh;
+
+    // 1. Current active drawing points (start point gets priority for closed polyline)
+    if (state.drawingPoints && state.drawingPoints.length > 0) {
+      if (state.drawingPoints.length >= 3) {
+        const p0 = state.drawingPoints[0];
+        const d0 = Math.hypot(pt.x - p0.x, pt.y - p0.y);
+        if (d0 <= minD) {
+          best = { x: p0.x, y: p0.y, isStart: true, label: 'Endpoint (Click to close)' };
+          minD = d0;
+        }
+      }
+      for (let i = 0; i < state.drawingPoints.length; i++) {
+        const dp = state.drawingPoints[i];
+        const d = Math.hypot(pt.x - dp.x, pt.y - dp.y);
+        if (d < minD) {
+          minD = d;
+          best = { 
+            x: dp.x, 
+            y: dp.y, 
+            isStart: (i === 0), 
+            label: (i === 0 && state.drawingPoints.length >= 3) ? 'Endpoint (Click to close)' : 'Endpoint' 
+          };
+        }
+      }
+    }
+
+    // 2. All vector polygons, polylines, and lines in the drawing canvas (including adjacent plots)
+    const candidateEls = document.querySelectorAll('#userDrawingsGroup polygon, #userDrawingsGroup polyline, #userDrawingsGroup line, #plotsGroup polygon, .mouza-plot, .user-plot-boundary');
+    for (const el of candidateEls) {
+      if (el.closest('.hidden') || el.style.display === 'none') continue;
+      if (el.classList.contains('magic-wand-marker') || el.classList.contains('cad-dim-elem')) continue;
+
+      const ptsAttr = el.getAttribute('points');
+      if (ptsAttr) {
+        const pairs = ptsAttr.trim().split(/\s+/);
+        for (const pair of pairs) {
+          const parts = pair.split(',');
+          const vx = parseFloat(parts[0]);
+          const vy = parseFloat(parts[1]);
+          if (isNaN(vx) || isNaN(vy)) continue;
+          const d = Math.hypot(pt.x - vx, pt.y - vy);
+          if (d < minD) {
+            minD = d;
+            best = { x: vx, y: vy, isStart: false, label: 'Endpoint' };
+          }
+        }
+      }
+
+      if (el.tagName && el.tagName.toLowerCase() === 'line') {
+        const x1 = parseFloat(el.getAttribute('x1'));
+        const y1 = parseFloat(el.getAttribute('y1'));
+        const x2 = parseFloat(el.getAttribute('x2'));
+        const y2 = parseFloat(el.getAttribute('y2'));
+        if (!isNaN(x1) && !isNaN(y1)) {
+          const d1 = Math.hypot(pt.x - x1, pt.y - y1);
+          if (d1 < minD) { minD = d1; best = { x: x1, y: y1, isStart: false, label: 'Endpoint' }; }
+        }
+        if (!isNaN(x2) && !isNaN(y2)) {
+          const d2 = Math.hypot(pt.x - x2, pt.y - y2);
+          if (d2 < minD) { minD = d2; best = { x: x2, y: y2, isStart: false, label: 'Endpoint' }; }
+        }
+      }
+    }
+
+    // 3. Registered plot vertices in state
+    if (state.plots) {
+      for (const pData of Object.values(state.plots)) {
+        if (!pData.vertices) continue;
+        for (const v of pData.vertices) {
+          const d = Math.hypot(pt.x - v.x, pt.y - v.y);
+          if (d < minD) {
+            minD = d;
+            best = { x: v.x, y: v.y, isStart: false, label: 'Endpoint' };
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
   // =========================================================================
   // CADASTRAL 4-CORNER BOUNDARY RECOGNITION (MAGIC WAND)
   // Accurately detects small, medium, and large parcels with 4 clean corners 
@@ -2041,8 +2147,8 @@
         const seedY = Math.round(normY * origH);
 
         if (seedX >= 0 && seedX < origW && seedY >= 0 && seedY < origH) {
-          // Bounded search radius: covers authentic Mouza parcels (up to 125px radius)
-          const maxR = Math.max(50, Math.min(125, Math.round(origW * 0.12)));
+          // Bounded search radius: covers authentic Mouza parcels (up to 120px radius)
+          const maxR = Math.max(45, Math.min(120, Math.round(origW * 0.10)));
           const pad = maxR + 5;
           const x0 = Math.max(0, seedX - pad);
           const y0 = Math.max(0, seedY - pad);
@@ -2067,13 +2173,13 @@
           let startLum = getLum(sx, sy);
 
           // If clicked on dark boundary line or dag number glyph, nudge to nearby bright paper
-          if (startLum < 130) {
-            for (let r = 1; r <= 8; r++) {
+          if (startLum < 140) {
+            for (let r = 1; r <= 15; r++) {
               let found = false;
               for (let dy = -r; dy <= r; dy++) {
                 for (let dx = -r; dx <= r; dx++) {
                   const l = getLum(sx + dx, sy + dy);
-                  if (l > startLum + 25) {
+                  if (l > 155) {
                     sx += dx; sy += dy; startLum = l; found = true; break;
                   }
                 }
@@ -2083,122 +2189,196 @@
             }
           }
 
-          // Accurate ink threshold: paper texture is 170-210, ink boundary is < 130
-          const inkThreshold = Math.max(65, Math.min(132, Math.round(startLum * 0.68)));
+          // Ink threshold: paper texture is 170-220, ink boundary is < 138
+          const inkThreshold = Math.max(75, Math.min(138, Math.round(startLum * 0.72)));
 
           function isInk(gx, gy) {
             return getLum(gx, gy) < inkThreshold;
           }
 
-          // Check if ink has continuity perpendicular to rays (boundary ail vs interior isolated glyph)
-          function getAilSpan(gx, gy) {
-            const orientations = [[1, 0], [0, 1], [1, 1], [1, -1]];
-            let maxSpan = 0;
-            for (const [dx, dy] of orientations) {
-              let span = 1;
-              for (let s = 1; s <= 25; s++) {
-                if (isInk(gx + dx * s, gy + dy * s) || 
-                    isInk(gx + dx * s - dy, gy + dy * s + dx) || 
-                    isInk(gx + dx * s + dy, gy + dy * s - dx)) span++;
-                else break;
-              }
-              for (let s = 1; s <= 25; s++) {
-                if (isInk(gx - dx * s, gy - dy * s) || 
-                    isInk(gx - dx * s - dy, gy - dy * s + dx) || 
-                    isInk(gx - dx * s + dy, gy - dy * s - dx)) span++;
-                else break;
-              }
-              if (span > maxSpan) maxSpan = span;
-            }
-            return maxSpan;
+          // Morphological bridge to seal 1px hairline scan cracks and prevent leaking into adjacent plots
+          function isWall(gx, gy) {
+            if (isInk(gx, gy)) return true;
+            let inkCount = 0;
+            if (isInk(gx - 1, gy)) inkCount++;
+            if (isInk(gx + 1, gy)) inkCount++;
+            if (isInk(gx, gy - 1)) inkCount++;
+            if (isInk(gx, gy + 1)) inkCount++;
+            return inkCount >= 2;
           }
 
-          // 36 rays from d = 2.0 to maxR
-          const numRays = 36;
-          const rawHits = [];
+          // BFS Flood Fill inside the parcel (stops strictly at ink boundary walls)
+          const localW = winW;
+          const localH = winH;
+          const visited = new Uint8Array(localW * localH);
+          const queueX = new Int16Array(localW * localH);
+          const queueY = new Int16Array(localW * localH);
+          let head = 0;
+          let tail = 0;
 
-          for (let i = 0; i < numRays; i++) {
-            const ang = (i * 2 * Math.PI) / numRays;
-            const cosA = Math.cos(ang);
-            const sinA = Math.sin(ang);
-            let hitD = maxR;
+          const startLx = sx - x0;
+          const startLy = sy - y0;
+          if (startLx >= 0 && startLx < localW && startLy >= 0 && startLy < localH) {
+            visited[startLy * localW + startLx] = 1;
+            queueX[tail] = startLx;
+            queueY[tail] = startLy;
+            tail++;
+          }
 
-            for (let d = 2.0; d <= maxR; d += 1.0) {
-              const gx = Math.round(sx + cosA * d);
-              const gy = Math.round(sy + sinA * d);
+          let floodCount = 0;
+          let sumGx = 0;
+          let sumGy = 0;
+          let minFloodX = sx, maxFloodX = sx;
+          let minFloodY = sy, maxFloodY = sy;
+          const maxParcelRadius = Math.max(30, Math.min(85, Math.round(origW * 0.07)));
 
-              if (isInk(gx, gy)) {
-                // Check if this ink is just an interior glyph / speckle
-                const span = getAilSpan(gx, gy);
-                const gxAhead = Math.round(sx + cosA * (d + 4));
-                const gyAhead = Math.round(sy + sinA * (d + 4));
-                if (d < 22 && (span < 7 || !isInk(gxAhead, gyAhead))) {
-                  continue; // bypass interior dag number text
+          while (head < tail && floodCount < 25000) {
+            const clx = queueX[head];
+            const cly = queueY[head];
+            head++;
+            floodCount++;
+
+            const cgx = clx + x0;
+            const cgy = cly + y0;
+            sumGx += cgx;
+            sumGy += cgy;
+            if (cgx < minFloodX) minFloodX = cgx;
+            if (cgx > maxFloodX) maxFloodX = cgx;
+            if (cgy < minFloodY) minFloodY = cgy;
+            if (cgy > maxFloodY) maxFloodY = cgy;
+
+            if (Math.hypot(cgx - sx, cgy - sy) > maxParcelRadius) {
+              continue;
+            }
+
+            const neighbors = [
+              [clx + 1, cly],
+              [clx - 1, cly],
+              [clx, cly + 1],
+              [clx, cly - 1]
+            ];
+
+            for (const [nlx, nly] of neighbors) {
+              if (nlx < 1 || nlx >= localW - 1 || nly < 1 || nly >= localH - 1) continue;
+              const nidx = nly * localW + nlx;
+              if (visited[nidx]) continue;
+              visited[nidx] = 1;
+
+              const ngx = nlx + x0;
+              const ngy = nly + y0;
+              if (isWall(ngx, ngy)) continue;
+
+              queueX[tail] = nlx;
+              queueY[tail] = nly;
+              tail++;
+            }
+          }
+
+          // If flood successfully captured parcel interior (minimum 60 pixels, positive area)
+          if (floodCount >= 60 && (maxFloodX - minFloodX) >= 6 && (maxFloodY - minFloodY) >= 6) {
+            const centroidGx = sumGx / floodCount;
+            const centroidGy = sumGy / floodCount;
+
+            const numRays = 36;
+            const rawHits = [];
+
+            for (let i = 0; i < numRays; i++) {
+              const ang = (i * 2 * Math.PI) / numRays;
+              const cosA = Math.cos(ang);
+              const sinA = Math.sin(ang);
+              let hitD = 8;
+
+              for (let d = 1.0; d <= maxParcelRadius + 5; d += 1.0) {
+                const rxHit = Math.round(centroidGx + cosA * d) - x0;
+                const ryHit = Math.round(centroidGy + sinA * d) - y0;
+                if (rxHit < 0 || rxHit >= localW || ryHit < 0 || ryHit >= localH) {
+                  hitD = d;
+                  break;
+                }
+                const idx = ryHit * localW + rxHit;
+                if (!visited[idx]) {
+                  hitD = d;
+                  break;
                 }
                 hitD = d;
-                break;
               }
+              rawHits.push(hitD);
             }
-            rawHits.push(hitD);
-          }
 
-          // Smooth rays slightly to bridge single-ray notches
-          const smoothed = [...rawHits];
-          for (let p = 0; p < 2; p++) {
+            const boundaryPts = [];
             for (let i = 0; i < numRays; i++) {
-              const prev = smoothed[(i - 1 + numRays) % numRays];
-              const curr = smoothed[i];
-              const next = smoothed[(i + 1) % numRays];
-              const avg = (prev + next) / 2;
-              if (curr < avg * 0.65 && avg > 15) {
-                smoothed[i] = avg;
-              }
+              const ang = (i * 2 * Math.PI) / numRays;
+              const d = rawHits[i];
+              boundaryPts.push({
+                x: centroidGx + Math.cos(ang) * d,
+                y: centroidGy + Math.sin(ang) * d
+              });
             }
-          }
 
-          // Convert ray distance endpoints to SVG coordinates
-          const boundaryPts = [];
-          for (let i = 0; i < numRays; i++) {
-            const ang = (i * 2 * Math.PI) / numRays;
-            const d = smoothed[i];
-            const gx = sx + Math.cos(ang) * d;
-            const gy = sy + Math.sin(ang) * d;
-            boundaryPts.push({
-              x: rx + (gx / origW) * rw,
-              y: ry + (gy / origH) * rh
+            function getQuadrantPeak(startIdx, endIdx) {
+              let maxD2 = -1;
+              let best = boundaryPts[startIdx % numRays];
+              for (let i = startIdx; i <= endIdx; i++) {
+                const idx = i % numRays;
+                const p = boundaryPts[idx];
+                const d2 = (p.x - centroidGx)**2 + (p.y - centroidGy)**2;
+                if (d2 > maxD2) {
+                  maxD2 = d2;
+                  best = p;
+                }
+              }
+              return best;
+            }
+
+            // Quadrant corners
+            const cTL = getQuadrantPeak(18, 26);
+            const cTR = getQuadrantPeak(27, 35);
+            const cBR = getQuadrantPeak(0, 8);
+            const cBL = getQuadrantPeak(9, 17);
+
+            let corners = [
+              { x: rx + (cTL.x / origW) * rw, y: ry + (cTL.y / origH) * rh },
+              { x: rx + (cTR.x / origW) * rw, y: ry + (cTR.y / origH) * rh },
+              { x: rx + (cBR.x / origW) * rw, y: ry + (cBR.y / origH) * rh },
+              { x: rx + (cBL.x / origW) * rw, y: ry + (cBL.y / origH) * rh }
+            ];
+
+            // AutoCAD Adjacent Plot Snapping:
+            // Snap new corners to any nearby existing plot vertices within 14 screen pixels
+            const s2w = getScreenPixelToWorld();
+            const snapDistThresh = 14 * s2w;
+            const existingPlots = document.querySelectorAll('#userDrawingsGroup polygon, #plotsGroup polygon, .mouza-plot, .user-plot-boundary');
+
+            corners = corners.map(c => {
+              let bestPt = c;
+              let minD = snapDistThresh;
+              for (const pEl of existingPlots) {
+                const pAttr = pEl.getAttribute('points');
+                if (!pAttr) continue;
+                for (const pair of pAttr.trim().split(/\s+/)) {
+                  const parts = pair.split(',');
+                  const px = parseFloat(parts[0]);
+                  const py = parseFloat(parts[1]);
+                  if (isNaN(px) || isNaN(py)) continue;
+                  const d = Math.hypot(c.x - px, c.y - py);
+                  if (d < minD) {
+                    minD = d;
+                    bestPt = { x: px, y: py };
+                  }
+                }
+              }
+              return bestPt;
             });
-          }
 
-          // Extract 4 cadastral corners (Top-Left, Top-Right, Bottom-Right, Bottom-Left)
-          // In each diagonal quadrant, the peak distance from center is the true cadastral corner
-          function getQuadrantPeak(startIdx, endIdx) {
-            let maxDistSq = -1;
-            let best = boundaryPts[startIdx];
-            for (let i = startIdx; i <= endIdx; i++) {
-              const idx = i % numRays;
-              const p = boundaryPts[idx];
-              const d2 = (p.x - (rx + (sx / origW) * rw))**2 + (p.y - (ry + (sy / origH) * rh))**2;
-              if (d2 > maxDistSq) {
-                maxDistSq = d2;
-                best = p;
-              }
+            // Validate that vertices form a polygon with positive area
+            let testArea = 0;
+            for (let i = 0; i < 4; i++) {
+              const j = (i + 1) % 4;
+              testArea += corners[i].x * corners[j].y - corners[j].x * corners[i].y;
             }
-            return best;
-          }
-
-          // Quadrant 3 (Left-Up): rays 18 to 26 -> Top-Left
-          // Quadrant 4 (Right-Up): rays 27 to 35 -> Top-Right
-          // Quadrant 1 (Right-Down): rays 0 to 8 -> Bottom-Right
-          // Quadrant 2 (Left-Down): rays 9 to 17 -> Bottom-Left
-          const corners = [
-            getQuadrantPeak(18, 26), // Top-Left
-            getQuadrantPeak(27, 35), // Top-Right
-            getQuadrantPeak(0, 8),   // Bottom-Right
-            getQuadrantPeak(9, 17)   // Bottom-Left
-          ];
-
-          if (corners.length === 4) {
-            vertices = corners;
+            if (Math.abs(testArea) > 50) {
+              vertices = corners;
+            }
           }
         }
       } catch (err) {
@@ -2740,7 +2920,7 @@
 
     pushUndo(`Import Map (${filename})`);
     logCommand(`MAP IMPORTED: ${filename} attached.`);
-    logCommand(`TIP:        ,  ' Plot'      ।`);
+    logCommand('TIP: Select Magic Wand (MW) and click inside any parcel to auto-detect its boundary.');
   }
 
   function placeRasterSideBySide() {
@@ -4909,7 +5089,7 @@ const ribbonTemplates = {
 
         const pt = getCanvasCoords(e);
         const s2w = getScreenPixelToWorld();
-        const snapThresh = 14 * s2w;
+        const snapThresh = 22 * s2w; // Generous magnetic pull radius (AutoCAD OSNAP standard)
 
         const dynHud = document.getElementById('cadDynamicInput');
         const dynDistBadge = document.getElementById('dynDistanceBadge');
@@ -4922,54 +5102,26 @@ const ribbonTemplates = {
         const polarTrack = document.getElementById('drawingPolarTrack');
         const angleArc = document.getElementById('drawingAngleArc');
 
-        // AutoCAD OSNAP (Object Snap) Detection
-        let bestSnap = null;
-        let bestDist = snapThresh;
-
-        const isDrawTool = (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline' || state.activeTool === 'dimension');
-        if (isDrawTool) {
-          // Check start vertex first (for closing polyline)
-          if (state.drawingPoints && state.drawingPoints.length >= 3) {
-            const p0 = state.drawingPoints[0];
-            const d0 = Math.hypot(pt.x - p0.x, pt.y - p0.y);
-            if (d0 <= snapThresh) {
-              bestSnap = { x: p0.x, y: p0.y, isStart: true, label: 'Endpoint (Click to Close)' };
-              bestDist = d0;
-            }
-          }
-
-          if (!bestSnap && state.drawingPoints) {
-            for (let i = 0; i < state.drawingPoints.length; i++) {
-              const dp = state.drawingPoints[i];
-              const d = Math.hypot(pt.x - dp.x, pt.y - dp.y);
-              if (d < bestDist) {
-                bestDist = d;
-                bestSnap = { x: dp.x, y: dp.y, isStart: (i === 0), label: 'Endpoint' };
-              }
-            }
-          }
-
-          if (!bestSnap && state.plots) {
-            for (const pData of Object.values(state.plots)) {
-              if (!pData.vertices) continue;
-              for (const v of pData.vertices) {
-                const d = Math.hypot(pt.x - v.x, pt.y - v.y);
-                if (d < bestDist) {
-                  bestDist = d;
-                  bestSnap = { x: v.x, y: v.y, isStart: false, label: 'Endpoint' };
-                }
-              }
-            }
-          }
-        }
+        // AutoCAD Magnetic OSNAP (Object Snap) Detection
+        const isDrawTool = (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline' || state.activeTool === 'dimension' || state.activeTool === 'line');
+        const bestSnap = isDrawTool ? findBestOsnapPoint(pt, snapThresh) : null;
+        let snapScreen = null;
 
         if (bestSnap) {
-          state.snappedPoint = { x: bestSnap.x, y: bestSnap.y, isStart: bestSnap.isStart };
+          state.snappedPoint = { x: bestSnap.x, y: bestSnap.y, isStart: bestSnap.isStart, label: bestSnap.label };
+          snapScreen = svgPointToScreen(bestSnap.x, bestSnap.y);
+
+          // Magnetic crosshair pull: snap crosshair directly onto target vertex (Image 4 standard)
+          if (crosshair) {
+            crosshair.style.left = `${snapScreen.x}px`;
+            crosshair.style.top = `${snapScreen.y}px`;
+          }
+
           if (osnapBox && osnapMarker) {
-            osnapBox.setAttribute('x', (bestSnap.x - 4 * s2w).toFixed(1));
-            osnapBox.setAttribute('y', (bestSnap.y - 4 * s2w).toFixed(1));
-            osnapBox.setAttribute('width', (8 * s2w).toFixed(1));
-            osnapBox.setAttribute('height', (8 * s2w).toFixed(1));
+            osnapBox.setAttribute('x', (bestSnap.x - 5.5 * s2w).toFixed(1));
+            osnapBox.setAttribute('y', (bestSnap.y - 5.5 * s2w).toFixed(1));
+            osnapBox.setAttribute('width', (11.0 * s2w).toFixed(1));
+            osnapBox.setAttribute('height', (11.0 * s2w).toFixed(1));
             osnapMarker.classList.remove('hidden');
           }
           if (dynOsnapTooltip) {
@@ -4983,6 +5135,8 @@ const ribbonTemplates = {
         }
 
         const targetPt = state.snappedPoint ? state.snappedPoint : pt;
+        const hudPosX = snapScreen ? snapScreen.x : mouseX;
+        const hudPosY = snapScreen ? snapScreen.y : mouseY;
 
         // AutoCAD Dynamic Input (DYN) & Real-time Guide Line Handling
         if (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline') {
@@ -5015,7 +5169,7 @@ const ribbonTemplates = {
             }
             if (dynPromptBadge) {
               dynPromptBadge.textContent = (state.snappedPoint && state.snappedPoint.isStart && state.drawingPoints.length >= 3) 
-                ? 'Endpoint (Click to close)' 
+                ? 'Endpoint (Click to close polyline)' 
                 : 'Specify next point or [Close/Undo]';
             }
 
@@ -5042,8 +5196,8 @@ const ribbonTemplates = {
             }
 
             if (dynHud) {
-              dynHud.style.left = `${mouseX}px`;
-              dynHud.style.top = `${mouseY}px`;
+              dynHud.style.left = `${hudPosX}px`;
+              dynHud.style.top = `${hudPosY}px`;
               dynHud.classList.remove('hidden');
             }
           } else {
@@ -5051,8 +5205,8 @@ const ribbonTemplates = {
             if (dynAngBadge) dynAngBadge.style.display = 'none';
             if (dynPromptBadge) dynPromptBadge.textContent = 'Specify start point:';
             if (dynHud) {
-              dynHud.style.left = `${mouseX}px`;
-              dynHud.style.top = `${mouseY}px`;
+              dynHud.style.left = `${hudPosX}px`;
+              dynHud.style.top = `${hudPosY}px`;
               dynHud.classList.remove('hidden');
             }
             if (guide) guide.classList.add('hidden');
