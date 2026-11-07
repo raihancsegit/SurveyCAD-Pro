@@ -317,13 +317,23 @@ html, body {
   flex: 1 1 0%;
   overflow: hidden;
   background-color: var(--cad-canvas);
-  cursor: crosshair;
+  cursor: none !important;
 }
 
 #cadSvgCanvas {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: none !important;
+}
+
+#canvasRasterMap {
+  cursor: none !important;
+}
+
+.mouza-plot, .user-plot-boundary {
+  cursor: none !important;
+  vector-effect: non-scaling-stroke !important;
 }
 
 /* 3D Navigation View Cube */
@@ -383,36 +393,19 @@ html, body {
   pointer-events: none;
 }
 
-/* Fullscreen Dynamic Crosshair */
+/* Fullscreen Dynamic Crosshair (AutoCAD Exact Replica matching Image 2) */
 .crosshair-cursor {
   position: absolute;
   pointer-events: none;
-  z-index: 30;
+  z-index: 9999;
   display: none;
+  width: 71px;
+  height: 71px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
-.crosshair-h {
-  position: absolute;
-  height: 1px;
-  width: 40px;
-  background: rgba(255, 255, 255, 0.7);
-  left: -20px;
-  top: 0;
-}
-.crosshair-v {
-  position: absolute;
-  width: 1px;
-  height: 40px;
-  background: rgba(255, 255, 255, 0.7);
-  top: -20px;
-  left: 0;
-}
-.crosshair-box {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  top: -4px;
-  left: -4px;
+.crosshair-h, .crosshair-v, .crosshair-box {
+  display: none; /* Replaced by crisp vector SVG */
 }
 
 /* ==========================================================================

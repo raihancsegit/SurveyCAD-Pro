@@ -830,6 +830,11 @@
   function setActiveTool(toolName) {
     state.activeTool = toolName;
 
+    const ws = document.getElementById('cadWorkspace');
+    if (ws) {
+      ws.style.cursor = toolName === 'pan' ? 'grab' : 'none';
+    }
+
     // Update Left Toolbar Buttons
     document.querySelectorAll('.left-tool-btn, .tool-btn').forEach(btn => {
       if (btn.getAttribute('data-tool') === toolName) {
@@ -5413,11 +5418,24 @@ const ribbonTemplates = {
         if (coordX) coordX.textContent = worldX;
         if (coordY) coordY.textContent = worldY;
 
-        // Position crosshair
+        // Position AutoCAD crosshair with center square pickbox
         if (crosshair) {
-          crosshair.style.display = 'block';
-          crosshair.style.left = `${mouseX}px`;
-          crosshair.style.top = `${mouseY}px`;
+          const onInteractiveControl = e.target && e.target.closest && (
+            e.target.closest('#canvasFloatingControls') ||
+            e.target.closest('#classicMenuDropdown') ||
+            e.target.closest('#commandLineDock') ||
+            e.target.closest('#cadInlineTextEditor') ||
+            e.target.closest('#rasterDragHeader') ||
+            e.target.closest('#rasterResizeHandleGroup') ||
+            e.target.closest('#virtualGuniyaScale')
+          );
+          if (onInteractiveControl || state.isSpacePressed || state.activeTool === 'pan') {
+            crosshair.style.display = 'none';
+          } else {
+            crosshair.style.display = 'block';
+            crosshair.style.left = `${mouseX}px`;
+            crosshair.style.top = `${mouseY}px`;
+          }
         }
 
         const pt = getCanvasCoords(e);
@@ -6049,7 +6067,7 @@ const ribbonTemplates = {
     window.addEventListener('mouseup', (e) => {
       if (moveDrawingsState.isDragging) {
         moveDrawingsState.isDragging = false;
-        cadWorkspace.style.cursor = state.activeTool === 'move' ? 'grab' : 'crosshair';
+        cadWorkspace.style.cursor = state.activeTool === 'move' ? 'grab' : 'none';
         const dx = moveDrawingsState.currentDx;
         const dy = moveDrawingsState.currentDy;
         const uGroup = document.getElementById('userDrawingsGroup');
@@ -6108,7 +6126,8 @@ const ribbonTemplates = {
       }
       if (viewport.isPanning) {
         viewport.isPanning = false;
-        cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'crosshair';
+        cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'none';
+        if (crosshair && state.activeTool !== 'pan') crosshair.style.display = 'block';
       }
     });
 
@@ -6280,12 +6299,14 @@ const ribbonTemplates = {
       if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
         state.isSpacePressed = true;
         cadWorkspace.style.cursor = 'grab';
+        if (crosshair) crosshair.style.display = 'none';
       }
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {
         state.isSpacePressed = false;
-        cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'crosshair';
+        cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'none';
+        if (crosshair && state.activeTool !== 'pan') crosshair.style.display = 'block';
       }
     });
 

@@ -503,11 +503,20 @@
         </svg>
       </div>
 
-      <!-- Center Crosshair Cursor -->
-      <div id="crosshairCursor" class="crosshair-cursor">
-        <div class="crosshair-h"></div>
-        <div class="crosshair-v"></div>
-        <div class="crosshair-box"></div>
+      <!-- Center Crosshair Cursor (AutoCAD Style: Crisp White 1px Lines + Center Square Pickbox) -->
+      <div id="crosshairCursor" class="crosshair-cursor pointer-events-none select-none">
+        <svg width="71" height="71" viewBox="-35 -35 70 70" class="overflow-visible block">
+          <!-- Center Pickbox (Aperture) -->
+          <rect x="-4.5" y="-4.5" width="9" height="9" fill="none" stroke="#ffffff" stroke-width="1.2" shape-rendering="crispEdges"/>
+          <!-- Left arm -->
+          <line x1="-32" y1="0" x2="-4.5" y2="0" stroke="#ffffff" stroke-width="1.2" shape-rendering="crispEdges"/>
+          <!-- Right arm -->
+          <line x1="4.5" y1="0" x2="32" y2="0" stroke="#ffffff" stroke-width="1.2" shape-rendering="crispEdges"/>
+          <!-- Top arm -->
+          <line x1="0" y1="-32" x2="0" y2="-4.5" stroke="#ffffff" stroke-width="1.2" shape-rendering="crispEdges"/>
+          <!-- Bottom arm -->
+          <line x1="0" y1="4.5" x2="0" y2="32" stroke="#ffffff" stroke-width="1.2" shape-rendering="crispEdges"/>
+        </svg>
       </div>
 
       <!-- AutoCAD Dynamic Input (DYN) Floating HUD -->
@@ -704,7 +713,7 @@
           <!-- Interactive Mouza Raster Layer & Drag Controls -->
           <g id="groupRasterMouza" class="hidden select-none">
             <!-- Raster Image -->
-            <image id="canvasRasterMap" x="180" y="200" width="600" height="500" href="" class="opacity-80" style="cursor: move; pointer-events: auto;"/>
+            <image id="canvasRasterMap" x="180" y="200" width="600" height="500" href="" class="opacity-80" style="cursor: none; pointer-events: auto;"/>
             <!-- Bounding Outline -->
             <rect id="rasterBoundingBox" x="178" y="198" width="604" height="504" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="4 2" class="pointer-events-none"/>
             <!-- Drag Header Bar -->
