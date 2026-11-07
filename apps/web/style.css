@@ -867,29 +867,39 @@ html, body {
   transition: opacity 0.15s ease;
 }
 .cad-dim-elem line {
-  stroke: #f97316;
-  stroke-width: 1.2;
+  stroke: #ea580c;
+  stroke-width: 1.2px;
 }
 .cad-dim-elem text {
-  fill: #f97316;
-  font-family: 'Fira Code', 'Consolas', monospace;
+  fill: #ffffff !important;
+  font-family: 'Segoe UI', Roboto, 'Fira Code', monospace;
   font-weight: 700;
+  user-select: none;
+}
+.cad-dim-elem rect {
+  fill: #0f172a !important;
+  stroke: #ea580c;
+  stroke-width: 1.2px;
+  vector-effect: non-scaling-stroke !important;
 }
 .cad-dim-elem:hover line {
-  stroke: #facc15 !important;
+  stroke: #f59e0b !important;
 }
-.cad-dim-elem:hover text {
-  fill: #facc15 !important;
+.cad-dim-elem:hover rect {
+  stroke: #f59e0b !important;
 }
 .cad-dim-elem.selected line {
-  stroke: #00ffff !important;
-  stroke-width: 1.6 !important;
-}
-.cad-dim-elem.selected text {
-  fill: #00ffff !important;
-  font-weight: bold !important;
+  stroke: #38bdf8 !important;
+  stroke-width: 1.8px !important;
 }
 .cad-dim-elem.selected rect {
-  stroke: #00ffff !important;
+  fill: #0f172a !important;
+  stroke: #38bdf8 !important;
+  stroke-width: 1.8px !important;
+  vector-effect: non-scaling-stroke !important;
+}
+.cad-dim-elem.selected text {
+  fill: #38bdf8 !important;
+  font-weight: bold !important;
 }
 

@@ -388,6 +388,37 @@
         }
       }
     });
+
+    // Rescale CAD Aligned Dimensions annotatively live during zoom so they are ALWAYS 100% crisp and readable
+    document.querySelectorAll('.cad-dim-elem').forEach(g => {
+      const rotG = g.querySelector('g[transform]');
+      if (!rotG) return;
+      const r = rotG.querySelector('rect');
+      const t = rotG.querySelector('text');
+      if (r && t) {
+        const textStr = t.textContent.trim();
+        const textChars = textStr.length;
+        const bw = Math.max(30 * s2wBadges, (textChars * 6.6 + 10) * s2wBadges);
+        const bh = 14.0 * s2wBadges;
+        const fontSz = 10.5 * s2wBadges;
+
+        const tr = rotG.getAttribute('transform') || '';
+        const m = tr.match(/rotate\(\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\)/);
+        if (m) {
+          const cx = parseFloat(m[2]);
+          const cy = parseFloat(m[3]);
+          r.setAttribute('x', (cx - bw / 2).toFixed(1));
+          r.setAttribute('y', (cy - bh / 2).toFixed(1));
+          r.setAttribute('width', bw.toFixed(1));
+          r.setAttribute('height', bh.toFixed(1));
+          r.setAttribute('rx', (2.0 * s2wBadges).toFixed(1));
+
+          t.setAttribute('x', cx.toFixed(1));
+          t.setAttribute('y', (cy + 3.8 * s2wBadges).toFixed(1));
+          t.setAttribute('font-size', fontSz.toFixed(1));
+        }
+      }
+    });
   }
 
   function zoomAtPoint(factor, clientX, clientY) {
@@ -809,8 +840,8 @@
     const u = getUnitsPerPixel();
     // 1000 links = 10 chains = 660 ft
     const targetLengthFeet = 660;
-    const guniyaW = Math.max(120, targetLengthFeet / (u.upp_svg_x || 1.5));
-    const guniyaH = Math.max(38, guniyaW * 0.18);
+    const guniyaW = Math.max(160, targetLengthFeet / (u.upp_svg_x || 1.5));
+    const guniyaH = Math.max(32, guniyaW * 0.15);
 
     state.guniya.width = guniyaW;
     state.guniya.height = guniyaH;
@@ -824,20 +855,21 @@
     let bottomTicks = '';
     let numberLabels = '';
 
+    const fontSz = Math.min(7.5, Math.max(4.8, guniyaH * 0.12)).toFixed(1);
+
     // Top ticks: 0 to 1000 links (10-link fine divisions)
     for (let i = 0; i <= 100; i++) {
       const x = (i * minorStepTop).toFixed(1);
-      let tickH = guniyaH * 0.16;
-      let strokeW = 0.8;
+      let tickH = guniyaH * 0.14;
       if (i % 10 === 0) {
-        tickH = guniyaH * 0.34;
-        strokeW = 1.4;
-        const linkVal = i * 10;
-        const fontSz = Math.max(6, guniyaH * 0.13).toFixed(1);
-        numberLabels += `<text x="${x}" y="${(tickH + guniyaH * 0.13).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+        tickH = guniyaH * 0.28;
+        // Only label major chains (0, 200, 400, 600, 800, 1000 links) to avoid horizontal cramming
+        if (i % 20 === 0) {
+          const linkVal = i * 10;
+          numberLabels += `<text x="${x}" y="${(tickH + guniyaH * 0.14).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+        }
       } else if (i % 5 === 0) {
-        tickH = guniyaH * 0.24;
-        strokeW = 1.1;
+        tickH = guniyaH * 0.20;
       }
       topTicks += `M ${x} 0 v ${tickH.toFixed(1)} `;
     }
@@ -845,38 +877,37 @@
     // Bottom ticks: 0 to 1000 links (20-link coarse divisions)
     for (let i = 0; i <= 50; i++) {
       const x = (i * minorStepBottom).toFixed(1);
-      let tickH = guniyaH * 0.16;
+      let tickH = guniyaH * 0.14;
       if (i % 5 === 0) {
-        tickH = guniyaH * 0.30;
-        const linkVal = i * 20;
-        const fontSz = Math.max(5.5, guniyaH * 0.12).toFixed(1);
-        numberLabels += `<text x="${x}" y="${(guniyaH - tickH - guniyaH * 0.05).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+        tickH = guniyaH * 0.24;
       }
       bottomTicks += `M ${x} ${guniyaH.toFixed(1)} v -${tickH.toFixed(1)} `;
     }
 
-    const titleFont = Math.max(7.5, guniyaH * 0.13).toFixed(1);
-    const subFont = Math.max(6.5, guniyaH * 0.10).toFixed(1);
+    // Bottom only labels ends and midpoint (0, 500 Links, 1000)
+    const bY = (guniyaH - guniyaH * 0.26 - 1).toFixed(1);
+    numberLabels += `<text x="6" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="start">0</text>`;
+    numberLabels += `<text x="${(guniyaW / 2).toFixed(1)}" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">500 Links (5 Ch)</text>`;
+    numberLabels += `<text x="${(guniyaW - 6).toFixed(1)}" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="end">1000</text>`;
+
+    const titleFont = Math.min(7.2, Math.max(5.0, guniyaH * 0.11)).toFixed(1);
     const midX = (guniyaW / 2).toFixed(1);
 
-    const scaleName = state.scalePreset ? `${state.scalePreset}" = 1 Mile` : '16" = 1 Mile';
-
     guniyaEl.innerHTML = `
-      <!-- Translucent Ivory Ruler Body (Mouza Map lines clearly visible underneath) -->
-      <rect x="0" y="0" width="${guniyaW.toFixed(1)}" height="${guniyaH.toFixed(1)}" rx="${(guniyaH * 0.08).toFixed(1)}" fill="rgba(254, 243, 199, 0.88)" stroke="#b45309" stroke-width="1.5" filter="drop-shadow(0 4px 12px rgba(0,0,0,0.45))"/>
+      <!-- Translucent Ivory Acrylic Body (Map lines clearly visible underneath) -->
+      <rect x="0" y="0" width="${guniyaW.toFixed(1)}" height="${guniyaH.toFixed(1)}" rx="3" fill="rgba(255, 251, 235, 0.88)" stroke="#92400e" stroke-width="1.2" filter="drop-shadow(0 3px 8px rgba(0,0,0,0.35))"/>
       
       <!-- Top 10-link fine division ticks -->
-      <path d="${topTicks}" stroke="#78350f" stroke-width="0.9" vector-effect="non-scaling-stroke"/>
+      <path d="${topTicks}" stroke="#78350f" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
       
       <!-- Bottom 20-link division ticks -->
-      <path d="${bottomTicks}" stroke="#78350f" stroke-width="0.9" vector-effect="non-scaling-stroke"/>
+      <path d="${bottomTicks}" stroke="#78350f" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
       
-      <!-- Mark numbers -->
+      <!-- Mark numbers (Cleanly positioned with NO collision) -->
       ${numberLabels}
       
-      <!-- Center Title & Scale Calibration -->
-      <text x="${midX}" y="${(guniyaH * 0.52).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">GUNIYA (1000 LINKS = 10 CHAINS = 660 FT)</text>
-      <text x="${midX}" y="${(guniyaH * 0.66).toFixed(1)}" fill="#b45309" font-size="${subFont}" font-weight="600" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">Mouza Cadastral Scale: ${scaleName} (1 Link = 0.66 ft)</text>
+      <!-- Center Title: Single crisp clean inscription -->
+      <text x="${midX}" y="${(guniyaH * 0.54).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" letter-spacing="0.5px" text-anchor="middle">GUNIA • 1000 LINKS (10 CHAINS = 660 FT)</text>
     `;
 
     updateGuniyaTransform();
@@ -1826,22 +1857,22 @@
     g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
 
     const textChars = formattedText.length;
-    const bgW = Math.max(28 * s2w, (textChars * 6.2 + 8) * s2w);
-    const bgH = 13.0 * s2w;
+    const bgW = Math.max(30 * s2w, (textChars * 6.6 + 10) * s2w);
+    const bgH = 14.0 * s2w;
 
     g.innerHTML = `
       <!-- Extension lines -->
-      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#f97316" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.9"/>
-      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#f97316" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.9"/>
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke" opacity="0.9"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke" opacity="0.9"/>
       <!-- Dimension line -->
-      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
       <!-- Oblique ticks -->
-      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
-      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + tx).toFixed(1)}" stroke="#f97316" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + tx).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
       <!-- Label with clean knockout matching Image 5 -->
       <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
-        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${1.5 * s2w}" fill="#212830" fill-opacity="0.85" stroke="none"/>
-        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.5 * s2w).toFixed(1)}" fill="#f97316" font-size="${11 * s2w}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
+        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.0 * s2w}" fill="#0f172a" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.8 * s2w).toFixed(1)}" fill="#ffffff" font-size="${10.5 * s2w}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
       </g>
     `;
 
