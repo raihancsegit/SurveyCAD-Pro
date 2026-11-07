@@ -403,7 +403,7 @@
           const cy = parseFloat(m[3]);
           const fontSz = 10.5 * s2wBadges;
           t.setAttribute('x', cx.toFixed(1));
-          t.setAttribute('y', (cy + 3.4 * s2wBadges).toFixed(1));
+          t.setAttribute('y', (cy + 3.6 * s2wBadges).toFixed(1));
           t.setAttribute('font-size', fontSz.toFixed(1));
 
           if (r) {
@@ -414,7 +414,7 @@
             r.setAttribute('y', (cy - bh / 2).toFixed(1));
             r.setAttribute('width', bw.toFixed(1));
             r.setAttribute('height', bh.toFixed(1));
-            r.setAttribute('rx', (2.0 * s2wBadges).toFixed(1));
+            r.setAttribute('rx', (2.5 * s2wBadges).toFixed(1));
           }
         }
       }
@@ -1818,10 +1818,10 @@
       ny = -ny;
     }
 
-    const offsetDist = (options.offset || 12.0) * s2w;
-    const extPast = 2.0 * s2w;
-    const extOffset = 1.0 * s2w;
-    const tickSize = 3.5 * s2w;
+    const offsetDist = (options.offset || 22.0) * s2w;
+    const extPast = 3.5 * s2w;
+    const extOffset = 2.0 * s2w;
+    const tickSize = 4.0 * s2w;
 
     // Dimension line endpoints
     const q1x = p1.x + nx * offsetDist;
@@ -1855,12 +1855,14 @@
       textAngle += 180;
     }
 
-    // In-line broken line gap calculation (AutoCAD standard)
+    // In-line broken line gap calculation with AutoCAD background mask
     const textChars = formattedText.length;
-    const gapHalf = Math.max(8.0 * s2w, (textChars * 3.4 + 4) * s2w);
+    const bgW = Math.max(30 * s2w, (textChars * 6.6 + 10) * s2w);
+    const bgH = 14.0 * s2w;
+    const gapHalf = bgW / 2 + 1.5 * s2w;
 
     let dimLinesHtml = '';
-    if (segLen > gapHalf * 2.2) {
+    if (segLen > gapHalf * 2.1) {
       const g1x = tmx - ux * gapHalf;
       const g1y = tmy - uy * gapHalf;
       const g2x = tmx + ux * gapHalf;
@@ -1882,17 +1884,18 @@
     g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
 
     g.innerHTML = `
-      <!-- Extension lines (subtle, cleanly bounded) -->
-      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.8"/>
-      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.8"/>
+      <!-- Extension lines (cleanly bounded from corner to past dim line) -->
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
       <!-- Dimension line with center gap -->
       ${dimLinesHtml}
-      <!-- Oblique architectural ticks (Proper endpoints with NO runaway coordinates) -->
+      <!-- Oblique architectural ticks -->
       <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
       <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
-      <!-- AutoCAD In-Line Dimension Text (Clean CAD orange, NO dark pill, matching Image 4) -->
+      <!-- AutoCAD Background Masked Badge: Crisp contrast against Mouza paper & dark canvas -->
       <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
-        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.4 * s2w).toFixed(1)}" fill="#f97316" font-size="${(10.5 * s2w).toFixed(1)}" font-weight="700" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
+        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.5 * s2w}" fill="#0f172a" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.6 * s2w).toFixed(1)}" fill="#ffffff" font-size="${(10.5 * s2w).toFixed(1)}" font-weight="700" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
       </g>
     `;
 

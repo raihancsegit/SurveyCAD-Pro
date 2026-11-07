@@ -871,7 +871,7 @@ html, body {
   stroke-width: 1.2px;
 }
 .cad-dim-elem text {
-  fill: #f97316 !important;
+  fill: #ffffff !important;
   font-family: 'Segoe UI', Roboto, 'Fira Code', monospace;
   font-weight: 700;
   user-select: none;
@@ -889,7 +889,7 @@ html, body {
   stroke: #fbbf24 !important;
 }
 .cad-dim-elem:hover text {
-  fill: #fbbf24 !important;
+  fill: #fef08a !important;
 }
 .cad-dim-elem.selected line {
   stroke: #38bdf8 !important;
