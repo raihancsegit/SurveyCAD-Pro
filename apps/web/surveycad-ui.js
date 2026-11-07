@@ -340,28 +340,31 @@
       }
     });
 
-    // Rescale center dag badges live during zoom so they never blow up or cover the map
+    // Rescale center dag badges live during zoom with AutoCAD annotative sizing so they are ALWAYS 100% legible
     const s2wBadges = getScreenPixelToWorld();
     document.querySelectorAll('.mouza-dag-label').forEach(g => {
       const dag = g.getAttribute('data-dag-label');
       const pData = state.plots[dag];
       if (pData && pData.vertices) {
-        let minX = 9999, maxX = -9999, minY = 9999, maxY = -9999;
         let sumX = 0, sumY = 0;
         pData.vertices.forEach(v => {
-          if (v.x < minX) minX = v.x; if (v.x > maxX) maxX = v.x;
-          if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y;
           sumX += v.x; sumY += v.y;
         });
-        const pw = Math.max(12, maxX - minX);
-        const ph = Math.max(12, maxY - minY);
         const cx = sumX / pData.vertices.length;
         const cy = sumY / pData.vertices.length;
 
-        const bw = Math.min(46 * s2wBadges, pw * 0.45);
-        const bh = Math.min(18 * s2wBadges, ph * 0.35);
-        const f1 = Math.min(bh * 0.38, 10.0 * s2wBadges);
-        const f2 = Math.min(bh * 0.30, 8.5 * s2wBadges);
+        const plotTitle = `Plot ${dag}`;
+        const areaDecVal = Number(pData.areaDecimal || 0);
+        const areaSqFtVal = Number(pData.areaSqFt || 0);
+        const areaSubText = areaDecVal >= 0.01 
+          ? `${areaDecVal.toFixed(2)} Dec` 
+          : `${Math.round(areaSqFtVal)} sq.ft`;
+
+        const fontPlot = 11.5 * s2wBadges;
+        const fontArea = 9.5 * s2wBadges;
+        const maxChars = Math.max(plotTitle.length, areaSubText.length);
+        const bw = Math.max(52 * s2wBadges, (maxChars * 6.8 + 12) * s2wBadges);
+        const bh = 26.0 * s2wBadges;
 
         const r = g.querySelector('rect');
         if (r) {
@@ -369,18 +372,20 @@
           r.setAttribute('y', (cy - bh / 2).toFixed(1));
           r.setAttribute('width', bw.toFixed(1));
           r.setAttribute('height', bh.toFixed(1));
-          r.setAttribute('rx', (2.5 * s2wBadges).toFixed(1));
+          r.setAttribute('rx', (3.5 * s2wBadges).toFixed(1));
         }
         const texts = g.querySelectorAll('text');
         if (texts[0]) {
           texts[0].setAttribute('x', cx.toFixed(1));
-          texts[0].setAttribute('y', (cy - bh * 0.08).toFixed(1));
-          texts[0].setAttribute('font-size', f1.toFixed(1));
+          texts[0].setAttribute('y', (cy - 2.5 * s2wBadges).toFixed(1));
+          texts[0].setAttribute('font-size', fontPlot.toFixed(1));
+          texts[0].textContent = plotTitle;
         }
         if (texts[1]) {
           texts[1].setAttribute('x', cx.toFixed(1));
-          texts[1].setAttribute('y', (cy + bh * 0.36).toFixed(1));
-          texts[1].setAttribute('font-size', f2.toFixed(1));
+          texts[1].setAttribute('y', (cy + 8.5 * s2wBadges).toFixed(1));
+          texts[1].setAttribute('font-size', fontArea.toFixed(1));
+          texts[1].textContent = areaSubText;
         }
       }
     });
@@ -396,8 +401,9 @@
     const svgX = viewport.x + relX * viewport.width;
     const svgY = viewport.y + relY * viewport.height;
 
-    const newWidth = Math.max(80, Math.min(12000, viewport.width * factor));
-    const newHeight = Math.max(52, Math.min(7800, viewport.height * factor));
+    // AutoCAD Unlimited Deep Zoom: allows zooming from 10% all the way to 200,000%+
+    const newWidth = Math.max(0.4, Math.min(60000, viewport.width * factor));
+    const newHeight = Math.max(0.26, Math.min(39000, viewport.height * factor));
 
     viewport.x = svgX - relX * newWidth;
     viewport.y = svgY - relY * newHeight;
@@ -794,8 +800,89 @@
   }
 
   // =========================================================================
-  // 2. Virtual Guniya Scale Controller (Drag & Rotate)
+  // 2. Virtual Guniya Scale Controller (Physically Calibrated to Mouza Map)
+  // Standard 2-inch Cadastral Guniya (1000 Links = 10 Chains = 660 Feet)
   // =========================================================================
+  function rebuildGuniyaScale() {
+    const guniyaEl = document.getElementById('virtualGuniyaScale');
+    if (!guniyaEl) return;
+
+    const u = getUnitsPerPixel();
+    // 1000 links = 10 chains = 660 ft
+    const targetLengthFeet = 660;
+    const guniyaW = Math.max(120, targetLengthFeet / (u.upp_svg_x || 1.5));
+    const guniyaH = Math.max(38, guniyaW * 0.18);
+
+    state.guniya.width = guniyaW;
+    state.guniya.height = guniyaH;
+
+    const numMajor = 10; // 10 chains
+    const majorStep = guniyaW / numMajor;
+    const minorStepTop = majorStep / 10;   // 10 links each (fine)
+    const minorStepBottom = majorStep / 5; // 20 links each (coarse)
+
+    let topTicks = '';
+    let bottomTicks = '';
+    let numberLabels = '';
+
+    // Top ticks: 0 to 1000 links (10-link fine divisions)
+    for (let i = 0; i <= 100; i++) {
+      const x = (i * minorStepTop).toFixed(1);
+      let tickH = guniyaH * 0.16;
+      let strokeW = 0.8;
+      if (i % 10 === 0) {
+        tickH = guniyaH * 0.34;
+        strokeW = 1.4;
+        const linkVal = i * 10;
+        const fontSz = Math.max(6, guniyaH * 0.13).toFixed(1);
+        numberLabels += `<text x="${x}" y="${(tickH + guniyaH * 0.13).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+      } else if (i % 5 === 0) {
+        tickH = guniyaH * 0.24;
+        strokeW = 1.1;
+      }
+      topTicks += `M ${x} 0 v ${tickH.toFixed(1)} `;
+    }
+
+    // Bottom ticks: 0 to 1000 links (20-link coarse divisions)
+    for (let i = 0; i <= 50; i++) {
+      const x = (i * minorStepBottom).toFixed(1);
+      let tickH = guniyaH * 0.16;
+      if (i % 5 === 0) {
+        tickH = guniyaH * 0.30;
+        const linkVal = i * 20;
+        const fontSz = Math.max(5.5, guniyaH * 0.12).toFixed(1);
+        numberLabels += `<text x="${x}" y="${(guniyaH - tickH - guniyaH * 0.05).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+      }
+      bottomTicks += `M ${x} ${guniyaH.toFixed(1)} v -${tickH.toFixed(1)} `;
+    }
+
+    const titleFont = Math.max(7.5, guniyaH * 0.13).toFixed(1);
+    const subFont = Math.max(6.5, guniyaH * 0.10).toFixed(1);
+    const midX = (guniyaW / 2).toFixed(1);
+
+    const scaleName = state.scalePreset ? `${state.scalePreset}" = 1 Mile` : '16" = 1 Mile';
+
+    guniyaEl.innerHTML = `
+      <!-- Translucent Ivory Ruler Body (Mouza Map lines clearly visible underneath) -->
+      <rect x="0" y="0" width="${guniyaW.toFixed(1)}" height="${guniyaH.toFixed(1)}" rx="${(guniyaH * 0.08).toFixed(1)}" fill="rgba(254, 243, 199, 0.88)" stroke="#b45309" stroke-width="1.5" filter="drop-shadow(0 4px 12px rgba(0,0,0,0.45))"/>
+      
+      <!-- Top 10-link fine division ticks -->
+      <path d="${topTicks}" stroke="#78350f" stroke-width="0.9" vector-effect="non-scaling-stroke"/>
+      
+      <!-- Bottom 20-link division ticks -->
+      <path d="${bottomTicks}" stroke="#78350f" stroke-width="0.9" vector-effect="non-scaling-stroke"/>
+      
+      <!-- Mark numbers -->
+      ${numberLabels}
+      
+      <!-- Center Title & Scale Calibration -->
+      <text x="${midX}" y="${(guniyaH * 0.52).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">GUNIYA (1000 LINKS = 10 CHAINS = 660 FT)</text>
+      <text x="${midX}" y="${(guniyaH * 0.66).toFixed(1)}" fill="#b45309" font-size="${subFont}" font-weight="600" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">Mouza Cadastral Scale: ${scaleName} (1 Link = 0.66 ft)</text>
+    `;
+
+    updateGuniyaTransform();
+  }
+
   function toggleVirtualGuniya(forceState) {
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (!guniyaEl) return;
@@ -803,8 +890,8 @@
     state.guniya.enabled = typeof forceState === 'boolean' ? forceState : !state.guniya.enabled;
     if (state.guniya.enabled) {
       guniyaEl.classList.remove('hidden');
-      updateGuniyaTransform();
-      logCommand('GUNIYA: Virtual Guniya Scale Active (Drag to move, Mouse wheel over scale to rotate).');
+      rebuildGuniyaScale();
+      logCommand('GUNIYA: Virtual Guniya Scale Active (Calibrated 1:1 to map scale. Drag to move, wheel to rotate).');
     } else {
       guniyaEl.classList.add('hidden');
       logCommand('GUNIYA: Virtual Guniya Scale Hidden.');
@@ -814,7 +901,9 @@
   function updateGuniyaTransform() {
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (!guniyaEl) return;
-    guniyaEl.setAttribute('transform', `translate(${state.guniya.x}, ${state.guniya.y}) rotate(${state.guniya.rotation}, 100, 22.5)`);
+    const cx = (state.guniya.width || 200) / 2;
+    const cy = (state.guniya.height || 45) / 2;
+    guniyaEl.setAttribute('transform', `translate(${state.guniya.x}, ${state.guniya.y}) rotate(${state.guniya.rotation}, ${cx.toFixed(1)}, ${cy.toFixed(1)})`);
   }
 
   // =========================================================================
@@ -1316,19 +1405,25 @@
       gHandles.style.display = 'none';
     }
 
-    const decStr = Number(areaDecimal).toFixed(2);
-    // Badge sizing: strictly screen-pixel bounded via s2w so labels stay compact and never cover the plot
     const s2wBadge = getScreenPixelToWorld();
-    let badgeW = Math.min(46 * s2wBadge, plotW * 0.45);
-    let badgeH = Math.min(18 * s2wBadge, plotH * 0.35);
+    const plotTitle = `Plot ${dag}`;
+    const areaDecVal = Number(areaDecimal);
+    const areaSqFtVal = Number(areaSqFt);
+    const areaSubText = areaDecVal >= 0.01 
+      ? `${areaDecVal.toFixed(2)} Dec` 
+      : `${Math.round(areaSqFtVal)} sq.ft`;
 
-    const font1 = Math.min(badgeH * 0.38, 10.0 * s2wBadge);
-    const font2 = Math.min(badgeH * 0.30, 8.5 * s2wBadge);
+    // AutoCAD Annotative Sizing: clear, sharp text that never smudges or becomes microscopic
+    const fontPlot = 11.5 * s2wBadge;
+    const fontArea = 9.5 * s2wBadge;
+    const maxChars = Math.max(plotTitle.length, areaSubText.length);
+    const badgeW = Math.max(52 * s2wBadge, (maxChars * 6.8 + 12) * s2wBadge);
+    const badgeH = 26.0 * s2wBadge;
 
     gLabel.innerHTML = `
-      <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(2.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.92)" stroke="#f59e0b" stroke-width="1.0" vector-effect="non-scaling-stroke"/>
-      <text x="${cx.toFixed(1)}" y="${(cy - badgeH * 0.08).toFixed(1)}" fill="#fbbf24" font-size="${font1.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${dag === '__mw__' ? 'Mouza' : 'Plot ' + toBengaliNum(dag)}</text>
-      <text x="${cx.toFixed(1)}" y="${(cy + badgeH * 0.36).toFixed(1)}" fill="#38bdf8" font-size="${font2.toFixed(1)}" font-weight="bold" font-family="'Noto Sans Bengali', sans-serif" text-anchor="middle">${toBengaliNum(decStr)} Decimal</text>
+      <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(3.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.90)" stroke="#f59e0b" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <text x="${cx.toFixed(1)}" y="${(cy - 2.5 * s2wBadge).toFixed(1)}" fill="#fbbf24" font-size="${fontPlot.toFixed(1)}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${plotTitle}</text>
+      <text x="${cx.toFixed(1)}" y="${(cy + 8.5 * s2wBadge).toFixed(1)}" fill="#38bdf8" font-size="${fontArea.toFixed(1)}" font-weight="600" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${areaSubText}</text>
     `;
     drawingsGroup.appendChild(gLabel);
 
@@ -2124,17 +2219,8 @@
         const newVertices = detectSmallParcelFromRaster(pt, rx, ry, rw, rh);
         if (!newVertices || newVertices.length < 3) return false;
 
-        // Always replace previous magic-wand result (single-slot approach)
-        // Clear all previous magic-wand-detected DOM elements first
-        const drawingsGroup = document.getElementById('userDrawingsGroup');
-        if (drawingsGroup) {
-          drawingsGroup.querySelectorAll('.magic-wand-detected').forEach(el => el.remove());
-        }
-        // Also remove old mw slot from state.plots
-        if (state.plots['__mw__']) {
-          delete state.plots['__mw__'];
-        }
-        const newDag = '__mw__'; // Fixed slot: only one magic-wand result at a time
+        state.nextDagNumber = (state.nextDagNumber || 200) + 1;
+        const newDag = String(state.nextDagNumber);
 
         const u = getUnitsPerPixel();
         const numV = newVertices.length;
@@ -3158,23 +3244,24 @@ const ribbonTemplates = {
 
     // Project Management (Open, Load, New Project)
   function loadProjectData(projectKey) {
+    const topName = document.getElementById('currentProjectTitle');
     if (projectKey === 'chorbagh') {
-      const topName = document.querySelector('.font-bold.text-slate-200');
       if (topName) topName.textContent = 'Chorbagh_Survey.prj';
+      state.projectName = 'Chorbagh_Survey';
       applyMouzaScale(16);
       showSheet('sheet01');
       selectPlot('126');
       logCommand('PROJECT: Loaded Chorbagh_Survey.prj (CS 1920, Scale 1:3960).');
     } else if (projectKey === 'dakshinpara') {
-      const topName = document.querySelector('.font-bold.text-slate-200');
       if (topName) topName.textContent = 'Dakshinpara_Survey.prj';
+      state.projectName = 'Dakshinpara_Survey';
       applyMouzaScale(32);
       showSheet('sheet01');
       selectPlot('148');
       logCommand('PROJECT: Loaded Dakshinpara_Survey.prj (RS 1985, Scale 1:1980).');
     } else if (projectKey === 'rupganj') {
-      const topName = document.querySelector('.font-bold.text-slate-200');
       if (topName) topName.textContent = 'Rupganj_CityCadastral.prj';
+      state.projectName = 'Rupganj_CityCadastral';
       applyMouzaScale(80);
       showSheet('sheet01');
       selectPlot('130');
@@ -3229,14 +3316,18 @@ const ribbonTemplates = {
       const s = state.sheets[key];
       const tabEl = document.createElement('div');
       const isActive = (key === state.currentSheet);
-      tabEl.className = `dwg-tab cursor-pointer ${isActive ? 'active' : ''}`;
+      tabEl.className = `dwg-tab cursor-pointer select-none ${isActive ? 'active' : ''}`;
       tabEl.setAttribute('data-sheet', key);
       tabEl.innerHTML = `
-        <span>${s.name || key + '.dwg'}</span>
+        <span class="tab-label" title="Double-click to rename sheet">${s.name || key + '.dwg'}</span>
         <span class="dwg-tab-close" title="Close Sheet">✕</span>
       `;
       bindTabEvents(tabEl);
-      container.insertBefore(tabEl, addBtn);
+      if (addBtn) {
+        container.insertBefore(tabEl, addBtn);
+      } else {
+        container.appendChild(tabEl);
+      }
     });
   }
 
@@ -3251,13 +3342,32 @@ const ribbonTemplates = {
         saveCurrentSheetState();
         document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        if (sheetKey === 'sheet01' || sheetKey === 'sheet02' || sheetKey === 'combined' || sheetKey === 'dakshinpara') {
-          showSheet(sheetKey);
-        } else {
+        state.currentSheet = sheetKey;
+        if (state.sheets && state.sheets[sheetKey]) {
           loadSheetState(sheetKey);
+        } else if (sheetKey === 'sheet01' || sheetKey === 'sheet02' || sheetKey === 'dakshinpara') {
+          showSheet(sheetKey);
         }
-        const name = tab.querySelector('span')?.textContent?.trim() || sheetKey;
+        const name = tab.querySelector('.tab-label')?.textContent?.trim() || sheetKey;
         logCommand(`SHEET: Switched to ${name}`);
+      }
+    });
+
+    // Double-click to rename sheet drawing
+    tab.addEventListener('dblclick', (e) => {
+      if (e.target.classList.contains('dwg-tab-close')) return;
+      const sheetKey = tab.getAttribute('data-sheet');
+      const labelSpan = tab.querySelector('.tab-label') || tab.querySelector('span');
+      const currentName = labelSpan?.textContent?.trim() || 'Sheet.dwg';
+      const newName = prompt('Rename Drawing Sheet (.dwg):', currentName);
+      if (newName && newName.trim() && newName.trim() !== currentName) {
+        let clean = newName.trim();
+        if (!clean.endsWith('.dwg')) clean += '.dwg';
+        if (labelSpan) labelSpan.textContent = clean;
+        if (state.sheets && state.sheets[sheetKey]) {
+          state.sheets[sheetKey].name = clean;
+        }
+        logCommand(`SHEET: Renamed to "${clean}".`);
       }
     });
 
@@ -3277,7 +3387,7 @@ const ribbonTemplates = {
       logCommand('SHEET: Cannot close the only remaining sheet tab.');
       return;
     }
-    const name = tab.querySelector('span')?.textContent?.trim() || sheetKey;
+    const name = tab.querySelector('.tab-label')?.textContent?.trim() || sheetKey;
     const wasActive = tab.classList.contains('active');
 
     tab.remove();
@@ -3296,10 +3406,11 @@ const ribbonTemplates = {
 
   function addNewSheetTab() {
     const defaultName = `Sheet_0${Object.keys(state.sheets || {}).length + 1}.dwg`;
-    const sheetName = prompt('  /    (Enter Sheet Name):', defaultName);
+    const sheetName = prompt('Enter New Sheet Drawing Name (.dwg):', defaultName);
     if (!sheetName || !sheetName.trim()) return;
 
-    const cleanName = sheetName.trim();
+    let cleanName = sheetName.trim();
+    if (!cleanName.endsWith('.dwg')) cleanName += '.dwg';
     const sheetKey = 'sheet_' + Date.now();
 
     saveCurrentSheetState();
@@ -3318,28 +3429,32 @@ const ribbonTemplates = {
     document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
 
     const newTab = document.createElement('div');
-    newTab.className = 'dwg-tab active cursor-pointer';
+    newTab.className = 'dwg-tab active cursor-pointer select-none';
     newTab.setAttribute('data-sheet', sheetKey);
     newTab.innerHTML = `
-      <span>${cleanName}</span>
+      <span class="tab-label" title="Double-click to rename sheet">${cleanName}</span>
       <span class="dwg-tab-close" title="Close Sheet">✕</span>
     `;
     bindTabEvents(newTab);
-    container.insertBefore(newTab, addBtn);
+    if (addBtn) {
+      container.insertBefore(newTab, addBtn);
+    } else {
+      container.appendChild(newTab);
+    }
 
     state.currentSheet = sheetKey;
     // Clear drawings canvas for new blank sheet
     const drawingsGroup = document.getElementById('userDrawingsGroup');
     if (drawingsGroup) drawingsGroup.innerHTML = '';
     state.plots = {};
-
-    logCommand(`NEW SHEET: Created and switched to "${cleanName}".`);
+    clearSelectedPlotInfo();
+    logCommand(`SHEET: Created new drawing sheet "${cleanName}".`);
   }
 
   // Project Save & Export Handlers (Desktop Native + Web Blob)
   function saveCurrentProject(customName) {
     saveCurrentSheetState();
-    const topProjName = document.querySelector('.font-bold.text-slate-200')?.textContent?.replace(/\.prj$/i, '') || state.projectName || 'Chorbagh_Survey';
+    const topProjName = document.getElementById('currentProjectTitle')?.textContent?.replace(/\.prj$/i, '') || state.projectName || 'Chorbagh_Survey';
     const projName = customName || topProjName;
 
     const drawingsGroup = document.getElementById('userDrawingsGroup');
@@ -3691,8 +3806,8 @@ const ribbonTemplates = {
             const data = JSON.parse(ev.target.result);
             if (data.projectName) {
               state.projectName = data.projectName;
-              const topName = document.querySelector('.font-bold.text-slate-200');
-              if (topName) topName.textContent = data.projectName + '.prj';
+              const topTitle = document.getElementById('currentProjectTitle');
+              if (topTitle) topTitle.textContent = data.projectName.endsWith('.prj') ? data.projectName : data.projectName + '.prj';
             }
             if (data.scalePreset) {
               applyMouzaScale(data.scalePreset);
@@ -3754,16 +3869,43 @@ const ribbonTemplates = {
     const btnCreateProj = document.getElementById('btnCreateNewProjectConfirm');
     if (btnCreateProj) {
       btnCreateProj.addEventListener('click', () => {
-        const name = document.getElementById('newProjFileName')?.value || 'New_Survey.prj';
-        const mouza = document.getElementById('newProjMouza')?.value || 'Mouza';
+        let rawName = document.getElementById('newProjFileName')?.value?.trim() || 'New_Survey_Project.prj';
+        if (!rawName.endsWith('.prj')) rawName += '.prj';
+        const baseName = rawName.replace(/\.prj$/i, '');
+        const mouza = document.getElementById('newProjMouza')?.value?.trim() || 'Chorbagh';
         const scaleVal = document.getElementById('newProjScale')?.value || '16';
-        
-        const topName = document.querySelector('.font-bold.text-slate-200');
-        if (topName) topName.textContent = name;
-        
+
+        // 1. Update Titlebar project name
+        const topTitle = document.getElementById('currentProjectTitle');
+        if (topTitle) topTitle.textContent = rawName;
+        state.projectName = baseName;
+
+        // 2. Reset sheets to initial sheet matching the project name
+        const initialSheetKey = 'sheet_01';
+        const initialSheetName = `${baseName}_Sheet01.dwg`;
+        state.sheets = {
+          [initialSheetKey]: {
+            name: initialSheetName,
+            drawingsHtml: '',
+            plots: {},
+            selectedDag: null
+          }
+        };
+        state.currentSheet = initialSheetKey;
+
+        // 3. Rebuild DWG Tabs in tab bar
+        rebuildSheetTabs();
+
+        // 4. Clear canvas drawings & plots for fresh project
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) drawingsGroup.innerHTML = '';
+        state.plots = {};
+        clearSelectedPlotInfo();
+
         applyMouzaScale(scaleVal);
         closeModal('modalNewProject');
-        logCommand(`NEW PROJECT: Created ${name} (Mouza: ${mouza}, : ${scaleVal}"=1 ).`);
+        pushUndo(`Create Project (${rawName})`);
+        logCommand(`NEW PROJECT: Created "${rawName}" with Sheet "${initialSheetName}" (Mouza: ${mouza}, Scale: ${scaleVal}" = 1 Mile).`);
       });
     }
 
@@ -5226,5 +5368,10 @@ const ribbonTemplates = {
     zoomExtents,
     updateViewBox
   };
+
+  // Global top-level convenience aliases
+  window.zoomCenter = zoomCenter;
+  window.zoomExtents = zoomExtents;
+  window.toggleVirtualGuniya = toggleVirtualGuniya;
 
 })();

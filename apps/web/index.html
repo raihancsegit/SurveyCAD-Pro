@@ -707,18 +707,8 @@
           <!-- =============================================================
                Virtual Guniya Scale Component (Draggable & Rotatable)
                ============================================================= -->
-          <g id="virtualGuniyaScale" transform="translate(300, 220) rotate(0)" class="hidden cursor-grab">
-            <!-- Ivory/Brass Ruler Body -->
-            <rect x="0" y="0" width="200" height="45" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.5))"/>
-            <!-- Title -->
-            <text x="100" y="27" fill="#78350f" font-size="7.5" font-weight="bold" font-family="'Fira Code', monospace" text-anchor="middle">GUNIYA (100 LINKS = 66 FT)</text>
-            <!-- 10-link & 20-link tick marks -->
-            <path d="M 0 0 v 12 M 20 0 v 8 M 40 0 v 8 M 60 0 v 8 M 80 0 v 8 M 100 0 v 14 M 120 0 v 8 M 140 0 v 8 M 160 0 v 8 M 180 0 v 8 M 200 0 v 12" stroke="#78350f" stroke-width="1"/>
-            <path d="M 0 45 v -12 M 20 45 v -8 M 40 45 v -8 M 60 45 v -8 M 80 45 v -8 M 100 45 v -14 M 120 45 v -8 M 140 45 v -8 M 160 45 v -8 M 180 45 v -8 M 200 45 v -12" stroke="#78350f" stroke-width="1"/>
-            <!-- Numbers -->
-            <text x="2" y="19" fill="#78350f" font-size="6" font-family="monospace">0</text>
-            <text x="96" y="20" fill="#78350f" font-size="6" font-family="monospace">50</text>
-            <text x="185" y="19" fill="#78350f" font-size="6" font-family="monospace">100</text>
+          <g id="virtualGuniyaScale" transform="translate(250, 200) rotate(0)" class="hidden cursor-grab">
+            <!-- Calibrated Guniya Scale rendered dynamically via rebuildGuniyaScale() -->
           </g>
 
         </g>
