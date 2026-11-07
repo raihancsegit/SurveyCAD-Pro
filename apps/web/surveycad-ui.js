@@ -30,7 +30,6 @@
     sheets: {
       'sheet01': { name: 'Chorbagh_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: '126' },
       'sheet02': { name: 'Chorbagh_Sheet02.dwg', drawingsHtml: '', plots: {}, selectedDag: null },
-      'combined': { name: 'Combined_Sheet01_02.dwg', drawingsHtml: '', plots: {}, selectedDag: null },
       'dakshinpara': { name: 'Dakshinpara_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: null }
     },
     activeTool: 'select',
@@ -3272,11 +3271,9 @@ const ribbonTemplates = {
   // Multi-sheet workspace state helper
   function saveCurrentSheetState() {
     if (!state.currentSheet) state.currentSheet = 'sheet01';
+    // If the sheet was closed/deleted, do not re-create it
+    if (!state.sheets || !state.sheets[state.currentSheet]) return;
     const drawingsGroup = document.getElementById('userDrawingsGroup');
-    if (!state.sheets) state.sheets = {};
-    if (!state.sheets[state.currentSheet]) {
-      state.sheets[state.currentSheet] = { name: state.currentSheet + '.dwg' };
-    }
     state.sheets[state.currentSheet].drawingsHtml = drawingsGroup ? drawingsGroup.innerHTML : '';
     state.sheets[state.currentSheet].plots = JSON.parse(JSON.stringify(state.plots || {}));
     state.sheets[state.currentSheet].selectedDag = state.selectedDag;
@@ -3332,21 +3329,32 @@ const ribbonTemplates = {
   }
 
   function bindTabEvents(tab) {
+    if (!tab || tab._tabBound) return;
+    tab._tabBound = true;
+
     tab.addEventListener('click', (e) => {
       if (e.target.classList.contains('dwg-tab-close')) {
+        e.stopPropagation();
         closeSheetTab(tab);
         return;
       }
       const sheetKey = tab.getAttribute('data-sheet');
       if (sheetKey) {
         saveCurrentSheetState();
-        document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('#dwgTabsContainer .dwg-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         state.currentSheet = sheetKey;
         if (state.sheets && state.sheets[sheetKey]) {
           loadSheetState(sheetKey);
-        } else if (sheetKey === 'sheet01' || sheetKey === 'sheet02' || sheetKey === 'dakshinpara') {
-          showSheet(sheetKey);
+        } else {
+          if (!state.sheets) state.sheets = {};
+          state.sheets[sheetKey] = {
+            name: tab.querySelector('.tab-label')?.textContent?.trim() || sheetKey + '.dwg',
+            drawingsHtml: '',
+            plots: {},
+            selectedDag: null
+          };
+          loadSheetState(sheetKey);
         }
         const name = tab.querySelector('.tab-label')?.textContent?.trim() || sheetKey;
         logCommand(`SHEET: Switched to ${name}`);
@@ -3381,6 +3389,7 @@ const ribbonTemplates = {
   }
 
   function closeSheetTab(tab) {
+    if (!tab || !tab.parentNode) return;
     const sheetKey = tab.getAttribute('data-sheet');
     const allTabs = Array.from(document.querySelectorAll('#dwgTabsContainer .dwg-tab:not(#tabStartPage)'));
     if (allTabs.length <= 1) {
@@ -3398,6 +3407,7 @@ const ribbonTemplates = {
     if (wasActive) {
       const remainingTabs = document.querySelectorAll('#dwgTabsContainer .dwg-tab:not(#tabStartPage)');
       if (remainingTabs.length > 0) {
+        state.currentSheet = remainingTabs[0].getAttribute('data-sheet');
         remainingTabs[0].click();
       }
     }
@@ -4419,9 +4429,17 @@ const ribbonTemplates = {
 
     // 10. Multi-Sheet Drawing Tabs Initialization
     function initDwgTabs() {
-      document.querySelectorAll('#dwgTabsContainer .dwg-tab').forEach(tab => {
-        bindTabEvents(tab);
-      });
+      // Save initial canvas state into sheet01
+      if (state.sheets && state.sheets.sheet01 && !state.sheets.sheet01.drawingsHtml) {
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          state.sheets.sheet01.drawingsHtml = drawingsGroup.innerHTML;
+          state.sheets.sheet01.plots = JSON.parse(JSON.stringify(state.plots || {}));
+        }
+      }
+
+      // Rebuild tabs dynamically so all tabs have proper data-sheet, close button and bindings
+      rebuildSheetTabs();
 
       const btnNewDwg = document.getElementById('btnNewDwgTab');
       if (btnNewDwg) {

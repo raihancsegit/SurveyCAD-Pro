@@ -358,21 +358,27 @@
   <div class="h-7 bg-[#13161c] border-b border-[#222630] flex items-center justify-between px-2 flex-shrink-0 z-20">
     <div class="flex items-center gap-0" id="dwgTabsContainer">
       <!-- Hamburger Menu -->
-      <button class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-white mr-1 cursor-pointer" title="File Tabs Menu">
+      <button id="btnFileTabsMenu" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-white mr-1 cursor-pointer" title="File Tabs Menu">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
 
       <!-- Drawing Tabs -->
-      <div class="dwg-tab">Start Page</div>
-      <div class="dwg-tab active">
-        <span>Chorbagh_Sheet01.dwg</span>
-        <span class="dwg-tab-close" title="Close Tab">✕</span>
+      <div class="dwg-tab cursor-pointer select-none" id="tabStartPage" title="Start Page / New Drawing">Start Page</div>
+      <div class="dwg-tab active cursor-pointer select-none" data-sheet="sheet01">
+        <span class="tab-label" title="Double-click to rename sheet">Chorbagh_Sheet01.dwg</span>
+        <span class="dwg-tab-close" title="Close Sheet">✕</span>
       </div>
-      <div class="dwg-tab">Chorbagh_Sheet02.dwg</div>
-      <div class="dwg-tab">Dakshinpara_Sheet01.dwg</div>
+      <div class="dwg-tab cursor-pointer select-none" data-sheet="sheet02">
+        <span class="tab-label" title="Double-click to rename sheet">Chorbagh_Sheet02.dwg</span>
+        <span class="dwg-tab-close" title="Close Sheet">✕</span>
+      </div>
+      <div class="dwg-tab cursor-pointer select-none" data-sheet="dakshinpara">
+        <span class="tab-label" title="Double-click to rename sheet">Dakshinpara_Sheet01.dwg</span>
+        <span class="dwg-tab-close" title="Close Sheet">✕</span>
+      </div>
       
       <!-- Add Tab Button -->
-      <button class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-sky-400 font-bold ml-1 cursor-pointer" title="Add Drawing Tab">+</button>
+      <button id="btnNewDwgTab" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-sky-400 font-bold ml-1 cursor-pointer" title="Add Drawing Tab (+)">+</button>
     </div>
 
     <!-- Active View Preset -->
