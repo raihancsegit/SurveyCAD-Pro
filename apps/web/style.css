@@ -906,3 +906,66 @@ html, body {
   font-weight: bold !important;
 }
 
+/* ========================================================================= */
+/* Print & PDF Export Styling (A4 Landscape & Portrait) */
+/* ========================================================================= */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+
+  /* Hide ribbons, headers, toolbars, sidebars, modals when printing drawing */
+  header, #ribbonRoot, #sidebarContainer, #statusBar, .cad-hud-btn, #hudRasterTools, .cad-modal-header, .cad-modal-footer, .cad-modal-close {
+    display: none !important;
+  }
+
+  /* When printing the Certificate Report */
+  body:has(#modalSurveyReport.show, #modalSurveyReport.active) .cad-modal-backdrop:not(#modalSurveyReport) {
+    display: none !important;
+  }
+  body:has(#modalSurveyReport.show, #modalSurveyReport.active) #modalSurveyReport {
+    display: block !important;
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  body:has(#modalSurveyReport.show, #modalSurveyReport.active) .cad-modal-window {
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  body:has(#modalSurveyReport.show, #modalSurveyReport.active) #cadWorkspace {
+    display: none !important;
+  }
+
+  #printableReportArea {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  /* Standard Canvas Print */
+  #cadWorkspace {
+    background: #ffffff !important;
+  }
+  #cadSvgCanvas {
+    background: #ffffff !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+}
+
+

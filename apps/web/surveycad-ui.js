@@ -3151,20 +3151,20 @@ const ribbonTemplates = {
     file: [
       { label: 'New Project', shortcut: 'Ctrl+N', action: () => openModal('modalNewProject') },
       { label: 'Open Project', shortcut: 'Ctrl+O', action: () => openModal('modalOpenProject') },
-      { label: 'Open Drawing (DWG/DXF)', shortcut: '', action: () => { const inp = document.getElementById('mouzaMapFileInput'); if (inp) inp.click(); } },
+      { label: 'Open Drawing (DWG/DXF)', shortcut: '', action: () => openDrawingFileDialog() },
       { divider: true },
       { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
       { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
       { label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
-      { label: 'Save As', shortcut: 'Ctrl+Shift+S', action: () => logCommand('FILE: Save As Project.') },
+      { label: 'Save As', shortcut: 'Ctrl+Shift+S', action: () => saveProjectAs() },
       { label: 'Export DXF', shortcut: '', action: () => exportDXFFile() },
-      { label: 'Export PDF', shortcut: '', action: () => openModal('modalSurveyReport') },
+      { label: 'Export PDF', shortcut: '', action: () => exportPDFReport() },
       { divider: true },
       { label: 'Print Drawing', shortcut: 'Ctrl+P', action: () => window.print() },
       { label: 'Recent Projects', shortcut: '', action: () => openModal('modalOpenProject') },
-      { label: 'Close Project', shortcut: '', action: () => logCommand('FILE: Project Closed.') },
-      { label: 'Exit', shortcut: 'Alt+F4', action: () => logCommand('FILE: SurveyCAD Pro Exited.') }
+      { label: 'Close Project', shortcut: '', action: () => closeCurrentProject() },
+      { label: 'Exit', shortcut: 'Alt+F4', action: () => exitApplication() }
     ],
     home: [
       { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
@@ -3521,6 +3521,7 @@ const ribbonTemplates = {
     saveCurrentSheetState();
     const topProjName = document.getElementById('currentProjectTitle')?.textContent?.replace(/\.prj$/i, '') || state.projectName || 'Chorbagh_Survey';
     const projName = customName || topProjName;
+    state.projectName = projName;
 
     const drawingsGroup = document.getElementById('userDrawingsGroup');
     const projectData = {
@@ -3556,27 +3557,328 @@ const ribbonTemplates = {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      logCommand(`SAVE: Project "${projName}.prj" downloaded and saved to your computer.`);
+      logCommand(`SAVE PROJECT: "${projName}.prj" downloaded and saved to your computer.`);
     }
   }
 
+  function saveProjectAs() {
+    const curName = (state.projectName || 'Chorbagh_Survey').replace(/\.prj$/i, '');
+    const newName = prompt('Enter Project Name to Save As:', curName);
+    if (!newName || !newName.trim()) return;
+    const cleanName = newName.trim().replace(/[\\/:*?"<>|]/g, '_');
+    state.projectName = cleanName;
+    const topTitle = document.getElementById('currentProjectTitle');
+    if (topTitle) topTitle.textContent = `${cleanName}.prj`;
+    saveCurrentProject(cleanName);
+    logCommand(`SAVE AS: Project saved under new name "${cleanName}.prj".`);
+  }
+
   function exportDXFFile() {
-    if (window.Exporters && typeof window.Exporters.generateDXF === 'function') {
-      const plotsList = Object.values(state.plots).map(p => ({
-        dagNo: p.dag,
-        areaSqFt: p.areaSqFt,
-        points: []
-      }));
-      const dxfContent = window.Exporters.generateDXF(plotsList, [], 'Chorbagh Mouza CS 1920');
-      if (window.electronAPI && typeof window.electronAPI.exportDXF === 'function') {
-        window.electronAPI.exportDXF(dxfContent);
-      } else {
-        window.Exporters.downloadFile(dxfContent, 'Chorbagh_Survey.dxf', 'application/dxf');
+    saveCurrentSheetState();
+    const projName = state.projectName || 'Chorbagh_Survey';
+
+    let dxf = '0\nSECTION\n2\nHEADER\n';
+    dxf += '9\n$ACADVER\n1\nAC1009\n';
+    dxf += '9\n$INSUNITS\n70\n6\n';
+    dxf += '0\nENDSEC\n';
+
+    dxf += '0\nSECTION\n2\nTABLES\n';
+    dxf += '0\nTABLE\n2\nLAYER\n70\n4\n';
+    dxf += '0\nLAYER\n2\n0\n70\n0\n62\n7\n6\nCONTINUOUS\n';
+    dxf += '0\nLAYER\n2\nPLOTS\n70\n0\n62\n3\n6\nCONTINUOUS\n';
+    dxf += '0\nLAYER\n2\nDIMENSIONS\n70\n0\n62\n1\n6\nCONTINUOUS\n';
+    dxf += '0\nLAYER\n2\nANNOTATIONS\n70\n0\n62\n7\n6\nCONTINUOUS\n';
+    dxf += '0\nENDTAB\n';
+    dxf += '0\nENDSEC\n';
+
+    dxf += '0\nSECTION\n2\nENTITIES\n';
+
+    const toCadX = (x) => Number(x || 0).toFixed(4);
+    const toCadY = (y) => (-Number(y || 0)).toFixed(4);
+
+    // 1. Plots from state.plots
+    Object.values(state.plots || {}).forEach(plot => {
+      if (plot.points && plot.points.length > 1) {
+        dxf += '0\nPOLYLINE\n8\nPLOTS\n66\n1\n70\n1\n';
+        plot.points.forEach(pt => {
+          dxf += `0\nVERTEX\n8\nPLOTS\n10\n${toCadX(pt.x)}\n20\n${toCadY(pt.y)}\n30\n0.0\n`;
+        });
+        dxf += '0\nSEQEND\n';
       }
-      logCommand('EXPORT DXF: AutoCAD DXF file generated and downloaded (Chorbagh_Survey.dxf).');
-    } else {
-      logCommand('EXPORT DXF: AutoCAD R12 DXF generated.');
+      if (plot.centroid && plot.dag) {
+        dxf += `0\nTEXT\n8\nANNOTATIONS\n10\n${toCadX(plot.centroid.x)}\n20\n${toCadY(plot.centroid.y)}\n30\n0.0\n40\n12.0\n1\nPlot ${plot.dag}\n`;
+      }
+    });
+
+    // 2. User drawings in #userDrawingsGroup
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (drawingsGroup) {
+      drawingsGroup.querySelectorAll('line').forEach(l => {
+        if (l.closest('.cad-dim-elem')) return;
+        const x1 = parseFloat(l.getAttribute('x1')) || 0;
+        const y1 = parseFloat(l.getAttribute('y1')) || 0;
+        const x2 = parseFloat(l.getAttribute('x2')) || 0;
+        const y2 = parseFloat(l.getAttribute('y2')) || 0;
+        dxf += `0\nLINE\n8\nPLOTS\n10\n${toCadX(x1)}\n20\n${toCadY(y1)}\n30\n0.0\n11\n${toCadX(x2)}\n21\n${toCadY(y2)}\n31\n0.0\n`;
+      });
+
+      drawingsGroup.querySelectorAll('polyline').forEach(pl => {
+        const ptsAttr = pl.getAttribute('points') || '';
+        const pts = ptsAttr.trim().split(/[\s,]+/).reduce((acc, val, idx, arr) => {
+          if (idx % 2 === 0 && arr[idx + 1] !== undefined) {
+            acc.push({ x: parseFloat(val), y: parseFloat(arr[idx + 1]) });
+          }
+          return acc;
+        }, []);
+        if (pts.length > 1) {
+          dxf += '0\nPOLYLINE\n8\nPLOTS\n66\n1\n70\n0\n';
+          pts.forEach(p => {
+            dxf += `0\nVERTEX\n8\nPLOTS\n10\n${toCadX(p.x)}\n20\n${toCadY(p.y)}\n30\n0.0\n`;
+          });
+          dxf += '0\nSEQEND\n';
+        }
+      });
+
+      drawingsGroup.querySelectorAll('polygon').forEach(pg => {
+        const ptsAttr = pg.getAttribute('points') || '';
+        const pts = ptsAttr.trim().split(/[\s,]+/).reduce((acc, val, idx, arr) => {
+          if (idx % 2 === 0 && arr[idx + 1] !== undefined) {
+            acc.push({ x: parseFloat(val), y: parseFloat(arr[idx + 1]) });
+          }
+          return acc;
+        }, []);
+        if (pts.length > 1) {
+          dxf += '0\nPOLYLINE\n8\nPLOTS\n66\n1\n70\n1\n';
+          pts.forEach(p => {
+            dxf += `0\nVERTEX\n8\nPLOTS\n10\n${toCadX(p.x)}\n20\n${toCadY(p.y)}\n30\n0.0\n`;
+          });
+          dxf += '0\nSEQEND\n';
+        }
+      });
+
+      drawingsGroup.querySelectorAll('circle').forEach(c => {
+        const cx = parseFloat(c.getAttribute('cx')) || 0;
+        const cy = parseFloat(c.getAttribute('cy')) || 0;
+        const r = parseFloat(c.getAttribute('r')) || 10;
+        dxf += `0\nCIRCLE\n8\nPLOTS\n10\n${toCadX(cx)}\n20\n${toCadY(cy)}\n30\n0.0\n40\n${r.toFixed(4)}\n`;
+      });
+
+      drawingsGroup.querySelectorAll('.cad-dim-elem').forEach(dm => {
+        dm.querySelectorAll('line').forEach(l => {
+          const x1 = parseFloat(l.getAttribute('x1')) || 0;
+          const y1 = parseFloat(l.getAttribute('y1')) || 0;
+          const x2 = parseFloat(l.getAttribute('x2')) || 0;
+          const y2 = parseFloat(l.getAttribute('y2')) || 0;
+          dxf += `0\nLINE\n8\nDIMENSIONS\n10\n${toCadX(x1)}\n20\n${toCadY(y1)}\n30\n0.0\n11\n${toCadX(x2)}\n21\n${toCadY(y2)}\n31\n0.0\n`;
+        });
+        const t = dm.querySelector('text');
+        if (t) {
+          const tx = parseFloat(t.getAttribute('x')) || 0;
+          const ty = parseFloat(t.getAttribute('y')) || 0;
+          const txt = t.textContent.trim();
+          dxf += `0\nTEXT\n8\nDIMENSIONS\n10\n${toCadX(tx)}\n20\n${toCadY(ty)}\n30\n0.0\n40\n8.0\n1\n${txt}\n`;
+        }
+      });
     }
+
+    dxf += '0\nENDSEC\n0\nEOF\n';
+
+    const blob = new Blob([dxf], { type: 'application/dxf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projName}.dxf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    logCommand(`EXPORT DXF: AutoCAD DXF file "${projName}.dxf" downloaded successfully.`);
+  }
+
+  function updateSurveyReportModal() {
+    const p = state.plots[state.selectedDag] || {};
+    const repMouza = document.getElementById('repMouza');
+    if (repMouza) repMouza.textContent = p.mouza || state.projectName || 'Chorbagh';
+    const repSheet = document.getElementById('repSheet');
+    if (repSheet) repSheet.textContent = state.sheets[state.currentSheet]?.name || '01 (CS)';
+    const repDag = document.getElementById('repDag');
+    if (repDag) repDag.textContent = state.selectedDag || 'N/A';
+    const repScale = document.getElementById('repScale');
+    if (repScale) repScale.textContent = `${state.scalePreset}" = 1 Mile (1:${state.scaleFactor})`;
+    const repArea = document.getElementById('repArea');
+    if (repArea) {
+      const sqft = document.getElementById('selectedDagCenterSqft')?.textContent || '12,960.00 sq.ft';
+      const dec = document.getElementById('selectedDagCenterDec')?.textContent || '(30.00 Decimal)';
+      repArea.textContent = `${sqft} ${dec}`;
+    }
+    const repDate = document.getElementById('repDate');
+    if (repDate) repDate.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function exportPDFReport() {
+    updateSurveyReportModal();
+    openModal('modalSurveyReport');
+    logCommand('EXPORT PDF: Survey Report Certificate opened. Click "Print / Save as PDF" to save or print.');
+  }
+
+  function closeCurrentProject() {
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (drawingsGroup) drawingsGroup.innerHTML = '';
+    detachMouzaRaster();
+    state.selectedDag = null;
+    state.drawingPoints = [];
+    state.dimensionPoints = [];
+    state.projectName = 'Untitled_Drawing';
+    const topTitle = document.getElementById('currentProjectTitle');
+    if (topTitle) topTitle.textContent = 'Untitled_Drawing.dwg';
+    state.sheets = {
+      'sheet01': { name: 'Drawing1.dwg', drawingsHtml: '', plots: {}, selectedDag: null }
+    };
+    state.currentSheet = 'sheet01';
+    rebuildSheetTabs();
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = 1200;
+    viewport.height = 700;
+    updateViewBox();
+    logCommand('CLOSE PROJECT: Workspace reset to clean blank drawing.');
+  }
+
+  function exitApplication() {
+    if (window.electronAPI && typeof window.electronAPI.exit === 'function') {
+      window.electronAPI.exit();
+    } else {
+      closeCurrentProject();
+      logCommand('EXIT: SurveyCAD Pro session closed.');
+    }
+  }
+
+  function openDrawingFileDialog() {
+    const inp = document.getElementById('drawingFileInput') || document.getElementById('projectFileInput');
+    if (inp) inp.click();
+  }
+
+  function parseAndLoadDXF(dxfText, filename = 'drawing.dxf') {
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (!drawingsGroup) return;
+
+    const lines = dxfText.split(/\r?\n/);
+    let inEntities = false;
+    let currentEntity = null;
+    let code = null;
+    let val = null;
+    let entityData = {};
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    function updateBBox(x, y) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+
+    for (let i = 0; i < lines.length - 1; i += 2) {
+      code = parseInt(lines[i].trim(), 10);
+      val = lines[i + 1].trim();
+
+      if (code === 2 && val === 'ENTITIES') {
+        inEntities = true;
+        continue;
+      }
+      if (code === 0 && val === 'ENDSEC') {
+        inEntities = false;
+        break;
+      }
+      if (!inEntities) continue;
+
+      if (code === 0) {
+        commitEntity(currentEntity, entityData);
+        currentEntity = val;
+        entityData = {};
+      } else {
+        if (!entityData[code]) entityData[code] = [];
+        entityData[code].push(val);
+      }
+    }
+    commitEntity(currentEntity, entityData);
+
+    function commitEntity(type, data) {
+      if (!type) return;
+      if (type === 'LINE') {
+        const x1 = parseFloat(data[10]?.[0] || 0);
+        const y1 = -parseFloat(data[20]?.[0] || 0);
+        const x2 = parseFloat(data[11]?.[0] || 0);
+        const y2 = -parseFloat(data[21]?.[0] || 0);
+        updateBBox(x1, y1);
+        updateBBox(x2, y2);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1.toFixed(1));
+        line.setAttribute('y1', y1.toFixed(1));
+        line.setAttribute('x2', x2.toFixed(1));
+        line.setAttribute('y2', y2.toFixed(1));
+        line.setAttribute('stroke', '#38bdf8');
+        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        drawingsGroup.appendChild(line);
+      } else if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
+        const xs = data[10] || [];
+        const ys = data[20] || [];
+        const pts = [];
+        for (let j = 0; j < Math.min(xs.length, ys.length); j++) {
+          const px = parseFloat(xs[j]);
+          const py = -parseFloat(ys[j]);
+          updateBBox(px, py);
+          pts.push(`${px.toFixed(1)},${py.toFixed(1)}`);
+        }
+        if (pts.length > 1) {
+          const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+          pl.setAttribute('points', pts.join(' '));
+          pl.setAttribute('fill', 'none');
+          pl.setAttribute('stroke', '#22c55e');
+          pl.setAttribute('stroke-width', '1.8');
+          pl.setAttribute('vector-effect', 'non-scaling-stroke');
+          drawingsGroup.appendChild(pl);
+        }
+      } else if (type === 'CIRCLE') {
+        const cx = parseFloat(data[10]?.[0] || 0);
+        const cy = -parseFloat(data[20]?.[0] || 0);
+        const r = parseFloat(data[40]?.[0] || 10);
+        updateBBox(cx - r, cy - r);
+        updateBBox(cx + r, cy + r);
+        const circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circ.setAttribute('cx', cx.toFixed(1));
+        circ.setAttribute('cy', cy.toFixed(1));
+        circ.setAttribute('r', r.toFixed(1));
+        circ.setAttribute('fill', 'none');
+        circ.setAttribute('stroke', '#38bdf8');
+        circ.setAttribute('stroke-width', '1.5');
+        circ.setAttribute('vector-effect', 'non-scaling-stroke');
+        drawingsGroup.appendChild(circ);
+      } else if (type === 'TEXT') {
+        const tx = parseFloat(data[10]?.[0] || 0);
+        const ty = -parseFloat(data[20]?.[0] || 0);
+        const str = data[1]?.[0] || '';
+        updateBBox(tx, ty);
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('x', tx.toFixed(1));
+        txt.setAttribute('y', ty.toFixed(1));
+        txt.setAttribute('fill', '#ffffff');
+        txt.setAttribute('font-size', '12');
+        txt.setAttribute('font-family', 'sans-serif');
+        txt.textContent = str;
+        drawingsGroup.appendChild(txt);
+      }
+    }
+
+    if (minX !== Infinity && maxX !== -Infinity) {
+      viewport.x = minX - 40;
+      viewport.y = minY - 40;
+      viewport.width = Math.max(200, (maxX - minX) + 80);
+      viewport.height = Math.max(150, (maxY - minY) + 80);
+      updateViewBox();
+    }
+    pushUndo(`Import DXF (${filename})`);
+    logCommand(`OPEN DXF: Loaded "${filename}" into workspace successfully.`);
   }
 
   function exportKMLFile() {
@@ -3860,65 +4162,87 @@ const ribbonTemplates = {
       });
     }
 
-    const projInput = document.getElementById('projectFileInput');
-    if (projInput) {
-      projInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    function handleFileSelected(file) {
+      if (!file) return;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.dxf')) {
         const reader = new FileReader();
         reader.onload = (ev) => {
-          try {
-            const data = JSON.parse(ev.target.result);
-            if (data.projectName) {
-              state.projectName = data.projectName;
-              const topTitle = document.getElementById('currentProjectTitle');
-              if (topTitle) topTitle.textContent = data.projectName.endsWith('.prj') ? data.projectName : data.projectName + '.prj';
-            }
-            if (data.scalePreset) {
-              applyMouzaScale(data.scalePreset);
-            }
-            if (data.plots) {
-              state.plots = data.plots;
-            }
-            if (data.sheets) {
-              state.sheets = data.sheets;
-              rebuildSheetTabs();
-            }
-            if (data.drawingsHtml) {
-              const drawingsGroup = document.getElementById('userDrawingsGroup');
-              if (drawingsGroup) {
-                drawingsGroup.innerHTML = data.drawingsHtml;
-                drawingsGroup.querySelectorAll('.mouza-plot').forEach(poly => {
-                  poly.addEventListener('click', (pev) => {
-                    pev.stopPropagation();
-                    const dag = poly.getAttribute('data-dag');
-                    if (dag) selectPlot(dag);
-                  });
-                });
-              }
-            }
-            if (data.rasterState && data.rasterState.src) {
-              rasterState.src = data.rasterState.src;
-              rasterState.filename = data.rasterState.filename || 'mouza.jpg';
-              rasterState.x = data.rasterState.x || 180;
-              rasterState.y = data.rasterState.y || 150;
-              rasterState.width = data.rasterState.width || 750;
-              rasterState.height = data.rasterState.height || 550;
-              rasterState.opacity = data.rasterState.opacity || 0.8;
-              rasterState.sideBySide = !!data.rasterState.sideBySide;
-              updateRasterDOM();
-            }
-            if (data.selectedDag && state.plots[data.selectedDag]) {
-              selectPlot(data.selectedDag);
-            }
-            pushUndo(`Open Project (${file.name})`);
-            logCommand(`PROJECT: Successfully loaded "${file.name}" from your computer.`);
-          } catch (err) {
-            logCommand(`PROJECT: File ${file.name} opened.`);
-          }
+          parseAndLoadDXF(ev.target.result, file.name);
         };
         reader.readAsText(file);
-      });
+        return;
+      }
+      if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
+        const reader = new FileReader();
+        reader.onload = (loadEvent) => {
+          attachMouzaRaster(loadEvent.target.result, file.name);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          if (data.projectName) {
+            state.projectName = data.projectName;
+            const topTitle = document.getElementById('currentProjectTitle');
+            if (topTitle) topTitle.textContent = data.projectName.endsWith('.prj') ? data.projectName : data.projectName + '.prj';
+          }
+          if (data.scalePreset) {
+            applyMouzaScale(data.scalePreset);
+          }
+          if (data.plots) {
+            state.plots = data.plots;
+          }
+          if (data.sheets) {
+            state.sheets = data.sheets;
+            rebuildSheetTabs();
+          }
+          if (data.drawingsHtml) {
+            const drawingsGroup = document.getElementById('userDrawingsGroup');
+            if (drawingsGroup) {
+              drawingsGroup.innerHTML = data.drawingsHtml;
+              drawingsGroup.querySelectorAll('.mouza-plot').forEach(poly => {
+                poly.addEventListener('click', (pev) => {
+                  pev.stopPropagation();
+                  const dag = poly.getAttribute('data-dag');
+                  if (dag) selectPlot(dag);
+                });
+              });
+            }
+          }
+          if (data.rasterState && data.rasterState.src) {
+            rasterState.src = data.rasterState.src;
+            rasterState.filename = data.rasterState.filename || 'mouza.jpg';
+            rasterState.x = data.rasterState.x || 180;
+            rasterState.y = data.rasterState.y || 150;
+            rasterState.width = data.rasterState.width || 750;
+            rasterState.height = data.rasterState.height || 550;
+            rasterState.opacity = data.rasterState.opacity || 0.8;
+            rasterState.sideBySide = !!data.rasterState.sideBySide;
+            updateRasterDOM();
+          }
+          if (data.selectedDag && state.plots[data.selectedDag]) {
+            selectPlot(data.selectedDag);
+          }
+          pushUndo(`Open Project (${file.name})`);
+          logCommand(`PROJECT: Successfully loaded "${file.name}" from your computer.`);
+        } catch (err) {
+          logCommand(`PROJECT: File ${file.name} opened.`);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    const projInput = document.getElementById('projectFileInput');
+    if (projInput) {
+      projInput.addEventListener('change', (e) => handleFileSelected(e.target.files[0]));
+    }
+    const drawInput = document.getElementById('drawingFileInput');
+    if (drawInput) {
+      drawInput.addEventListener('change', (e) => handleFileSelected(e.target.files[0]));
     }
 
     // Sample Project Item Clicks
@@ -4995,15 +5319,34 @@ const ribbonTemplates = {
         }
       }
 
-      // 2. Global Save & Open Shortcuts (Ctrl+S, Ctrl+O)
+      // 2. Global File Shortcuts (Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+N, Ctrl+P, Ctrl+I)
       if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        saveCurrentProject();
+        if (e.shiftKey) {
+          saveProjectAs();
+        } else {
+          saveCurrentProject();
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) {
         e.preventDefault();
         openModal('modalOpenProject');
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        openModal('modalNewProject');
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        exportPDFReport();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        openModal('modalMouzaImport');
         return;
       }
 
@@ -5441,8 +5784,13 @@ const ribbonTemplates = {
     openModal,
     closeModal,
     saveCurrentProject,
+    saveProjectAs,
     loadProjectData,
     exportDXFFile,
+    exportPDFReport,
+    closeCurrentProject,
+    openDrawingFileDialog,
+    parseAndLoadDXF,
     exportKMLFile,
     toggleGrid,
     zoomCenter,
@@ -5454,5 +5802,10 @@ const ribbonTemplates = {
   window.zoomCenter = zoomCenter;
   window.zoomExtents = zoomExtents;
   window.toggleVirtualGuniya = toggleVirtualGuniya;
+  window.saveCurrentProject = saveCurrentProject;
+  window.saveProjectAs = saveProjectAs;
+  window.exportDXFFile = exportDXFFile;
+  window.exportPDFReport = exportPDFReport;
+  window.closeCurrentProject = closeCurrentProject;
 
 })();
