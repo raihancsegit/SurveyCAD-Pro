@@ -861,7 +861,7 @@ html, body {
   gap: 4px;
 }
 
-/* AutoCAD Aligned Dimension Elements (Matching Image 5) */
+/* AutoCAD Aligned Dimension Elements (Matching Image 4) */
 .cad-dim-elem {
   cursor: pointer;
   transition: opacity 0.15s ease;
@@ -871,7 +871,7 @@ html, body {
   stroke-width: 1.2px;
 }
 .cad-dim-elem text {
-  fill: #ffffff !important;
+  fill: #f97316 !important;
   font-family: 'Segoe UI', Roboto, 'Fira Code', monospace;
   font-weight: 700;
   user-select: none;
@@ -883,10 +883,13 @@ html, body {
   vector-effect: non-scaling-stroke !important;
 }
 .cad-dim-elem:hover line {
-  stroke: #f59e0b !important;
+  stroke: #fbbf24 !important;
 }
 .cad-dim-elem:hover rect {
-  stroke: #f59e0b !important;
+  stroke: #fbbf24 !important;
+}
+.cad-dim-elem:hover text {
+  fill: #fbbf24 !important;
 }
 .cad-dim-elem.selected line {
   stroke: #38bdf8 !important;

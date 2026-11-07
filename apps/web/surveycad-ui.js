@@ -389,33 +389,33 @@
       }
     });
 
-    // Rescale CAD Aligned Dimensions annotatively live during zoom so they are ALWAYS 100% crisp and readable
+    // Rescale CAD Aligned Dimensions annotatively live during zoom so text is ALWAYS 100% crisp and readable
     document.querySelectorAll('.cad-dim-elem').forEach(g => {
       const rotG = g.querySelector('g[transform]');
       if (!rotG) return;
-      const r = rotG.querySelector('rect');
       const t = rotG.querySelector('text');
-      if (r && t) {
-        const textStr = t.textContent.trim();
-        const textChars = textStr.length;
-        const bw = Math.max(30 * s2wBadges, (textChars * 6.6 + 10) * s2wBadges);
-        const bh = 14.0 * s2wBadges;
-        const fontSz = 10.5 * s2wBadges;
-
+      const r = rotG.querySelector('rect');
+      if (t) {
         const tr = rotG.getAttribute('transform') || '';
         const m = tr.match(/rotate\(\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\)/);
         if (m) {
           const cx = parseFloat(m[2]);
           const cy = parseFloat(m[3]);
-          r.setAttribute('x', (cx - bw / 2).toFixed(1));
-          r.setAttribute('y', (cy - bh / 2).toFixed(1));
-          r.setAttribute('width', bw.toFixed(1));
-          r.setAttribute('height', bh.toFixed(1));
-          r.setAttribute('rx', (2.0 * s2wBadges).toFixed(1));
-
+          const fontSz = 10.5 * s2wBadges;
           t.setAttribute('x', cx.toFixed(1));
-          t.setAttribute('y', (cy + 3.8 * s2wBadges).toFixed(1));
+          t.setAttribute('y', (cy + 3.4 * s2wBadges).toFixed(1));
           t.setAttribute('font-size', fontSz.toFixed(1));
+
+          if (r) {
+            const textChars = t.textContent.trim().length;
+            const bw = Math.max(30 * s2wBadges, (textChars * 6.6 + 10) * s2wBadges);
+            const bh = 14.0 * s2wBadges;
+            r.setAttribute('x', (cx - bw / 2).toFixed(1));
+            r.setAttribute('y', (cy - bh / 2).toFixed(1));
+            r.setAttribute('width', bw.toFixed(1));
+            r.setAttribute('height', bh.toFixed(1));
+            r.setAttribute('rx', (2.0 * s2wBadges).toFixed(1));
+          }
         }
       }
     });
@@ -517,6 +517,9 @@
     width: 750,
     height: 550,
     opacity: 0.85,
+    dpi: 57.5,
+    dpiX: 57.5,
+    dpiY: 57.5,
     isDragging: false,
     isResizing: false,
     startX: 0,
@@ -838,10 +841,11 @@
     if (!guniyaEl) return;
 
     const u = getUnitsPerPixel();
-    // 1000 links = 10 chains = 660 ft
+    // 1000 links = 10 chains = 660 ft (Cadastral standard)
     const targetLengthFeet = 660;
-    const guniyaW = Math.max(160, targetLengthFeet / (u.upp_svg_x || 1.5));
-    const guniyaH = Math.max(32, guniyaW * 0.15);
+    let guniyaW = targetLengthFeet / (u.upp_svg_x || 7.835);
+    guniyaW = Math.max(35, guniyaW);
+    const guniyaH = Math.max(18, guniyaW * 0.24);
 
     state.guniya.width = guniyaW;
     state.guniya.height = guniyaH;
@@ -855,7 +859,7 @@
     let bottomTicks = '';
     let numberLabels = '';
 
-    const fontSz = Math.min(7.5, Math.max(4.8, guniyaH * 0.12)).toFixed(1);
+    const fontSz = Math.min(4.8, Math.max(2.5, guniyaH * 0.14)).toFixed(1);
 
     // Top ticks: 0 to 1000 links (10-link fine divisions)
     for (let i = 0; i <= 100; i++) {
@@ -866,7 +870,7 @@
         // Only label major chains (0, 200, 400, 600, 800, 1000 links) to avoid horizontal cramming
         if (i % 20 === 0) {
           const linkVal = i * 10;
-          numberLabels += `<text x="${x}" y="${(tickH + guniyaH * 0.14).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
+          numberLabels += `<text x="${x}" y="${(tickH + guniyaH * 0.13).toFixed(1)}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">${linkVal}</text>`;
         }
       } else if (i % 5 === 0) {
         tickH = guniyaH * 0.20;
@@ -885,12 +889,12 @@
     }
 
     // Bottom only labels ends and midpoint (0, 500 Links, 1000)
-    const bY = (guniyaH - guniyaH * 0.26 - 1).toFixed(1);
-    numberLabels += `<text x="6" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="start">0</text>`;
+    const bY = (guniyaH - guniyaH * 0.24 - 1).toFixed(1);
+    numberLabels += `<text x="5" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="start">0</text>`;
     numberLabels += `<text x="${(guniyaW / 2).toFixed(1)}" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="middle">500 Links (5 Ch)</text>`;
-    numberLabels += `<text x="${(guniyaW - 6).toFixed(1)}" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="end">1000</text>`;
+    numberLabels += `<text x="${(guniyaW - 5).toFixed(1)}" y="${bY}" fill="#78350f" font-size="${fontSz}" font-weight="bold" font-family="'Segoe UI', Roboto, monospace" text-anchor="end">1000</text>`;
 
-    const titleFont = Math.min(7.2, Math.max(5.0, guniyaH * 0.11)).toFixed(1);
+    const titleFont = Math.min(4.4, Math.max(2.6, guniyaH * 0.13)).toFixed(1);
     const midX = (guniyaW / 2).toFixed(1);
 
     guniyaEl.innerHTML = `
@@ -907,7 +911,7 @@
       ${numberLabels}
       
       <!-- Center Title: Single crisp clean inscription -->
-      <text x="${midX}" y="${(guniyaH * 0.54).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" letter-spacing="0.5px" text-anchor="middle">GUNIA • 1000 LINKS (10 CHAINS = 660 FT)</text>
+      <text x="${midX}" y="${(guniyaH * 0.54).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" letter-spacing="0.4px" text-anchor="middle">GUNIA • 1000 LINKS (10 CH = 660 FT)</text>
     `;
 
     updateGuniyaTransform();
@@ -1092,8 +1096,9 @@
   // Area = Shoelace formula in World coordinates
   // =========================================================================
   function getUnitsPerPixel() {
-    const dpiX = Number(rasterState.dpiX || rasterState.dpi) || 300;
-    const dpiY = Number(rasterState.dpiY || rasterState.dpi) || 300;
+    const defaultDpi = 57.5; // Cadastral Mouza sheet standard (115px = 10 chains = 660 ft at 16"=1 mile)
+    const dpiX = Number(rasterState.dpiX || rasterState.dpi) || defaultDpi;
+    const dpiY = Number(rasterState.dpiY || rasterState.dpi) || defaultDpi;
     const scale = Number(state.scaleFactor) || 3960;
 
     // Unit factor to convert inches to target unit (AutoCAD standard)
@@ -1165,7 +1170,7 @@
     const inputFactor = document.getElementById('inputCustomScaleFactor');
     if (inputFactor) inputFactor.value = factor;
     const inputDpi = document.getElementById('inputCustomScaleDpi');
-    if (inputDpi) inputDpi.value = rasterState.dpi || 300;
+    if (inputDpi) inputDpi.value = rasterState.dpi || 57.5;
 
     // Update active state on modal scale buttons
     // Direct Custom AutoCAD Scale & DPI Apply Button
@@ -1173,7 +1178,7 @@
     if (btnDirectScale) {
       btnDirectScale.addEventListener('click', () => {
         const factor = parseFloat(document.getElementById('inputCustomScaleFactor')?.value) || 3960;
-        const dpi = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 300;
+        const dpi = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 57.5;
         const unit = document.getElementById('selectScaleUnit')?.value || 'ft';
         state.unit = unit;
         applyMouzaScale(null, factor, dpi);
@@ -1193,7 +1198,7 @@
       }
     });
 
-    logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 300} DPI.`);
+    logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 57.5} DPI.`);
   }
 
   // =========================================================================
@@ -1774,7 +1779,7 @@
 
   // =========================================================================
   // AUTOCAD ALIGNED DIMENSION GENERATOR (IMAGE 4 STANDARD)
-  // Extension lines, offset dimension line, 45-deg oblique ticks, feet-inch badge
+  // Inline gap, parallel line, 45-deg ticks, CAD orange text, zero black box
   // =========================================================================
   function createAlignedDimension(p1, p2, options = {}) {
     const drawingsGroup = document.getElementById('userDrawingsGroup');
@@ -1813,10 +1818,10 @@
       ny = -ny;
     }
 
-    const offsetDist = (options.offset || 16.0) * s2w;
-    const extPast = 3.5 * s2w;
-    const extOffset = 1.5 * s2w;
-    const tickSize = 4.0 * s2w;
+    const offsetDist = (options.offset || 12.0) * s2w;
+    const extPast = 2.0 * s2w;
+    const extOffset = 1.0 * s2w;
+    const tickSize = 3.5 * s2w;
 
     // Dimension line endpoints
     const q1x = p1.x + nx * offsetDist;
@@ -1824,13 +1829,13 @@
     const q2x = p2.x + nx * offsetDist;
     const q2y = p2.y + ny * offsetDist;
 
-    // Extension line 1
+    // Extension line 1 (subtle, non-shooting)
     const e1_startX = p1.x + nx * extOffset;
     const e1_startY = p1.y + ny * extOffset;
     const e1_endX = q1x + nx * extPast;
     const e1_endY = q1y + ny * extPast;
 
-    // Extension line 2
+    // Extension line 2 (subtle, non-shooting)
     const e2_startX = p2.x + nx * extOffset;
     const e2_startY = p2.y + ny * extOffset;
     const e2_endX = q2x + nx * extPast;
@@ -1850,29 +1855,44 @@
       textAngle += 180;
     }
 
+    // In-line broken line gap calculation (AutoCAD standard)
+    const textChars = formattedText.length;
+    const gapHalf = Math.max(8.0 * s2w, (textChars * 3.4 + 4) * s2w);
+
+    let dimLinesHtml = '';
+    if (segLen > gapHalf * 2.2) {
+      const g1x = tmx - ux * gapHalf;
+      const g1y = tmy - uy * gapHalf;
+      const g2x = tmx + ux * gapHalf;
+      const g2y = tmy + uy * gapHalf;
+      dimLinesHtml = `
+        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${g1x.toFixed(1)}" y2="${g1y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <line x1="${g2x.toFixed(1)}" y1="${g2y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      `;
+    } else {
+      dimLinesHtml = `
+        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      `;
+    }
+
     const dimId = 'cad_dim_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'cad-dim-elem');
     g.setAttribute('data-dim-id', dimId);
     g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
 
-    const textChars = formattedText.length;
-    const bgW = Math.max(30 * s2w, (textChars * 6.6 + 10) * s2w);
-    const bgH = 14.0 * s2w;
-
     g.innerHTML = `
-      <!-- Extension lines -->
-      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke" opacity="0.9"/>
-      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke" opacity="0.9"/>
-      <!-- Dimension line -->
-      <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
-      <!-- Oblique ticks -->
+      <!-- Extension lines (subtle, cleanly bounded) -->
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.8"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.8"/>
+      <!-- Dimension line with center gap -->
+      ${dimLinesHtml}
+      <!-- Oblique architectural ticks (Proper endpoints with NO runaway coordinates) -->
       <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
-      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2x + tx).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
-      <!-- Label with clean knockout matching Image 5 -->
+      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      <!-- AutoCAD In-Line Dimension Text (Clean CAD orange, NO dark pill, matching Image 4) -->
       <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
-        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.0 * s2w}" fill="#0f172a" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
-        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.8 * s2w).toFixed(1)}" fill="#ffffff" font-size="${10.5 * s2w}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
+        <text x="${tmx.toFixed(1)}" y="${(tmy + 3.4 * s2w).toFixed(1)}" fill="#f97316" font-size="${(10.5 * s2w).toFixed(1)}" font-weight="700" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
       </g>
     `;
 
@@ -2669,6 +2689,10 @@
       hdrTitle.setAttribute('x', rasterState.x + 10);
       hdrTitle.setAttribute('y', rasterState.y - 8);
       hdrTitle.textContent = rasterState.filename || 'Scanned Mouza Map';
+    }
+    const btnClose = document.getElementById('btnRasterCloseGroup');
+    if (btnClose) {
+      btnClose.setAttribute('transform', `translate(${rasterState.x + rasterState.width - 22}, ${rasterState.y - 21})`);
     }
     if (btnSide) {
       btnSide.setAttribute('x', rasterState.x + rasterState.width - 48);
@@ -5296,6 +5320,14 @@ const ribbonTemplates = {
 
     const btnHideSvg = document.getElementById('btnRasterHideSvg');
     if (btnHideSvg) btnHideSvg.addEventListener('click', detachMouzaRaster);
+
+    const btnCloseSvg = document.getElementById('btnRasterCloseGroup');
+    if (btnCloseSvg) {
+      btnCloseSvg.addEventListener('click', (e) => {
+        e.stopPropagation();
+        detachMouzaRaster();
+      });
+    }
 
     const hudOpacity = document.getElementById('hudRasterOpacity');
     if (hudOpacity) {
