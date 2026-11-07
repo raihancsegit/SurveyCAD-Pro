@@ -246,6 +246,10 @@
             <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M2 12l4-4m-4 4l4 4m16-4l-4-4m4 4l-4 4"/></svg>
             <span class="ribbon-btn-label">Scale</span>
           </button>
+          <button class="ribbon-btn" id="rbGuniyaMatch" title="Match Virtual Guniya Scale to Map Scale Bar (10 Chains = 660 Ft)">
+            <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 21 21 21 21 7 3 21"/><line x1="7" y1="21" x2="7" y2="18"/><line x1="11" y1="21" x2="11" y2="18"/><line x1="15" y1="21" x2="15" y2="18"/></svg>
+            <span class="ribbon-btn-label text-amber-400 font-semibold">Match 10 Ch</span>
+          </button>
           <button class="ribbon-btn" id="rbGeoRefer" title="Geo-Reference WGS84">
             <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
             <span class="ribbon-btn-label">Geo-Refer.</span>
@@ -1487,6 +1491,24 @@
           <button id="btnApplyDirectScaleFactor" class="w-full py-1.5 px-3 bg-sky-600 hover:bg-sky-500 text-white rounded text-[11px] font-bold transition cursor-pointer">
             Apply AutoCAD DPI Scale
           </button>
+        </div>
+
+        <!-- Direct 2-Point Align to Printed Map Scale Bar (10 Chains = 660 Ft) -->
+        <div class="border-t border-slate-800 pt-3">
+          <div class="p-3 rounded-lg bg-sky-950/40 border border-sky-500/30">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                <span>🎯 Match 10 Chains Scale Bar (Auto-Align)</span>
+              </span>
+              <span class="text-[10px] text-amber-300 font-mono font-bold">10 Ch = 660 Ft</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mb-2 leading-relaxed">
+              মৌজা ম্যাপের প্রিন্ট করা স্কেল বারের <b>০ চেইন</b> এবং <b>১০ চেইন</b> প্রান্তে ২ বার ক্লিক করলেই ভার্চুয়াল গুনিয়া এবং সমস্ত ড্রয়িং ও ডাইমেনশন স্কেল ১:১ মিলে যাবে।
+            </p>
+            <button id="btnModalCalib2Pt" type="button" class="w-full py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow">
+              <span>🎯 Match Guniya to Map Scale Bar (10 Chains)</span>
+            </button>
+          </div>
         </div>
 
         <div class="border-t border-slate-800 pt-3">

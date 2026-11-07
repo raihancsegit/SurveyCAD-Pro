@@ -71,10 +71,21 @@
       x: 340,
       y: 240,
       rotation: 0,
+      width: 180,
+      height: 45,
+      customWidth: null,
+      calibratedUpp: null,
+      origCalibratedWidth: null,
+      origRasterWidth: null,
       isDragging: false,
       dragStartX: 0,
-      dragStartY: 0
+      dragStartY: 0,
+      isResizing: false,
+      resizeStartX: 0,
+      origWidth: 0
     },
+    isCalibratingScale: false,
+    calibrationPoints: [],
     pan: {
       isPanning: false,
       startX: 0,
@@ -580,6 +591,14 @@
         rasterCache.height = offCanvas.height;
         rasterCache.loaded = true;
         rasterCache.imageObj = imgObj;
+
+        // Auto-preserve natural aspect ratio to avoid squishing
+        if (imgObj.naturalWidth && imgObj.naturalHeight && rasterState.width > 0) {
+          rasterState.height = Math.round(rasterState.width * (imgObj.naturalHeight / imgObj.naturalWidth));
+          rasterState.origH = rasterState.height;
+          updateRasterDOM();
+        }
+        rebuildGuniyaScale();
       } catch (e) {
         console.warn('Cache raster image load error:', e);
       }
@@ -858,19 +877,28 @@
   // 2. Virtual Guniya Scale Controller (Physically Calibrated to Mouza Map)
   // Standard 2-inch Cadastral Guniya (1000 Links = 10 Chains = 660 Feet)
   // =========================================================================
-  function rebuildGuniyaScale() {
+  function rebuildGuniyaScale(overrideWidth = null) {
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (!guniyaEl) return;
 
-    const u = getUnitsPerPixel();
     // 1000 links = 10 chains = 660 ft (Cadastral standard)
     const targetLengthFeet = 660;
-    let guniyaW = targetLengthFeet / (u.upp_svg_x || 7.835);
-    guniyaW = Math.max(35, guniyaW);
-    const guniyaH = Math.max(18, guniyaW * 0.24);
+    let guniyaW;
+    if (overrideWidth) {
+      guniyaW = overrideWidth;
+    } else if (state.guniya.customWidth) {
+      guniyaW = state.guniya.customWidth;
+    } else {
+      const u = getUnitsPerPixel();
+      guniyaW = targetLengthFeet / (u.upp_svg_x || 7.835);
+    }
+    guniyaW = Math.max(40, guniyaW);
+    const guniyaH = Math.max(20, guniyaW * 0.24);
 
     state.guniya.width = guniyaW;
     state.guniya.height = guniyaH;
+    state.guniya.customWidth = guniyaW;
+    state.guniya.calibratedUpp = targetLengthFeet / guniyaW;
 
     const numMajor = 10; // 10 chains
     const majorStep = guniyaW / numMajor;
@@ -918,8 +946,41 @@
 
     const titleFont = Math.min(4.4, Math.max(2.6, guniyaH * 0.13)).toFixed(1);
     const midX = (guniyaW / 2).toFixed(1);
+    const tbW = Math.max(165, guniyaW);
 
     guniyaEl.innerHTML = `
+      <!-- Attached Mini-Toolbar directly above Guniya -->
+      <g id="guniyaToolbar">
+        <rect x="0" y="-23" width="${tbW.toFixed(1)}" height="19" rx="4" fill="#0f172a" stroke="#334155" stroke-width="0.8" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"/>
+        
+        <!-- [ 🎯 Match 10 Ch ] Button -->
+        <g id="btnGuniyaCalib2Pt" class="guniya-btn" style="cursor:pointer;" title="Click 0 and 10 Chains on map scale bar to snap 1:1">
+          <rect x="3" y="-20.5" width="76" height="14" rx="3" fill="#0369a1" stroke="#38bdf8" stroke-width="0.6"/>
+          <text x="41" y="-10.5" fill="#f0f9ff" font-size="7.5" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">🎯 Match 10 Ch</text>
+        </g>
+        
+        <!-- [ - ] Nudge Button -->
+        <g id="btnGuniyaWMinus" class="guniya-btn" style="cursor:pointer;" title="Shrink scale (-3%)">
+          <rect x="82" y="-20.5" width="16" height="14" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="0.6"/>
+          <text x="90" y="-9.5" fill="#f8fafc" font-size="10" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">−</text>
+        </g>
+        
+        <!-- Scale Readout -->
+        <text x="${82 + 16 + 21}" y="-10.5" fill="#fbbf24" font-size="7.5" font-family="monospace" font-weight="bold" text-anchor="middle">${guniyaW.toFixed(0)}px</text>
+        
+        <!-- [ + ] Nudge Button -->
+        <g id="btnGuniyaWPlus" class="guniya-btn" style="cursor:pointer;" title="Expand scale (+3%)">
+          <rect x="${82 + 16 + 42}" y="-20.5" width="16" height="14" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="0.6"/>
+          <text x="${82 + 16 + 50}" y="-9.5" fill="#f8fafc" font-size="10" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" text-anchor="middle">+</text>
+        </g>
+        
+        <!-- [ ✕ ] Close Button -->
+        <g id="btnGuniyaCloseScale" class="guniya-btn" style="cursor:pointer;" title="Close Virtual Guniya Scale">
+          <rect x="${(tbW - 17).toFixed(1)}" y="-20.5" width="14" height="14" rx="3" fill="#7f1d1d" stroke="#ef4444" stroke-width="0.6"/>
+          <text x="${(tbW - 10).toFixed(1)}" y="-10" fill="#fecaca" font-size="8.5" font-weight="bold" font-family="sans-serif" text-anchor="middle">✕</text>
+        </g>
+      </g>
+
       <!-- Translucent Ivory Acrylic Body (Map lines clearly visible underneath) -->
       <rect x="0" y="0" width="${guniyaW.toFixed(1)}" height="${guniyaH.toFixed(1)}" rx="3" fill="rgba(255, 251, 235, 0.88)" stroke="#92400e" stroke-width="1.2" filter="drop-shadow(0 3px 8px rgba(0,0,0,0.35))"/>
       
@@ -929,11 +990,20 @@
       <!-- Bottom 20-link division ticks -->
       <path d="${bottomTicks}" stroke="#78350f" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
       
-      <!-- Mark numbers (Cleanly positioned with NO collision) -->
+      <!-- Mark numbers -->
       ${numberLabels}
       
       <!-- Center Title: Single crisp clean inscription -->
       <text x="${midX}" y="${(guniyaH * 0.54).toFixed(1)}" fill="#92400e" font-size="${titleFont}" font-weight="bold" font-family="'Segoe UI', Roboto, sans-serif" letter-spacing="0.4px" text-anchor="middle">GUNIA • 1000 LINKS (10 CH = 660 FT)</text>
+
+      <!-- Origin Anchor (0 Mark) -->
+      <circle cx="0" cy="${(guniyaH / 2).toFixed(1)}" r="3" fill="#92400e" stroke="#fffbeb" stroke-width="0.8"/>
+
+      <!-- Interactive Grip Resize Handle on Right Edge (1000 Mark) -->
+      <g id="guniyaResizeHandle" style="cursor: ew-resize;" title="Drag to freely resize Guniya to match printed scale bar">
+        <circle cx="${guniyaW.toFixed(1)}" cy="${(guniyaH / 2).toFixed(1)}" r="7" fill="#d97706" stroke="#fffbeb" stroke-width="1.4" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"/>
+        <path d="M ${(guniyaW - 3.5).toFixed(1)} ${(guniyaH / 2).toFixed(1)} l 2.5 -2.5 v 5 z M ${(guniyaW + 3.5).toFixed(1)} ${(guniyaH / 2).toFixed(1)} l -2.5 -2.5 v 5 z" fill="#fffbeb"/>
+      </g>
     `;
 
     updateGuniyaTransform();
@@ -947,7 +1017,7 @@
     if (state.guniya.enabled) {
       guniyaEl.classList.remove('hidden');
       rebuildGuniyaScale();
-      logCommand('GUNIYA: Virtual Guniya Scale Active (Calibrated 1:1 to map scale. Drag to move, wheel to rotate).');
+      logCommand('GUNIYA: Virtual Guniya Scale Active (Calibrated 1:1 to map scale. Drag to move, wheel to rotate, drag amber handle to resize).');
     } else {
       guniyaEl.classList.add('hidden');
       logCommand('GUNIYA: Virtual Guniya Scale Hidden.');
@@ -957,9 +1027,21 @@
   function updateGuniyaTransform() {
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (!guniyaEl) return;
-    const cx = (state.guniya.width || 200) / 2;
-    const cy = (state.guniya.height || 45) / 2;
-    guniyaEl.setAttribute('transform', `translate(${state.guniya.x}, ${state.guniya.y}) rotate(${state.guniya.rotation}, ${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+    guniyaEl.setAttribute('transform', `translate(${state.guniya.x}, ${state.guniya.y}) rotate(${state.guniya.rotation})`);
+  }
+
+  function startScaleBarCalibration() {
+    toggleVirtualGuniya(true);
+    state.isCalibratingScale = true;
+    state.calibrationPoints = [];
+
+    const banner = document.getElementById('toolGuidanceBanner');
+    const bannerText = document.getElementById('toolGuidanceText');
+    if (banner && bannerText) {
+      bannerText.innerHTML = '🎯 <b>Step 1/2:</b> Click the <b>০ (0 Chain)</b> mark on the printed map scale bar';
+      banner.classList.remove('hidden');
+    }
+    logCommand('CALIBRATION: Step 1/2 - Click Point 1 (০ / 0 Chain mark on printed map scale bar)...');
   }
 
   // =========================================================================
@@ -1149,8 +1231,15 @@
     }
 
     // World units per SVG coordinate unit
-    const upp_svg_x = px_per_svg_x * upp_px_x;
-    const upp_svg_y = px_per_svg_y * upp_px_y;
+    let upp_svg_x = px_per_svg_x * upp_px_x;
+    let upp_svg_y = px_per_svg_y * upp_px_y;
+
+    // If Guniya scale has been calibrated directly against the map's 10-chain scale bar,
+    // use that exact ground-truth calibration for all CAD distance & area calculations!
+    if (state.guniya && state.guniya.calibratedUpp) {
+      upp_svg_x = state.guniya.calibratedUpp;
+      upp_svg_y = state.guniya.calibratedUpp;
+    }
 
     return {
       dpiX,
@@ -1158,8 +1247,8 @@
       scale,
       unit,
       unitFactor,
-      upp_px_x,
-      upp_px_y,
+      upp_px_x: upp_svg_x,
+      upp_px_y: upp_svg_y,
       upp_svg_x,
       upp_svg_y
     };
@@ -1197,15 +1286,25 @@
     // Update active state on modal scale buttons
     // Direct Custom AutoCAD Scale & DPI Apply Button
     const btnDirectScale = document.getElementById('btnApplyDirectScaleFactor');
-    if (btnDirectScale) {
+    if (btnDirectScale && !btnDirectScale._bound) {
+      btnDirectScale._bound = true;
       btnDirectScale.addEventListener('click', () => {
-        const factor = parseFloat(document.getElementById('inputCustomScaleFactor')?.value) || 3960;
-        const dpi = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 57.5;
-        const unit = document.getElementById('selectScaleUnit')?.value || 'ft';
-        state.unit = unit;
-        applyMouzaScale(null, factor, dpi);
+        const f = parseFloat(document.getElementById('inputCustomScaleFactor')?.value) || 3960;
+        const d = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 57.5;
+        const u = document.getElementById('selectScaleUnit')?.value || 'ft';
+        state.unit = u;
+        applyMouzaScale(null, f, d);
         closeModal('modalScaleCalculator');
-        logCommand(`SCALE: Custom AutoCAD scale factor 1:${factor} applied at ${dpi} DPI with unit ${unit}.`);
+        logCommand(`SCALE: Custom AutoCAD scale factor 1:${f} applied at ${d} DPI with unit ${u}.`);
+      });
+    }
+
+    const btnModalCalib2Pt = document.getElementById('btnModalCalib2Pt');
+    if (btnModalCalib2Pt && !btnModalCalib2Pt._bound) {
+      btnModalCalib2Pt._bound = true;
+      btnModalCalib2Pt.addEventListener('click', () => {
+        closeModal('modalScaleCalculator');
+        startScaleBarCalibration();
       });
     }
 
@@ -1220,6 +1319,7 @@
       }
     });
 
+    rebuildGuniyaScale();
     logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 57.5} DPI.`);
   }
 
@@ -2773,6 +2873,51 @@
 
     const pt = getCanvasCoords(e);
 
+    // 0.1 Scale Bar 2-Point Calibration Mode (Match 10 Chains = 660 Ft)
+    if (state.isCalibratingScale) {
+      const banner = document.getElementById('toolGuidanceBanner');
+      const bannerText = document.getElementById('toolGuidanceText');
+
+      if (state.calibrationPoints.length === 0) {
+        state.calibrationPoints.push(pt);
+        if (banner && bannerText) {
+          bannerText.innerHTML = '🎯 <b>Step 2/2:</b> Click the <b>১০ চেইন (10 Chains = 660 Ft)</b> mark on the map scale bar';
+        }
+        logCommand(`CALIBRATION: Point 1 (0 Chain) set at (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}). Now click Point 2 (10 Chains)...`);
+        return;
+      } else {
+        const p1 = state.calibrationPoints[0];
+        const p2 = pt;
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (dist < 15) {
+          logCommand('CALIBRATION: Points are too close together. Please try again.');
+          state.isCalibratingScale = false;
+          state.calibrationPoints = [];
+          if (banner) banner.classList.add('hidden');
+          return;
+        }
+
+        const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+        state.guniya.x = Math.round(p1.x);
+        state.guniya.y = Math.round(p1.y + 12);
+        state.guniya.rotation = Math.round(angleDeg * 10) / 10;
+        state.guniya.customWidth = dist;
+        state.guniya.calibratedUpp = 660 / dist;
+        state.guniya.origCalibratedWidth = dist;
+        state.guniya.origRasterWidth = rasterState.width || 750;
+
+        rebuildGuniyaScale(dist);
+        updateGuniyaTransform();
+
+        state.isCalibratingScale = false;
+        state.calibrationPoints = [];
+        if (banner) banner.classList.add('hidden');
+
+        logCommand(`SCALE CALIBRATED: 10 Chains (660 ft) = ${dist.toFixed(1)} px (${(dist / 10).toFixed(2)} px/chain). All measurements & dimensions are now 100% synchronized!`);
+        return;
+      }
+    }
+
     // 1. Polyline / Boundary Drawing Mode (Image 2 standard)
     if (state.activeTool === 'polyline' || state.activeTool === 'autopolyline' || state.activeTool === 'polygon') {
       const clickPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : pt;
@@ -3151,6 +3296,7 @@ const ribbonTemplates = {
         <div class="flex items-center gap-0.5">
           <button class="ribbon-btn" id="rbImportMap" title="Import Mouza Map"><svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="ribbon-btn-label">Import Map</span></button>
           <button class="ribbon-btn" id="rbScaleMouza" title="Apply Scale"><svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M2 12l4-4m-4 4l4 4m16-4l-4-4m4 4l-4 4"/></svg><span class="ribbon-btn-label">Scale</span></button>
+          <button class="ribbon-btn" id="rbGuniyaMatch" title="Match Virtual Guniya Scale to Map Scale Bar (10 Chains = 660 Ft)"><svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 21 21 21 21 7 3 21"/><line x1="7" y1="21" x2="7" y2="18"/><line x1="11" y1="21" x2="11" y2="18"/><line x1="15" y1="21" x2="15" y2="18"/></svg><span class="ribbon-btn-label text-amber-400 font-semibold">Match 10 Ch</span></button>
           <button class="ribbon-btn" id="rbGeoRefer" title="Geo-Reference"><svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg><span class="ribbon-btn-label">Geo-Refer.</span></button>
           <button class="ribbon-btn" id="rbSheet" title="Manage Sheets"><svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/></svg><span class="ribbon-btn-label">Sheet</span></button>
         </div>
@@ -3418,6 +3564,7 @@ const ribbonTemplates = {
       'rbArea': () => handleCommandInput('AREA'),
       'rbPerimeter': () => handleCommandInput('PERIMETER'),
       'rbGuniya': () => toggleVirtualGuniya(),
+      'rbGuniyaMatch': () => startScaleBarCalibration(),
       'rbUnitConv': () => openModal('modalUnitConverter'),
       'rbOwnership': () => openModal('modalPartitionFaraiz'),
       'rbDistribution': () => openModal('modalPartitionFaraiz'),
@@ -4425,6 +4572,11 @@ const ribbonTemplates = {
       case 'G':
       case 'GUNIYA':
         toggleVirtualGuniya();
+        break;
+      case 'CAL':
+      case 'CALIBRATE':
+      case 'ALIGN':
+        startScaleBarCalibration();
         break;
       case 'M':
       case 'MOVE':
@@ -5442,10 +5594,50 @@ const ribbonTemplates = {
       });
     }
 
-    // 14. Virtual Guniya Scale Dragging & Wheel Rotation
+    // 14. Virtual Guniya Scale Dragging, Grip Resizing & Toolbar Controls
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (guniyaEl) {
+      guniyaEl.addEventListener('click', (e) => {
+        const btnCalib = e.target.closest('#btnGuniyaCalib2Pt');
+        const btnMinus = e.target.closest('#btnGuniyaWMinus');
+        const btnPlus = e.target.closest('#btnGuniyaWPlus');
+        const btnClose = e.target.closest('#btnGuniyaCloseScale');
+
+        if (btnCalib) {
+          e.stopPropagation();
+          startScaleBarCalibration();
+        } else if (btnMinus) {
+          e.stopPropagation();
+          const curW = state.guniya.width || 150;
+          const newW = Math.max(35, curW * 0.97);
+          state.guniya.customWidth = newW;
+          state.guniya.calibratedUpp = 660 / newW;
+          rebuildGuniyaScale(newW);
+          logCommand(`GUNIYA: Nudged -3% (${newW.toFixed(1)} px = 660 ft)`);
+        } else if (btnPlus) {
+          e.stopPropagation();
+          const curW = state.guniya.width || 150;
+          const newW = curW * 1.03;
+          state.guniya.customWidth = newW;
+          state.guniya.calibratedUpp = 660 / newW;
+          rebuildGuniyaScale(newW);
+          logCommand(`GUNIYA: Nudged +3% (${newW.toFixed(1)} px = 660 ft)`);
+        } else if (btnClose) {
+          e.stopPropagation();
+          toggleVirtualGuniya(false);
+        }
+      });
+
       guniyaEl.addEventListener('mousedown', (e) => {
+        if (e.target.closest('#guniyaToolbar') || e.target.closest('.guniya-btn')) {
+          e.stopPropagation();
+          return;
+        }
+        if (e.target.closest('#guniyaResizeHandle')) {
+          e.stopPropagation();
+          state.guniya.isResizing = true;
+          return;
+        }
         e.stopPropagation();
         state.guniya.isDragging = true;
         const pt = getCanvasCoords(e);
@@ -5461,6 +5653,16 @@ const ribbonTemplates = {
           state.guniya.x = pt.x - state.guniya.dragStartX;
           state.guniya.y = pt.y - state.guniya.dragStartY;
           updateGuniyaTransform();
+        } else if (state.guniya.isResizing) {
+          const pt = getCanvasCoords(e);
+          const dx = pt.x - state.guniya.x;
+          const dy = pt.y - state.guniya.y;
+          const rad = -state.guniya.rotation * Math.PI / 180;
+          const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+          const newW = Math.max(35, localX);
+          state.guniya.customWidth = newW;
+          state.guniya.calibratedUpp = 660 / newW;
+          rebuildGuniyaScale(newW);
         }
       });
 
@@ -5469,6 +5671,12 @@ const ribbonTemplates = {
           state.guniya.isDragging = false;
           guniyaEl.classList.remove('cursor-grabbing');
           guniyaEl.classList.add('cursor-grab');
+        }
+        if (state.guniya.isResizing) {
+          state.guniya.isResizing = false;
+          state.guniya.origCalibratedWidth = state.guniya.width;
+          state.guniya.origRasterWidth = rasterState.width || 750;
+          logCommand(`GUNIYA SCALE: Calibrated to width ${state.guniya.width.toFixed(1)} px (10 Chains = 660 Ft). Upp = ${(660 / state.guniya.width).toFixed(4)} ft/px.`);
         }
       });
 
@@ -5953,9 +6161,18 @@ const ribbonTemplates = {
       } else if (rasterState.isResizing) {
         const pt = getCanvasCoords(e);
         const dw = pt.x - rasterState.startX;
-        rasterState.width = Math.max(150, Math.round(rasterState.origW + dw));
+        const newW = Math.max(150, Math.round(rasterState.origW + dw));
+        rasterState.width = newW;
         rasterState.height = Math.max(100, Math.round(rasterState.origH + (dw * (rasterState.origH / rasterState.origW))));
         updateRasterDOM();
+
+        // If Guniya was calibrated, proportionally update its width with map resize
+        if (state.guniya && state.guniya.origCalibratedWidth && rasterState.origW) {
+          const ratio = newW / rasterState.origW;
+          state.guniya.customWidth = state.guniya.origCalibratedWidth * ratio;
+          state.guniya.calibratedUpp = 660 / state.guniya.customWidth;
+          rebuildGuniyaScale(state.guniya.customWidth);
+        }
       }
     });
 
@@ -5967,6 +6184,10 @@ const ribbonTemplates = {
       }
       if (rasterState.isResizing) {
         rasterState.isResizing = false;
+        if (state.guniya && state.guniya.customWidth) {
+          state.guniya.origCalibratedWidth = state.guniya.customWidth;
+          state.guniya.origRasterWidth = rasterState.width;
+        }
         logCommand(`MOUZA MAP: Resized to ${rasterState.width} x ${rasterState.height} px.`);
       }
     });
