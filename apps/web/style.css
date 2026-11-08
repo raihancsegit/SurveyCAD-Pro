@@ -399,8 +399,8 @@ html, body {
   pointer-events: none;
   z-index: 9999;
   display: none;
-  width: 71px;
-  height: 71px;
+  width: 70px;
+  height: 70px;
   transform: translate(-50%, -50%);
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }

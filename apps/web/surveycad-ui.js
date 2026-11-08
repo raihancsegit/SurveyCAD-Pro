@@ -1673,7 +1673,7 @@
   // PARCEL POLYGON & DIMENSION BADGE RENDERING ENGINE (IMAGE 2 STANDARD)
   // Dynamic scaled badges, outward-offset side dimensions, zero overlap
   // =========================================================================
-  function renderParcelPolygon(vertices, dag, areaSqFt, areaDecimal, perimeter, isMagicWand = false) {
+  function renderParcelPolygon(vertices, dag, areaSqFt, areaDecimal, perimeter, isMagicWand = false, isPolyline = false) {
     const drawingsGroup = document.getElementById('userDrawingsGroup');
     if (!drawingsGroup || !vertices || vertices.length < 3) return null;
 
@@ -1715,15 +1715,23 @@
     const u = getUnitsPerPixel();
     const wandClass = isMagicWand ? ' magic-wand-detected' : '';
 
-    // 1. Plot Polygon (Warm translucent gold/amber fill + crisp boundary stroke)
+    // 1. Plot Polygon (AutoCAD Clean White Boundary for polyline, matching Image 1 standard)
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', ptsAttr);
-    poly.setAttribute('fill', 'rgba(245, 158, 11, 0.22)');
-    poly.setAttribute('stroke', '#f59e0b');
-    poly.setAttribute('stroke-width', '1.8');
-    poly.setAttribute('vector-effect', 'non-scaling-stroke');
-    poly.setAttribute('filter', 'drop-shadow(0 0 5px rgba(245, 158, 11, 0.7))');
-    poly.setAttribute('class', `mouza-plot user-plot-boundary selected${wandClass}`);
+    if (isPolyline) {
+      poly.setAttribute('fill', 'none');
+      poly.setAttribute('stroke', '#ffffff');
+      poly.setAttribute('stroke-width', '1.8');
+      poly.setAttribute('vector-effect', 'non-scaling-stroke');
+      poly.setAttribute('class', `mouza-plot user-plot-boundary${wandClass}`);
+    } else {
+      poly.setAttribute('fill', 'rgba(245, 158, 11, 0.22)');
+      poly.setAttribute('stroke', '#f59e0b');
+      poly.setAttribute('stroke-width', '1.8');
+      poly.setAttribute('vector-effect', 'non-scaling-stroke');
+      poly.setAttribute('filter', 'drop-shadow(0 0 5px rgba(245, 158, 11, 0.7))');
+      poly.setAttribute('class', `mouza-plot user-plot-boundary selected${wandClass}`);
+    }
     poly.setAttribute('data-dag', String(dag));
     poly.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1734,6 +1742,11 @@
     // Ensure plot vertices are recorded in state for grip editing and undo
     if (state.plots[String(dag)]) {
       state.plots[String(dag)].vertices = vertices.map(v => ({ x: v.x, y: v.y }));
+    }
+
+    if (isPolyline) {
+      // Polyline drawn boundary: simple white outline only (Image 1 standard)
+      return poly;
     }
 
     // 2. Corner Node Handles (Crisp, easily draggable CAD grip nodes)
@@ -2431,7 +2444,8 @@
     const ctm = svg.getScreenCTM();
     if (ctm) {
       const sp = pt.matrixTransform(ctm);
-      const rect = svg.getBoundingClientRect();
+      const workspaceEl = document.getElementById('cadWorkspace');
+      const rect = workspaceEl ? workspaceEl.getBoundingClientRect() : svg.getBoundingClientRect();
       return {
         x: parseFloat((sp.x - rect.left).toFixed(2)),
         y: parseFloat((sp.y - rect.top).toFixed(2))
@@ -2450,7 +2464,14 @@
     const candidateEls = document.querySelectorAll('#userDrawingsGroup polygon, #userDrawingsGroup polyline, #userDrawingsGroup line, #plotsGroup polygon, .mouza-plot, .user-plot-boundary');
     for (const el of candidateEls) {
       if (el === excludeEl) continue;
-      if (el.closest && (el.closest('.hidden') || el.style.display === 'none')) continue;
+
+      // Strictly skip hidden demo layers unless demo plots are explicitly enabled
+      const isDemoLayer = el.closest('#layerPlotBoundary') || el.closest('#layerMouzaMap') || el.closest('#layerPlotNo') || el.closest('#layerDimension');
+      if (isDemoLayer && (typeof demoPlotsVisible === 'undefined' || !demoPlotsVisible)) continue;
+
+      // Skip elements that are hidden or inside hidden containers
+      if (el.closest && (el.closest('.hidden') || el.closest('[style*="display: none"]') || el.style.display === 'none')) continue;
+      if (el.style && el.style.display === 'none') continue;
       if (el.classList.contains('magic-wand-marker') || el.classList.contains('cad-dim-elem') || el.id === 'drawingGuideLine' || el.id === 'offsetEdgeHighlight') continue;
 
       const ptsAttr = el.getAttribute('points');
@@ -2480,10 +2501,11 @@
       }
     }
 
-    // 2. From state.plots
+    // 2. From state.plots (only if they are visible on canvas)
     if (state.plots) {
       for (const pData of Object.values(state.plots)) {
         if (!pData.vertices || pData.vertices.length < 2) continue;
+        if (pData.isDemo && !demoPlotsVisible) continue;
         const verts = pData.vertices;
         for (let i = 0; i < verts.length; i++) {
           const j = (i + 1) % verts.length;
@@ -2550,7 +2572,8 @@
           minD = d0;
         }
       }
-      for (let i = 0; i < state.drawingPoints.length; i++) {
+      // Never snap back to the last placed vertex (prevents cursor displacement / locking to previous point)
+      for (let i = 1; i < state.drawingPoints.length - 1; i++) {
         const dp = state.drawingPoints[i];
         const d = Math.hypot(pt.x - dp.x, pt.y - dp.y);
         if (d < minD) {
@@ -2559,8 +2582,8 @@
             x: dp.x, 
             y: dp.y, 
             type: 'endpoint',
-            isStart: (i === 0), 
-            label: (i === 0 && state.drawingPoints.length >= 3) ? 'Endpoint (Click to close)' : 'Endpoint' 
+            isStart: false, 
+            label: 'Endpoint' 
           };
         }
       }
@@ -3319,7 +3342,10 @@
       }
     }
 
-    const clickPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : (state.orthoEnabled && state.orthoTargetPt ? { ...state.orthoTargetPt } : pt);
+    const s2w = getScreenPixelToWorld();
+    const snapThresh = 22 * s2w;
+    const isSnapValid = Boolean(state.snappedPoint && state.snappedPoint.x !== undefined && (Math.hypot(pt.x - state.snappedPoint.x, pt.y - state.snappedPoint.y) <= snapThresh * 1.5));
+    const clickPt = isSnapValid ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : (state.orthoEnabled && state.orthoTargetPt ? { ...state.orthoTargetPt } : pt);
 
     // 0.2 Straight Line Tool (L / LINE)
     if (state.activeTool === 'line') {
@@ -3808,8 +3834,8 @@
       ownerList: [{ name: `1. New Measured Plot (Plot No. ${newDagNum})`, share: `${realDecimal.toFixed(2)} Decimal (1.000 Share)` }]
     };
 
-    renderParcelPolygon(pts, newDagNum, realAreaSqFt, realDecimal, realPerimeter);
-    selectPlot(newDagNum);
+    renderParcelPolygon(pts, newDagNum, realAreaSqFt, realDecimal, realPerimeter, false, true);
+    state.selectedDag = newDagNum;
     pushUndo(`Polyline Draw (Plot ${newDagNum})`);
     logCommand(`PLINE: Closed boundary created for Dag ${newDagNum}! Area = ${realAreaSqFt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} sq.ft (${realDecimal.toFixed(2)} Decimal), Perimeter = ${realPerimeter.toFixed(2)} ft (AutoCAD Scale 1:${u.scale}).`);
   }
@@ -6144,6 +6170,7 @@ const ribbonTemplates = {
   // 12. Initialization & Event Bindings
   // =========================================================================
   document.addEventListener('DOMContentLoaded', () => {
+    updateViewBox();
 
     // Hide demo plots on reload for a clean canvas
     if (!demoPlotsVisible) {
