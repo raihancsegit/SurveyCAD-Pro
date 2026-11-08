@@ -591,6 +591,8 @@
         rasterCache.height = offCanvas.height;
         rasterCache.loaded = true;
         rasterCache.imageObj = imgObj;
+        rasterState.naturalWidth = imgObj.naturalWidth;
+        rasterState.naturalHeight = imgObj.naturalHeight;
 
         // Auto-preserve natural aspect ratio to avoid squishing
         if (imgObj.naturalWidth && imgObj.naturalHeight && rasterState.width > 0) {
@@ -599,6 +601,7 @@
           updateRasterDOM();
         }
         rebuildGuniyaScale();
+        recalculateAllPlacedDimensions();
       } catch (e) {
         console.warn('Cache raster image load error:', e);
       }
@@ -941,19 +944,23 @@
     let guniyaW;
     if (overrideWidth) {
       guniyaW = overrideWidth;
-    } else if (state.guniya.customWidth) {
+      state.guniya.is2PointCalibrated = true;
+      state.guniya.calibratedUpp = targetLengthFeet / guniyaW;
+      state.guniya.customWidth = guniyaW;
+    } else if (state.guniya && state.guniya.is2PointCalibrated && state.guniya.customWidth) {
       guniyaW = state.guniya.customWidth;
     } else {
       const u = getUnitsPerPixel();
-      guniyaW = targetLengthFeet / (u.upp_svg_x || 7.835);
+      guniyaW = targetLengthFeet / (u.upp_svg_x || 1.1);
+      state.guniya.is2PointCalibrated = false;
+      state.guniya.calibratedUpp = null;
+      state.guniya.customWidth = null;
     }
     guniyaW = Math.max(40, guniyaW);
     const guniyaH = Math.max(20, guniyaW * 0.24);
 
     state.guniya.width = guniyaW;
     state.guniya.height = guniyaH;
-    state.guniya.customWidth = guniyaW;
-    state.guniya.calibratedUpp = targetLengthFeet / guniyaW;
 
     const numMajor = 10; // 10 chains
     const majorStep = guniyaW / numMajor;
@@ -1255,7 +1262,7 @@
   // Area = Shoelace formula in World coordinates
   // =========================================================================
   function getUnitsPerPixel() {
-    const defaultDpi = 57.5; // Cadastral Mouza sheet standard (115px = 10 chains = 660 ft at 16"=1 mile)
+    const defaultDpi = 300; // Cadastral Mouza sheet standard
     const dpiX = Number(rasterState.dpiX || rasterState.dpi) || defaultDpi;
     const dpiY = Number(rasterState.dpiY || rasterState.dpi) || defaultDpi;
     const scale = Number(state.scaleFactor) || 3960;
@@ -1279,19 +1286,20 @@
     if (rasterCache && rasterCache.loaded && rasterCache.width > 0 && rasterState.width > 0) {
       px_per_svg_x = rasterCache.width / rasterState.width;
       px_per_svg_y = rasterCache.height / rasterState.height;
+    } else if (rasterState.naturalWidth > 0 && rasterState.width > 0) {
+      px_per_svg_x = rasterState.naturalWidth / rasterState.width;
+      px_per_svg_y = (rasterState.naturalHeight || rasterState.naturalWidth) / (rasterState.height || rasterState.width);
     } else if (rasterState && rasterState.width > 0) {
-      // Deterministic default matching authentic Mouza sheet (1024x723)
-      px_per_svg_x = 1024 / rasterState.width;
-      px_per_svg_y = 723 / (rasterState.height || 530);
+      px_per_svg_x = 1.0;
+      px_per_svg_y = 1.0;
     }
 
     // World units per SVG coordinate unit
     let upp_svg_x = px_per_svg_x * upp_px_x;
     let upp_svg_y = px_per_svg_y * upp_px_y;
 
-    // If Guniya scale has been calibrated directly against the map's 10-chain scale bar,
-    // use that exact ground-truth calibration for all CAD distance & area calculations!
-    if (state.guniya && state.guniya.calibratedUpp) {
+    // If Guniya scale has been explicitly calibrated directly against the map's 10-chain scale bar
+    if (state.guniya && state.guniya.is2PointCalibrated && state.guniya.calibratedUpp) {
       upp_svg_x = state.guniya.calibratedUpp;
       upp_svg_y = state.guniya.calibratedUpp;
     }
@@ -1468,9 +1476,41 @@
     const d = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 300;
     const u = document.getElementById('selectScaleUnit')?.value || 'ft';
     state.unit = u;
+
+    // Reset 2-point scale bar calibration so the explicit AutoCAD scale & DPI take effect!
+    if (state.guniya) {
+      state.guniya.is2PointCalibrated = false;
+      state.guniya.calibratedUpp = null;
+      state.guniya.customWidth = null;
+    }
+
     applyMouzaScale(null, f, d);
+    recalculateAllPlacedDimensions();
+    rebuildGuniyaScale();
     closeModal('modalScaleCalculator');
     logCommand(`SCALE & DPI APPLIED: Ratio 1:${f} (${state.scalePreset}"=1 Mile), DPI: ${d}, Unit: ${u}.`);
+  }
+
+  function recalculateAllPlacedDimensions() {
+    const u = getUnitsPerPixel();
+    document.querySelectorAll('.cad-dim-elem').forEach(g => {
+      const p1Raw = g.getAttribute('data-p1');
+      const p2Raw = g.getAttribute('data-p2');
+      if (p1Raw && p2Raw) {
+        try {
+          const p1 = JSON.parse(p1Raw);
+          const p2 = JSON.parse(p2Raw);
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const realFeet = Math.hypot(dx * u.upp_svg_x, dy * u.upp_svg_y);
+          const formatted = formatDistanceFeetInches(realFeet);
+          const textEl = g.querySelector('text');
+          if (textEl) {
+            textEl.textContent = formatted;
+          }
+        } catch (e) {}
+      }
+    });
   }
 
   function applyMouzaScale(sheetWidthInches, customFactor = null, customDpi = null) {
@@ -2217,6 +2257,8 @@
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'cad-dim-elem');
     g.setAttribute('data-dim-id', dimId);
+    g.setAttribute('data-p1', JSON.stringify({ x: p1.x, y: p1.y }));
+    g.setAttribute('data-p2', JSON.stringify({ x: p2.x, y: p2.y }));
     g.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
 
     g.innerHTML = `
@@ -3431,6 +3473,13 @@
     rasterState.width = 750;
     rasterState.height = 550;
     updateRasterDOM();
+
+    // Reset 2-point scale bar calibration so new map uses fresh AutoCAD DPI scale
+    if (state.guniya) {
+      state.guniya.is2PointCalibrated = false;
+      state.guniya.calibratedUpp = null;
+      state.guniya.customWidth = null;
+    }
 
     // Anchor undo history so that the inserted mouza map is the permanent baseline.
     // Ctrl+Z will only undo actions performed AFTER this point and will never delete the map!
@@ -4908,9 +4957,13 @@ const ribbonTemplates = {
             attachMouzaRaster(dataUrl, file.name);
             const tempImg = new Image();
             tempImg.onload = () => {
+              rasterState.naturalWidth = tempImg.naturalWidth;
+              rasterState.naturalHeight = tempImg.naturalHeight;
               const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
+              recalculateAllPlacedDimensions();
+              rebuildGuniyaScale();
               openModal('modalScaleCalculator');
               logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
             };
@@ -5283,9 +5336,13 @@ const ribbonTemplates = {
             // Wait for image dimensions to resolve DPI against standard Cadastral 30" sheet
             const tempImg = new Image();
             tempImg.onload = () => {
+              rasterState.naturalWidth = tempImg.naturalWidth;
+              rasterState.naturalHeight = tempImg.naturalHeight;
               const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
+              recalculateAllPlacedDimensions();
+              rebuildGuniyaScale();
               openModal('modalScaleCalculator');
               logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
             };
