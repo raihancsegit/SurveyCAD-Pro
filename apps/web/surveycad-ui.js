@@ -706,21 +706,36 @@
     const rubberBand = document.getElementById('activeRubberBand');
     if (rubberBand) rubberBand.classList.add('hidden');
 
-    // 5. Restore Raster Map State
-    if (snapshot.rasterState) {
+    // 5. Restore Raster Map State (Protect loaded Mouza map from being wiped by Undo)
+    if (rasterState.src) {
+      const rasterGroup = document.getElementById('groupRasterMouza');
+      if (rasterGroup) rasterGroup.classList.remove('hidden');
+      const rasterImg = document.getElementById('canvasRasterMap');
+      if (rasterImg && rasterState.src) {
+        rasterImg.setAttribute('href', rasterState.src);
+        rasterImg.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', rasterState.src);
+      }
+      if (snapshot.rasterState) {
+        rasterState.x = snapshot.rasterState.x ?? rasterState.x;
+        rasterState.y = snapshot.rasterState.y ?? rasterState.y;
+        rasterState.width = snapshot.rasterState.width ?? rasterState.width;
+        rasterState.height = snapshot.rasterState.height ?? rasterState.height;
+        if (typeof updateRasterDOM === 'function') updateRasterDOM();
+      }
+    } else if (snapshot.rasterState) {
       Object.assign(rasterState, snapshot.rasterState);
       if (typeof updateRasterDOM === 'function') updateRasterDOM();
-    }
-    const rasterGroup = document.getElementById('groupRasterMouza');
-    const rasterImg = document.getElementById('canvasRasterMap');
-    if (rasterImg && typeof snapshot.rasterHref === 'string') {
-      rasterImg.setAttribute('href', snapshot.rasterHref);
-    }
-    if (rasterGroup) {
-      if (snapshot.rasterVisible) {
-        rasterGroup.classList.remove('hidden');
-      } else {
-        rasterGroup.classList.add('hidden');
+      const rasterGroup = document.getElementById('groupRasterMouza');
+      const rasterImg = document.getElementById('canvasRasterMap');
+      if (rasterImg && typeof snapshot.rasterHref === 'string') {
+        rasterImg.setAttribute('href', snapshot.rasterHref);
+      }
+      if (rasterGroup) {
+        if (snapshot.rasterVisible) {
+          rasterGroup.classList.remove('hidden');
+        } else {
+          rasterGroup.classList.add('hidden');
+        }
       }
     }
 
@@ -741,7 +756,7 @@
 
   function undo() {
     if (undoStack.length <= 1) {
-      logCommand('UNDO: Nothing to undo .');
+      logCommand('UNDO: Mouza map baseline reached. Nothing further to undo.');
       return false;
     }
 
@@ -844,18 +859,18 @@
       }
     });
 
-    // Update Floating Guidance Banner (Image 1 standard)
+    // Update Floating Guidance Banner
     const banner = document.getElementById('toolGuidanceBanner');
     const bannerText = document.getElementById('toolGuidanceText');
     if (banner && bannerText) {
       if (toolName === 'magicwand') {
-        bannerText.textContent = '🪄 Mouza   Plot    ';
+        bannerText.innerHTML = '🪄 <b>Magic Wand:</b> Click inside any parcel to auto-detect boundary • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
         banner.classList.remove('hidden');
       } else if (toolName === 'polyline' || toolName === 'polygon' || toolName === 'autopolyline') {
-        bannerText.textContent = '✏️      Plot  ';
+        bannerText.innerHTML = '✏️ <b>Draw:</b> Click corners to draw plot • Press <span class="text-amber-400 font-bold">[Enter]</span> to finish • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
         banner.classList.remove('hidden');
       } else if (toolName === 'dimension') {
-        bannerText.textContent = '📏          ';
+        bannerText.innerHTML = '📏 <b>Dimension:</b> Click 2 points to measure distance • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
         banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
@@ -876,6 +891,41 @@
     }
 
     logCommand(`TOOL ACTIVATED: ${toolName.toUpperCase()}`);
+  }
+
+  function cancelActiveToolAndCommand() {
+    state.isCalibratingScale = false;
+    state.calibrationPoints = [];
+    state.drawingPoints = [];
+    state.dimensionPoints = [];
+    state.autoPolylinePoints = [];
+    resetDrawingOverlay();
+
+    document.querySelectorAll('.cad-dim-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected').forEach(el => el.classList.remove('selected'));
+    state.selectedDim = null;
+    state.selectedDag = null;
+    const labelGroup = document.getElementById('groupSelectedPlotLabel');
+    if (labelGroup) labelGroup.remove();
+
+    const banner = document.getElementById('toolGuidanceBanner');
+    if (banner) banner.classList.add('hidden');
+
+    if (typeof closeInlineTextEditor === 'function') {
+      const inlineEd = document.getElementById('cadInlineTextEditor');
+      if (inlineEd && !inlineEd.classList.contains('hidden')) {
+        closeInlineTextEditor();
+      }
+    }
+    const txtModal = document.getElementById('cadFloatingTextInputModal');
+    if (txtModal && !txtModal.classList.contains('hidden')) {
+      txtModal.classList.add('hidden');
+    }
+
+    const cmdInput = document.getElementById('cmdInput');
+    if (cmdInput) cmdInput.value = '';
+
+    setActiveTool('select');
+    logCommand('*Cancel* (Returned to Select mode)');
   }
 
   // =========================================================================
@@ -1259,6 +1309,144 @@
     };
   }
 
+  // =========================================================================
+  // AUTOMATIC IMAGE DPI EXTRACTION (JFIF / EXIF / PNG pHYs & Cadastral Sheet)
+  // =========================================================================
+  function parseDpiFromBuffer(buffer) {
+    if (!buffer) return null;
+    try {
+      const view = new DataView(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+      if (view.byteLength < 16) return null;
+
+      // 1. Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      if (view.byteLength >= 24 && view.getUint32(0) === 0x89504E47) {
+        let offset = 8;
+        while (offset < view.byteLength - 8) {
+          const len = view.getUint32(offset);
+          const type = String.fromCharCode(view.getUint8(offset + 4), view.getUint8(offset + 5), view.getUint8(offset + 6), view.getUint8(offset + 7));
+          if (type === 'pHYs' && offset + 17 <= view.byteLength) {
+            const ppuX = view.getUint32(offset + 8);
+            const unit = view.getUint8(offset + 16);
+            if (unit === 1 && ppuX > 0) { // 1 = meters
+              const dpi = Math.round(ppuX * 0.0254);
+              if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'PNG pHYs' };
+            }
+          }
+          offset += 12 + len;
+        }
+      }
+
+      // 2. Check JPEG signature: FF D8
+      if (view.byteLength >= 10 && view.getUint16(0) === 0xFFD8) {
+        let offset = 2;
+        while (offset < view.byteLength - 4) {
+          const marker = view.getUint16(offset);
+          offset += 2;
+          if (marker === 0xFFE0 && offset + 12 <= view.byteLength) { // APP0 JFIF
+            const len = view.getUint16(offset);
+            const jfif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
+            if (jfif === 'JFIF') {
+              const units = view.getUint8(offset + 7);
+              const xDens = view.getUint16(offset + 8);
+              if (units === 1 && xDens >= 30) return { dpi: xDens, source: 'JFIF APP0 (Inch)' };
+              if (units === 2 && xDens >= 10) return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
+            }
+            offset += len;
+          } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF
+            const len = view.getUint16(offset);
+            const exif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
+            if (exif === 'Exif') {
+              const tiffStart = offset + 8;
+              if (tiffStart + 8 <= view.byteLength) {
+                const isLE = view.getUint16(tiffStart) === 0x4949;
+                const ifdOffset = view.getUint32(tiffStart + 4, isLE);
+                const ifdStart = tiffStart + ifdOffset;
+                if (ifdStart + 2 <= view.byteLength) {
+                  const numEntries = view.getUint16(ifdStart, isLE);
+                  let xRes = 0, unit = 2;
+                  for (let i = 0; i < numEntries; i++) {
+                    const entryOffset = ifdStart + 2 + i * 12;
+                    if (entryOffset + 12 > view.byteLength) break;
+                    const tag = view.getUint16(entryOffset, isLE);
+                    if (tag === 0x011A) { // XResolution
+                      const valOffset = tiffStart + view.getUint32(entryOffset + 8, isLE);
+                      if (valOffset + 8 <= view.byteLength) {
+                        const num = view.getUint32(valOffset, isLE);
+                        const den = view.getUint32(valOffset + 4, isLE);
+                        if (den > 0) xRes = num / den;
+                      }
+                    } else if (tag === 0x0128) { // ResolutionUnit
+                      unit = view.getUint16(entryOffset + 8, isLE);
+                    }
+                  }
+                  if (xRes >= 30) {
+                    const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
+                    return { dpi, source: 'EXIF APP1' };
+                  }
+                }
+              }
+            }
+            offset += len;
+          } else if ((marker & 0xFF00) === 0xFF00) {
+            if (marker === 0xFFDA) break; // SOS
+            const len = view.getUint16(offset);
+            if (len <= 0) break;
+            offset += len;
+          } else {
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error reading DPI from image buffer:', err);
+    }
+    return null;
+  }
+
+  function resolveMouzaDpi(fileDpiInfo, naturalWidth) {
+    if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 50 && fileDpiInfo.dpi <= 1200 && fileDpiInfo.dpi !== 72 && fileDpiInfo.dpi !== 96) {
+      return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
+    }
+    // DLRS Cadastral Mouza Map Standard: Standard physical sheet width = 30 inches (30" x 20")
+    if (naturalWidth && naturalWidth >= 1500) {
+      const calculatedDpi = Math.round(naturalWidth / 30);
+      return { dpi: calculatedDpi, source: `30" Cadastral Sheet (${naturalWidth}px)` };
+    }
+    if (fileDpiInfo && fileDpiInfo.dpi) {
+      return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
+    }
+    return { dpi: 300, source: 'Standard 300 DPI Scanner' };
+  }
+
+  function applyDetectedDpiToUI(dpi, sourceInfo = '') {
+    const inputDpi = document.getElementById('inputCustomScaleDpi');
+    const badge = document.getElementById('dpiAutoBadge');
+    const hint = document.getElementById('dpiHintText');
+    if (inputDpi) {
+      inputDpi.value = dpi;
+    }
+    if (badge) {
+      badge.textContent = `✓ Auto (${dpi} DPI)`;
+      badge.classList.remove('hidden');
+    }
+    if (hint) {
+      hint.textContent = sourceInfo ? `Source: ${sourceInfo}` : `Auto-detected: ${dpi} DPI`;
+    }
+    rasterState.dpi = dpi;
+    rasterState.dpiX = dpi;
+    rasterState.dpiY = dpi;
+  }
+
+  function applyScaleAndDpiFromModal() {
+    const f = parseFloat(document.getElementById('inputCustomScaleFactor')?.value) || 3960;
+    const d = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 300;
+    const u = document.getElementById('selectScaleUnit')?.value || 'ft';
+    state.unit = u;
+    applyMouzaScale(null, f, d);
+    closeModal('modalScaleCalculator');
+    logCommand(`SCALE & DPI APPLIED: Ratio 1:${f} (${state.scalePreset}"=1 Mile), DPI: ${d}, Unit: ${u}.`);
+  }
+
   function applyMouzaScale(sheetWidthInches, customFactor = null, customDpi = null) {
     let factor = 3960;
     if (customFactor) {
@@ -1286,22 +1474,17 @@
     const inputFactor = document.getElementById('inputCustomScaleFactor');
     if (inputFactor) inputFactor.value = factor;
     const inputDpi = document.getElementById('inputCustomScaleDpi');
-    if (inputDpi) inputDpi.value = rasterState.dpi || 57.5;
+    if (inputDpi && (!rasterState.dpi || isNaN(rasterState.dpi))) {
+      inputDpi.value = 300;
+    } else if (inputDpi) {
+      inputDpi.value = rasterState.dpi;
+    }
 
-    // Update active state on modal scale buttons
     // Direct Custom AutoCAD Scale & DPI Apply Button
     const btnDirectScale = document.getElementById('btnApplyDirectScaleFactor');
     if (btnDirectScale && !btnDirectScale._bound) {
       btnDirectScale._bound = true;
-      btnDirectScale.addEventListener('click', () => {
-        const f = parseFloat(document.getElementById('inputCustomScaleFactor')?.value) || 3960;
-        const d = parseFloat(document.getElementById('inputCustomScaleDpi')?.value) || 57.5;
-        const u = document.getElementById('selectScaleUnit')?.value || 'ft';
-        state.unit = u;
-        applyMouzaScale(null, f, d);
-        closeModal('modalScaleCalculator');
-        logCommand(`SCALE: Custom AutoCAD scale factor 1:${f} applied at ${d} DPI with unit ${u}.`);
-      });
+      btnDirectScale.addEventListener('click', applyScaleAndDpiFromModal);
     }
 
     const btnModalCalib2Pt = document.getElementById('btnModalCalib2Pt');
@@ -1325,7 +1508,7 @@
     });
 
     rebuildGuniyaScale();
-    logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 57.5} DPI.`);
+    logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 300} DPI.`);
   }
 
   // =========================================================================
@@ -3223,7 +3406,13 @@
     rasterState.height = 550;
     updateRasterDOM();
 
-    pushUndo(`Import Map (${filename})`);
+    // Anchor undo history so that the inserted mouza map is the permanent baseline.
+    // Ctrl+Z will only undo actions performed AFTER this point and will never delete the map!
+    undoStack.length = 0;
+    redoStack.length = 0;
+    undoStack.push(createSnapshot(`Mouza Map Base (${filename})`));
+    updateUndoRedoUI();
+
     logCommand(`MAP IMPORTED: ${filename} attached.`);
     logCommand('TIP: Select Magic Wand (MW) and click inside any parcel to auto-detect its boundary.');
   }
@@ -4684,11 +4873,32 @@ const ribbonTemplates = {
         return;
       }
       if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
-        const reader = new FileReader();
-        reader.onload = (loadEvent) => {
-          attachMouzaRaster(loadEvent.target.result, file.name);
+        const headerReader = new FileReader();
+        headerReader.onload = (hEv) => {
+          const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+          const reader = new FileReader();
+          reader.onload = (loadEvent) => {
+            const dataUrl = loadEvent.target.result;
+            attachMouzaRaster(dataUrl, file.name);
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+              applyDetectedDpiToUI(resolved.dpi, resolved.source);
+              applyMouzaScale(16, 3960, resolved.dpi);
+              openModal('modalScaleCalculator');
+              logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+            };
+            tempImg.onerror = () => {
+              const resolved = resolveMouzaDpi(dpiMeta, 0);
+              applyDetectedDpiToUI(resolved.dpi, resolved.source);
+              applyMouzaScale(16, 3960, resolved.dpi);
+              openModal('modalScaleCalculator');
+            };
+            tempImg.src = dataUrl;
+          };
+          reader.readAsDataURL(file);
         };
-        reader.readAsDataURL(file);
+        headerReader.readAsArrayBuffer(file.slice(0, 131072));
         return;
       }
       const reader = new FileReader();
@@ -4829,16 +5039,23 @@ const ribbonTemplates = {
     // 1. Scale Modal Presets
     document.querySelectorAll('.scale-preset-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const width = parseInt(btn.getAttribute('data-scale-width'), 10);
-        applyMouzaScale(width);
-        closeModal('modalScaleCalculator');
+        const width = parseFloat(btn.getAttribute('data-scale-width')) || 16;
+        const calculatedFactor = Math.round((5280 * 12) / width);
+        state.scalePreset = width;
+        const inputFactor = document.getElementById('inputCustomScaleFactor');
+        if (inputFactor) inputFactor.value = calculatedFactor;
+
+        document.querySelectorAll('.scale-preset-btn').forEach(b => {
+          b.classList.remove('border-sky-500', 'ring-1', 'ring-sky-400', 'bg-sky-950/60');
+        });
+        btn.classList.add('border-sky-500', 'ring-1', 'ring-sky-400', 'bg-sky-950/60');
       });
     });
 
     const btnConfirmScale = document.getElementById('btnConfirmScaleApply');
     if (btnConfirmScale) {
       btnConfirmScale.addEventListener('click', () => {
-        closeModal('modalScaleCalculator');
+        applyScaleAndDpiFromModal();
       });
     }
 
@@ -5019,19 +5236,44 @@ const ribbonTemplates = {
       });
     });
 
-    // 6. Mouza Map Real File Import (JPG/PNG Upload)
+    // 6. Mouza Map Real File Import (JPG/PNG Upload) with Auto DPI Detection
     const fileInput = document.getElementById('mouzaMapFileInput');
     if (fileInput) {
       fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (loadEvent) => {
-          attachMouzaRaster(loadEvent.target.result, file.name);
-          applyMouzaScale(16);
-          openModal('modalScaleCalculator');
+
+        // Read binary header for DPI metadata first (128KB chunk)
+        const headerReader = new FileReader();
+        headerReader.onload = (hEv) => {
+          const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+
+          // Read full data URL for raster rendering
+          const urlReader = new FileReader();
+          urlReader.onload = (loadEvent) => {
+            const dataUrl = loadEvent.target.result;
+            attachMouzaRaster(dataUrl, file.name);
+
+            // Wait for image dimensions to resolve DPI against standard Cadastral 30" sheet
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+              applyDetectedDpiToUI(resolved.dpi, resolved.source);
+              applyMouzaScale(16, 3960, resolved.dpi);
+              openModal('modalScaleCalculator');
+              logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+            };
+            tempImg.onerror = () => {
+              const resolved = resolveMouzaDpi(dpiMeta, 0);
+              applyDetectedDpiToUI(resolved.dpi, resolved.source);
+              applyMouzaScale(16, 3960, resolved.dpi);
+              openModal('modalScaleCalculator');
+            };
+            tempImg.src = dataUrl;
+          };
+          urlReader.readAsDataURL(file);
         };
-        reader.readAsDataURL(file);
+        headerReader.readAsArrayBuffer(file.slice(0, 131072));
       });
     }
 
@@ -5376,11 +5618,9 @@ const ribbonTemplates = {
           handleCommandInput(cmdInput.value);
           cmdInput.value = '';
         } else if (e.key === 'Escape') {
-          cmdInput.value = '';
-          state.drawingPoints = [];
-          const rubberBand = document.getElementById('activeRubberBand');
-          if (rubberBand) rubberBand.classList.add('hidden');
-          logCommand('*Cancel*');
+          e.preventDefault();
+          cancelActiveToolAndCommand();
+          cmdInput.blur();
         }
       });
     }
@@ -5945,14 +6185,21 @@ const ribbonTemplates = {
         return;
       }
 
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      // ESCAPE KEY: Globally cancel active tool, drawing, editor, calibration, or open modal
       if (e.key === 'Escape') {
-        resetDrawingOverlay();
-        document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
-        state.selectedDim = null;
-        setActiveTool('select');
-        logCommand('*Cancel*');
-      } else if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
+        e.preventDefault();
+        const openModalEl = document.querySelector('.cad-modal-backdrop.show');
+        if (openModalEl) {
+          openModalEl.classList.remove('show');
+          return;
+        }
+        cancelActiveToolAndCommand();
+        return;
+      }
+
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
         finishPolyline();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
@@ -6223,11 +6470,7 @@ const ribbonTemplates = {
 
     const btnCancelTool = document.getElementById('btnCancelActiveTool');
     if (btnCancelTool) {
-      btnCancelTool.addEventListener('click', () => {
-        resetDrawingOverlay();
-        setActiveTool('select');
-        logCommand('TOOL CANCELLED: Returned to Select pointer mode.');
-      });
+      btnCancelTool.addEventListener('click', cancelActiveToolAndCommand);
     }
 
     const tabStart = document.getElementById('tabStartPage');
