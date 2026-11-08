@@ -66,6 +66,10 @@
     },
     drawingPoints: [],
     dimensionPoints: [],
+    lineStartPoint: null,
+    offsetDistFt: 10,
+    offsetSelectedEdge: null,
+    orthoTargetPt: null,
     guniya: {
       enabled: false,
       x: 340,
@@ -875,14 +879,34 @@
       } else if (toolName === 'dimension') {
         bannerText.innerHTML = '📏 <b>Dimension:</b> Click 2 points to measure distance • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
         banner.classList.remove('hidden');
+      } else if (toolName === 'line') {
+        bannerText.innerHTML = '📏 <b>Line:</b> Click start point, then next point • <span class="text-amber-400 font-bold">[Esc]</span> to finish';
+        banner.classList.remove('hidden');
+      } else if (toolName === 'offset') {
+        bannerText.innerHTML = `↔️ <b>Offset:</b> Click edge to offset (${state.offsetDistFt || 10} ft), then click side • <span class="text-amber-400 font-bold">[Esc]</span> to cancel`;
+        banner.classList.remove('hidden');
+      } else if (toolName === 'trim') {
+        bannerText.innerHTML = '✂️ <b>Trim:</b> Click line segment or boundary ail to trim at intersection • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
+        banner.classList.remove('hidden');
+      } else if (toolName === 'extend') {
+        bannerText.innerHTML = '➡️ <b>Extend:</b> Click line near endpoint to extend to boundary • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
+        banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
       }
     }
 
     // Reset temporary drawing buffer if switching tools
-    if (toolName !== 'polyline' && toolName !== 'polygon' && toolName !== 'autopolyline') {
+    if (toolName !== 'polyline' && toolName !== 'polygon' && toolName !== 'autopolyline' && toolName !== 'line') {
       resetDrawingOverlay();
+    }
+    if (toolName !== 'line') {
+      state.lineStartPoint = null;
+    }
+    if (toolName !== 'offset') {
+      state.offsetSelectedEdge = null;
+      const offH = document.getElementById('offsetEdgeHighlight');
+      if (offH) offH.remove();
     }
 
     if (toolName === 'guniya') {
@@ -902,6 +926,10 @@
     state.drawingPoints = [];
     state.dimensionPoints = [];
     state.autoPolylinePoints = [];
+    state.lineStartPoint = null;
+    state.offsetSelectedEdge = null;
+    const offHighlight = document.getElementById('offsetEdgeHighlight');
+    if (offHighlight) offHighlight.remove();
     resetDrawingOverlay();
 
     document.querySelectorAll('.cad-dim-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected').forEach(el => el.classList.remove('selected'));
@@ -2412,8 +2440,100 @@
   }
 
   // =========================================================================
-  // AUTOCAD OBJECT SNAP (OSNAP) ENGINE
-  // Magnetically locks to endpoints, shared boundaries, corners, and start points
+  // AUTOCAD GEOMETRIC INTERSECTION & SEGMENT EXTRACTION ENGINE
+  // =========================================================================
+  function getAllBoundarySegments(excludeEl = null) {
+    const segments = [];
+
+    // 1. From #userDrawingsGroup and #plotsGroup
+    const candidateEls = document.querySelectorAll('#userDrawingsGroup polygon, #userDrawingsGroup polyline, #userDrawingsGroup line, #plotsGroup polygon, .mouza-plot, .user-plot-boundary');
+    for (const el of candidateEls) {
+      if (el === excludeEl) continue;
+      if (el.closest && (el.closest('.hidden') || el.style.display === 'none')) continue;
+      if (el.classList.contains('magic-wand-marker') || el.classList.contains('cad-dim-elem') || el.id === 'drawingGuideLine' || el.id === 'offsetEdgeHighlight') continue;
+
+      const ptsAttr = el.getAttribute('points');
+      if (ptsAttr) {
+        const pairs = ptsAttr.trim().split(/\s+/).map(pair => {
+          const parts = pair.split(',');
+          return { x: parseFloat(parts[0]), y: parseFloat(parts[1]) };
+        }).filter(p => !isNaN(p.x) && !isNaN(p.y));
+
+        const isClosed = el.tagName && el.tagName.toLowerCase() === 'polygon';
+        const numEdges = isClosed ? pairs.length : pairs.length - 1;
+        for (let i = 0; i < numEdges; i++) {
+          const p1 = pairs[i];
+          const p2 = pairs[(i + 1) % pairs.length];
+          segments.push({ p1, p2, el });
+        }
+      }
+
+      if (el.tagName && el.tagName.toLowerCase() === 'line') {
+        const x1 = parseFloat(el.getAttribute('x1'));
+        const y1 = parseFloat(el.getAttribute('y1'));
+        const x2 = parseFloat(el.getAttribute('x2'));
+        const y2 = parseFloat(el.getAttribute('y2'));
+        if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+          segments.push({ p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 }, el });
+        }
+      }
+    }
+
+    // 2. From state.plots
+    if (state.plots) {
+      for (const pData of Object.values(state.plots)) {
+        if (!pData.vertices || pData.vertices.length < 2) continue;
+        const verts = pData.vertices;
+        for (let i = 0; i < verts.length; i++) {
+          const j = (i + 1) % verts.length;
+          segments.push({ p1: verts[i], p2: verts[j], dag: pData.dag });
+        }
+      }
+    }
+
+    return segments;
+  }
+
+  function getLineSegmentIntersection(p1, p2, p3, p4) {
+    const denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (Math.abs(denom) < 1e-5) return null;
+    const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+    if (t >= -0.01 && t <= 1.01 && u >= -0.01 && u <= 1.01) {
+      return {
+        x: p1.x + t * (p2.x - p1.x),
+        y: p1.y + t * (p2.y - p1.y),
+        t: Math.max(0, Math.min(1, t)),
+        u: Math.max(0, Math.min(1, u))
+      };
+    }
+    return null;
+  }
+
+  function raySegmentIntersection(rayOrigin, rayDir, p1, p2) {
+    const v1 = rayOrigin.x - p1.x;
+    const v2 = rayOrigin.y - p1.y;
+    const v3 = p2.x - p1.x;
+    const v4 = p2.y - p1.y;
+    const denom = rayDir.y * v3 - rayDir.x * v4;
+    if (Math.abs(denom) < 1e-5) return null;
+
+    const t1 = (v3 * v2 - v4 * v1) / denom;
+    const t2 = (rayDir.y * v1 - rayDir.x * v2) / -denom;
+
+    if (t1 > 0.05 && t2 >= 0 && t2 <= 1) {
+      return {
+        x: rayOrigin.x + t1 * rayDir.x,
+        y: rayOrigin.y + t1 * rayDir.y,
+        dist: t1
+      };
+    }
+    return null;
+  }
+
+  // =========================================================================
+  // AUTOCAD ADVANCED OBJECT SNAP (OSNAP) ENGINE
+  // Magnetically snaps to Endpoint (■), Midpoint (▲), Perpendicular (⏊), and Intersection (✕)
   // =========================================================================
   function findBestOsnapPoint(pt, snapThresh) {
     let best = null;
@@ -2425,7 +2545,7 @@
         const p0 = state.drawingPoints[0];
         const d0 = Math.hypot(pt.x - p0.x, pt.y - p0.y);
         if (d0 <= minD) {
-          best = { x: p0.x, y: p0.y, isStart: true, label: 'Endpoint (Click to close)' };
+          best = { x: p0.x, y: p0.y, type: 'endpoint', isStart: true, label: 'Endpoint (Click to close)' };
           minD = d0;
         }
       }
@@ -2437,6 +2557,7 @@
           best = { 
             x: dp.x, 
             y: dp.y, 
+            type: 'endpoint',
             isStart: (i === 0), 
             label: (i === 0 && state.drawingPoints.length >= 3) ? 'Endpoint (Click to close)' : 'Endpoint' 
           };
@@ -2444,53 +2565,76 @@
       }
     }
 
-    // 2. All vector polygons, polylines, and lines in the drawing canvas (including adjacent plots)
-    const candidateEls = document.querySelectorAll('#userDrawingsGroup polygon, #userDrawingsGroup polyline, #userDrawingsGroup line, #plotsGroup polygon, .mouza-plot, .user-plot-boundary');
-    for (const el of candidateEls) {
-      if (el.closest('.hidden') || el.style.display === 'none') continue;
-      if (el.classList.contains('magic-wand-marker') || el.classList.contains('cad-dim-elem')) continue;
+    const segments = getAllBoundarySegments();
 
-      const ptsAttr = el.getAttribute('points');
-      if (ptsAttr) {
-        const pairs = ptsAttr.trim().split(/\s+/);
-        for (const pair of pairs) {
-          const parts = pair.split(',');
-          const vx = parseFloat(parts[0]);
-          const vy = parseFloat(parts[1]);
-          if (isNaN(vx) || isNaN(vy)) continue;
-          const d = Math.hypot(pt.x - vx, pt.y - vy);
-          if (d < minD) {
-            minD = d;
-            best = { x: vx, y: vy, isStart: false, label: 'Endpoint' };
-          }
-        }
+    // 2. Endpoints (Vertices of plots & drawn lines)
+    for (const seg of segments) {
+      const d1 = Math.hypot(pt.x - seg.p1.x, pt.y - seg.p1.y);
+      if (d1 < minD) {
+        minD = d1;
+        best = { x: seg.p1.x, y: seg.p1.y, type: 'endpoint', isStart: false, label: 'Endpoint' };
       }
+      const d2 = Math.hypot(pt.x - seg.p2.x, pt.y - seg.p2.y);
+      if (d2 < minD) {
+        minD = d2;
+        best = { x: seg.p2.x, y: seg.p2.y, type: 'endpoint', isStart: false, label: 'Endpoint' };
+      }
+    }
 
-      if (el.tagName && el.tagName.toLowerCase() === 'line') {
-        const x1 = parseFloat(el.getAttribute('x1'));
-        const y1 = parseFloat(el.getAttribute('y1'));
-        const x2 = parseFloat(el.getAttribute('x2'));
-        const y2 = parseFloat(el.getAttribute('y2'));
-        if (!isNaN(x1) && !isNaN(y1)) {
-          const d1 = Math.hypot(pt.x - x1, pt.y - y1);
-          if (d1 < minD) { minD = d1; best = { x: x1, y: y1, isStart: false, label: 'Endpoint' }; }
-        }
-        if (!isNaN(x2) && !isNaN(y2)) {
-          const d2 = Math.hypot(pt.x - x2, pt.y - y2);
-          if (d2 < minD) { minD = d2; best = { x: x2, y: y2, isStart: false, label: 'Endpoint' }; }
+    // 3. Midpoints (Triangle marker △)
+    for (const seg of segments) {
+      const mx = (seg.p1.x + seg.p2.x) / 2;
+      const my = (seg.p1.y + seg.p2.y) / 2;
+      const d = Math.hypot(pt.x - mx, pt.y - my);
+      if (d < minD) {
+        minD = d;
+        best = { x: mx, y: my, type: 'midpoint', isStart: false, label: 'Midpoint' };
+      }
+    }
+
+    // 4. Perpendicular (Right-angle marker ⏊)
+    const basePt = (state.activeTool === 'line' && state.lineStartPoint) ? state.lineStartPoint : 
+                   (state.drawingPoints && state.drawingPoints.length > 0 ? state.drawingPoints[state.drawingPoints.length - 1] : 
+                   (state.dimensionPoints && state.dimensionPoints.length > 0 ? state.dimensionPoints[0] : null));
+    if (basePt) {
+      for (const seg of segments) {
+        const dx = seg.p2.x - seg.p1.x;
+        const dy = seg.p2.y - seg.p1.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq > 4) {
+          const t = ((basePt.x - seg.p1.x) * dx + (basePt.y - seg.p1.y) * dy) / lenSq;
+          if (t >= 0.05 && t <= 0.95) {
+            const fx = seg.p1.x + t * dx;
+            const fy = seg.p1.y + t * dy;
+            const d = Math.hypot(pt.x - fx, pt.y - fy);
+            if (d < minD) {
+              minD = d;
+              best = { x: fx, y: fy, type: 'perpendicular', isStart: false, label: 'Perpendicular' };
+            }
+          }
         }
       }
     }
 
-    // 3. Registered plot vertices in state
-    if (state.plots) {
-      for (const pData of Object.values(state.plots)) {
-        if (!pData.vertices) continue;
-        for (const v of pData.vertices) {
-          const d = Math.hypot(pt.x - v.x, pt.y - v.y);
+    // 5. Intersections (Cross marker ✕)
+    const localThresh = snapThresh * 2.5;
+    const nearSegments = segments.filter(seg => {
+      const minSegX = Math.min(seg.p1.x, seg.p2.x);
+      const maxSegX = Math.max(seg.p1.x, seg.p2.x);
+      const minSegY = Math.min(seg.p1.y, seg.p2.y);
+      const maxSegY = Math.max(seg.p1.y, seg.p2.y);
+      return (pt.x >= minSegX - localThresh && pt.x <= maxSegX + localThresh &&
+              pt.y >= minSegY - localThresh && pt.y <= maxSegY + localThresh);
+    });
+
+    for (let i = 0; i < nearSegments.length; i++) {
+      for (let j = i + 1; j < nearSegments.length; j++) {
+        const inter = getLineSegmentIntersection(nearSegments[i].p1, nearSegments[i].p2, nearSegments[j].p1, nearSegments[j].p2);
+        if (inter) {
+          const d = Math.hypot(pt.x - inter.x, pt.y - inter.y);
           if (d < minD) {
             minD = d;
-            best = { x: v.x, y: v.y, isStart: false, label: 'Endpoint' };
+            best = { x: inter.x, y: inter.y, type: 'intersection', isStart: false, label: 'Intersection' };
           }
         }
       }
@@ -3174,9 +3318,292 @@
       }
     }
 
+    const clickPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : (state.orthoEnabled && state.orthoTargetPt ? { ...state.orthoTargetPt } : pt);
+
+    // 0.2 Straight Line Tool (L / LINE)
+    if (state.activeTool === 'line') {
+      if (!state.lineStartPoint) {
+        state.lineStartPoint = { x: clickPt.x, y: clickPt.y };
+        logCommand(`LINE: First point specified at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Click next point:`);
+      } else {
+        const p1 = state.lineStartPoint;
+        const p2 = { x: clickPt.x, y: clickPt.y };
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', p1.x.toFixed(1));
+          line.setAttribute('y1', p1.y.toFixed(1));
+          line.setAttribute('x2', p2.x.toFixed(1));
+          line.setAttribute('y2', p2.y.toFixed(1));
+          line.setAttribute('stroke', '#38bdf8');
+          line.setAttribute('stroke-width', '2');
+          line.setAttribute('vector-effect', 'non-scaling-stroke');
+          line.setAttribute('class', 'user-drawn-line');
+          drawingsGroup.appendChild(line);
+
+          const u = getUnitsPerPixel();
+          const distFt = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
+          pushUndo('Draw Line');
+          logCommand(`LINE: Length = ${formatDistanceFeetInches(distFt)} (${distFt.toFixed(2)} ft)`);
+        }
+        state.lineStartPoint = { x: p2.x, y: p2.y };
+      }
+      return;
+    }
+
+    // 0.3 Offset Tool (O / OFFSET)
+    if (state.activeTool === 'offset') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 20 * s2w;
+
+      if (!state.offsetSelectedEdge) {
+        // Step 1: Select an edge or line to offset
+        const candidateSegments = getAllBoundarySegments();
+        let bestSeg = null;
+        let minD = clickTol;
+
+        for (const seg of candidateSegments) {
+          const d = distToSegment(clickPt, seg.p1, seg.p2);
+          if (d < minD) {
+            minD = d;
+            bestSeg = seg;
+          }
+        }
+
+        if (bestSeg) {
+          state.offsetSelectedEdge = bestSeg;
+          const drawingsGroup = document.getElementById('userDrawingsGroup');
+          const offH = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          offH.id = 'offsetEdgeHighlight';
+          offH.setAttribute('x1', bestSeg.p1.x.toFixed(1));
+          offH.setAttribute('y1', bestSeg.p1.y.toFixed(1));
+          offH.setAttribute('x2', bestSeg.p2.x.toFixed(1));
+          offH.setAttribute('y2', bestSeg.p2.y.toFixed(1));
+          offH.setAttribute('stroke', '#facc15');
+          offH.setAttribute('stroke-width', '3');
+          offH.setAttribute('stroke-dasharray', '4 2');
+          offH.setAttribute('vector-effect', 'non-scaling-stroke');
+          drawingsGroup?.appendChild(offH);
+
+          const bannerText = document.getElementById('toolGuidanceText');
+          if (bannerText) {
+            bannerText.innerHTML = `↔️ <b>Offset:</b> Click side to place offset line (${state.offsetDistFt || 10} ft) • <span class="text-amber-400 font-bold">[Esc]</span> to cancel`;
+          }
+          logCommand(`OFFSET: Edge selected. Click on the side to place parallel line (${state.offsetDistFt || 10} ft):`);
+        } else {
+          logCommand('OFFSET: No line or edge detected near click. Click directly on a line or boundary.');
+        }
+        return;
+      } else {
+        // Step 2: Click side to generate parallel offset
+        const edge = state.offsetSelectedEdge;
+        document.getElementById('offsetEdgeHighlight')?.remove();
+        state.offsetSelectedEdge = null;
+
+        const p1 = edge.p1;
+        const p2 = edge.p2;
+        const vx = p2.x - p1.x;
+        const vy = p2.y - p1.y;
+        const len = Math.hypot(vx, vy);
+        if (len < 1) {
+          logCommand('OFFSET: Selected edge is invalid or too short.');
+          return;
+        }
+
+        let nx = -vy / len;
+        let ny = vx / len;
+
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+        const toClickX = clickPt.x - midX;
+        const toClickY = clickPt.y - midY;
+        if (toClickX * nx + toClickY * ny < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+
+        const u = getUnitsPerPixel();
+        const offsetDistFt = state.offsetDistFt || 10;
+        const offsetSvg = offsetDistFt / (u.upp_svg_x || 1);
+
+        const o1 = { x: p1.x + nx * offsetSvg, y: p1.y + ny * offsetSvg };
+        const o2 = { x: p2.x + nx * offsetSvg, y: p2.y + ny * offsetSvg };
+
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          const newLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          newLine.setAttribute('x1', o1.x.toFixed(1));
+          newLine.setAttribute('y1', o1.y.toFixed(1));
+          newLine.setAttribute('x2', o2.x.toFixed(1));
+          newLine.setAttribute('y2', o2.y.toFixed(1));
+          newLine.setAttribute('stroke', '#f59e0b');
+          newLine.setAttribute('stroke-width', '2');
+          newLine.setAttribute('vector-effect', 'non-scaling-stroke');
+          newLine.setAttribute('class', 'user-drawn-line offset-line');
+          drawingsGroup.appendChild(newLine);
+
+          createAlignedDimension({ x: midX, y: midY }, { x: midX + nx * offsetSvg, y: midY + ny * offsetSvg });
+          pushUndo(`Offset Line (${offsetDistFt} ft)`);
+          logCommand(`OFFSET: Parallel line created with ${offsetDistFt} ft offset.`);
+        }
+
+        const bannerText = document.getElementById('toolGuidanceText');
+        if (bannerText) {
+          bannerText.innerHTML = `↔️ <b>Offset:</b> Click another edge to offset • <span class="text-amber-400 font-bold">[Esc]</span> to finish`;
+        }
+        return;
+      }
+    }
+
+    // 0.4 Trim Tool (TR / TRIM)
+    if (state.activeTool === 'trim') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 20 * s2w;
+      const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line'));
+      let targetLine = null;
+      let minD = clickTol;
+
+      for (const l of userLines) {
+        if (l.id === 'drawingGuideLine' || l.id === 'offsetEdgeHighlight') continue;
+        const x1 = parseFloat(l.getAttribute('x1'));
+        const y1 = parseFloat(l.getAttribute('y1'));
+        const x2 = parseFloat(l.getAttribute('x2'));
+        const y2 = parseFloat(l.getAttribute('y2'));
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) continue;
+        const d = distToSegment(clickPt, { x: x1, y: y1 }, { x: x2, y: y2 });
+        if (d < minD) {
+          minD = d;
+          targetLine = { el: l, p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 } };
+        }
+      }
+
+      if (!targetLine) {
+        logCommand('TRIM: No line found near click. Click on a line segment to trim.');
+        return;
+      }
+
+      const candidateSegments = getAllBoundarySegments(targetLine.el);
+      const intersections = [];
+      for (const seg of candidateSegments) {
+        const inter = getLineSegmentIntersection(targetLine.p1, targetLine.p2, seg.p1, seg.p2);
+        if (inter && inter.t > 0.005 && inter.t < 0.995) {
+          intersections.push(inter);
+        }
+      }
+
+      if (intersections.length === 0) {
+        logCommand('TRIM: No intersecting cutting boundary found for this line.');
+        return;
+      }
+
+      intersections.sort((a, b) => a.t - b.t);
+      const splitPoints = [targetLine.p1, ...intersections.map(i => ({ x: i.x, y: i.y })), targetLine.p2];
+      let bestSegIdx = 0;
+      let bestSegDist = Infinity;
+      for (let i = 0; i < splitPoints.length - 1; i++) {
+        const d = distToSegment(clickPt, splitPoints[i], splitPoints[i + 1]);
+        if (d < bestSegDist) {
+          bestSegDist = d;
+          bestSegIdx = i;
+        }
+      }
+
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      targetLine.el.remove();
+
+      for (let i = 0; i < splitPoints.length - 1; i++) {
+        if (i === bestSegIdx) continue;
+        const spa = splitPoints[i];
+        const spb = splitPoints[i + 1];
+        if (Math.hypot(spb.x - spa.x, spb.y - spa.y) > 2) {
+          const newLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          newLine.setAttribute('x1', spa.x.toFixed(1));
+          newLine.setAttribute('y1', spa.y.toFixed(1));
+          newLine.setAttribute('x2', spb.x.toFixed(1));
+          newLine.setAttribute('y2', spb.y.toFixed(1));
+          newLine.setAttribute('stroke', '#38bdf8');
+          newLine.setAttribute('stroke-width', '2');
+          newLine.setAttribute('vector-effect', 'non-scaling-stroke');
+          newLine.setAttribute('class', 'user-drawn-line');
+          drawingsGroup?.appendChild(newLine);
+        }
+      }
+
+      pushUndo('Trim Line');
+      logCommand('TRIM: Line segment trimmed at boundary intersection.');
+      return;
+    }
+
+    // 0.5 Extend Tool (EX / EXTEND)
+    if (state.activeTool === 'extend') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 24 * s2w;
+      const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line'));
+      let targetLine = null;
+      let minD = clickTol;
+
+      for (const l of userLines) {
+        if (l.id === 'drawingGuideLine' || l.id === 'offsetEdgeHighlight') continue;
+        const x1 = parseFloat(l.getAttribute('x1'));
+        const y1 = parseFloat(l.getAttribute('y1'));
+        const x2 = parseFloat(l.getAttribute('x2'));
+        const y2 = parseFloat(l.getAttribute('y2'));
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) continue;
+        const d = distToSegment(clickPt, { x: x1, y: y1 }, { x: x2, y: y2 });
+        if (d < minD) {
+          minD = d;
+          targetLine = { el: l, p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 } };
+        }
+      }
+
+      if (!targetLine) {
+        logCommand('EXTEND: No line found near click. Click near the endpoint you want to extend.');
+        return;
+      }
+
+      const d1 = Math.hypot(clickPt.x - targetLine.p1.x, clickPt.y - targetLine.p1.y);
+      const d2 = Math.hypot(clickPt.x - targetLine.p2.x, clickPt.y - targetLine.p2.y);
+      const extendEnd = (d2 <= d1) ? 'p2' : 'p1';
+      const startP = (extendEnd === 'p2') ? targetLine.p1 : targetLine.p2;
+      const endP = (extendEnd === 'p2') ? targetLine.p2 : targetLine.p1;
+
+      const rvx = endP.x - startP.x;
+      const rvy = endP.y - startP.y;
+      const rlen = Math.hypot(rvx, rvy);
+      if (rlen < 1) return;
+      const rdx = rvx / rlen;
+      const rdy = rvy / rlen;
+
+      const candidateSegments = getAllBoundarySegments(targetLine.el);
+      let bestHit = null;
+      let minHitDist = Infinity;
+
+      for (const seg of candidateSegments) {
+        const hit = raySegmentIntersection(endP, { x: rdx, y: rdy }, seg.p1, seg.p2);
+        if (hit && hit.dist > 1.0 && hit.dist < minHitDist) {
+          minHitDist = hit.dist;
+          bestHit = hit;
+        }
+      }
+
+      if (bestHit) {
+        if (extendEnd === 'p2') {
+          targetLine.el.setAttribute('x2', bestHit.x.toFixed(1));
+          targetLine.el.setAttribute('y2', bestHit.y.toFixed(1));
+        } else {
+          targetLine.el.setAttribute('x1', bestHit.x.toFixed(1));
+          targetLine.el.setAttribute('y1', bestHit.y.toFixed(1));
+        }
+        pushUndo('Extend Line');
+        logCommand(`EXTEND: Line extended by ${minHitDist.toFixed(1)} px to intersecting boundary.`);
+      } else {
+        logCommand('EXTEND: No boundary edge lies in the extension direction.');
+      }
+      return;
+    }
+
     // 1. Polyline / Boundary Drawing Mode (Image 2 standard)
     if (state.activeTool === 'polyline' || state.activeTool === 'autopolyline' || state.activeTool === 'polygon') {
-      const clickPt = (state.snappedPoint && state.snappedPoint.x !== undefined) ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : pt;
       const s2w = getScreenPixelToWorld();
 
       // Check if clicking near Point 1 or snapped to start point to close polyline
@@ -3787,6 +4214,7 @@ const ribbonTemplates = {
   
   function bindRibbonActions() {
     const handlers = {
+      'rbLine': () => setActiveTool('line'),
       'rbPolyline': () => setActiveTool('polyline'),
       'rbAutoPL': () => {
         setActiveTool('autopolyline');
@@ -3798,15 +4226,18 @@ const ribbonTemplates = {
       'rbHatch': () => applyHatchToSelectedPlot(),
       'rbMove': () => setActiveTool('move'),
       'rbRotate': () => applyRotateToSelectedPlot(45),
-      'rbTrim': () => {
-        logCommand('TRIM: Select line or boundary edge to trim against boundary ail.');
-      },
+      'rbTrim': () => setActiveTool('trim'),
       'rbCopy': () => applyCopyToSelectedPlot(),
-      'rbExtend': () => {
-        logCommand('EXTEND: Boundary line extended to meet adjacent parcel ail.');
-      },
+      'rbExtend': () => setActiveTool('extend'),
+      'rbMirror': () => applyMirrorToSelectedPlot(),
       'rbScale': () => openModal('modalScaleCalculator'),
-      'rbOffset': () => applyOffsetToSelectedPlot(10),
+      'rbOffset': () => {
+        if (state.selectedDag) {
+          applyOffsetToSelectedPlot(10);
+        } else {
+          setActiveTool('offset');
+        }
+      },
       'rbErase': () => {
         const deleted = deleteSelectedObject();
         if (!deleted) {
@@ -4847,15 +5278,68 @@ const ribbonTemplates = {
       case 'ALIGN':
         startScaleBarCalibration();
         break;
+      case 'L':
+      case 'LINE':
+        setActiveTool('line');
+        logCommand(`LINE: Click canvas to specify first point:`);
+        break;
+      case 'O':
+      case 'OFFSET':
+        if (parts[1]) {
+          state.offsetDistFt = parseFloat(parts[1]) || 10;
+        }
+        if (state.selectedDag) {
+          applyOffsetToSelectedPlot(state.offsetDistFt || 10);
+        } else {
+          setActiveTool('offset');
+          logCommand(`OFFSET: Specify offset distance <${state.offsetDistFt || 10} ft> or select edge to offset:`);
+        }
+        break;
+      case 'TR':
+      case 'TRIM':
+        setActiveTool('trim');
+        logCommand(`TRIM: Click line segment to trim at intersection:`);
+        break;
+      case 'EX':
+      case 'EXTEND':
+        setActiveTool('extend');
+        logCommand(`EXTEND: Click line near endpoint to extend to boundary:`);
+        break;
+      case 'MI':
+      case 'MIRROR':
+        applyMirrorToSelectedPlot();
+        break;
+      case 'CO':
+      case 'COPY':
+        applyCopyToSelectedPlot();
+        break;
       case 'M':
       case 'MOVE':
-        setActiveTool('move');
-        logCommand(`MOVE: Select objects to move:`);
+        if (parts[1] && parts[2]) {
+          applyMoveToSelectedPlot(parseFloat(parts[1]), parseFloat(parts[2]));
+        } else {
+          setActiveTool('move');
+          logCommand(`MOVE: Drag to move drawings or select object:`);
+        }
         break;
       case 'RO':
       case 'ROTATE':
-        setActiveTool('rotate');
-        logCommand(`ROTATE: Select objects to rotate:`);
+        if (parts[1]) {
+          applyRotateToSelectedPlot(parseFloat(parts[1]));
+        } else {
+          applyRotateToSelectedPlot(45);
+        }
+        break;
+      case 'ORTHO':
+        toggleOrthoMode();
+        break;
+      case 'OSNAP':
+        toggleOsnapMode();
+        break;
+      case 'PARTITION':
+      case 'SPLIT':
+      case 'BATOARA':
+        drawPartitionOnCanvas(parts[1] || state.selectedDag || '126');
         break;
       case 'U':
       case 'UNDO':
@@ -5171,14 +5655,402 @@ const ribbonTemplates = {
       });
     }
 
+    // =========================================================================
+    // AUTOCAD LAND PARTITION ENGINE (বাটোয়ারা / দাগ ভাগ - SLICE BY AREA)
+    // Splits selected cadastral plot into equal or fractional sub-parcels (ক, খ, গ)
+    // =========================================================================
+    function drawPartitionOnCanvas(dagNo) {
+      const targetDag = dagNo || state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots || !state.plots[targetDag]) {
+        logCommand('PARTITION: Please select a plot on canvas first.');
+        return;
+      }
+
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      if (!verts || verts.length < 3) {
+        logCommand(`PARTITION: Plot ${targetDag} does not have valid polygon geometry.`);
+        return;
+      }
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      verts.forEach(v => {
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+      });
+
+      const width = maxX - minX;
+      const height = maxY - minY;
+      const isHorizontal = width >= height;
+
+      // Sutherland-Hodgman clipping against half-plane: a*x + b*y + c >= 0
+      function clipPoly(poly, a, b, c) {
+        const out = [];
+        if (!poly || poly.length < 3) return out;
+        for (let i = 0; i < poly.length; i++) {
+          const cur = poly[i];
+          const prev = poly[(i + poly.length - 1) % poly.length];
+          const curIn = (a * cur.x + b * cur.y + c >= 0);
+          const prevIn = (a * prev.x + b * prev.y + c >= 0);
+
+          if (curIn) {
+            if (!prevIn) {
+              const denom = a * (cur.x - prev.x) + b * (cur.y - prev.y);
+              const t = Math.abs(denom) > 1e-6 ? (-c - a * prev.x - b * prev.y) / denom : 0;
+              out.push({ x: prev.x + t * (cur.x - prev.x), y: prev.y + t * (cur.y - prev.y) });
+            }
+            out.push(cur);
+          } else if (prevIn) {
+            const denom = a * (cur.x - prev.x) + b * (cur.y - prev.y);
+            const t = Math.abs(denom) > 1e-6 ? (-c - a * prev.x - b * prev.y) / denom : 0;
+            out.push({ x: prev.x + t * (cur.x - prev.x), y: prev.y + t * (cur.y - prev.y) });
+          }
+        }
+        return out;
+      }
+
+      let subPolys = [];
+      if (isHorizontal) {
+        const s1 = minX + width * 0.3333;
+        const s2 = minX + width * 0.6666;
+        const p1 = clipPoly(verts, -1, 0, s1);
+        const p2Mid = clipPoly(verts, 1, 0, -s1);
+        const p2 = clipPoly(p2Mid, -1, 0, s2);
+        const p3 = clipPoly(verts, 1, 0, -s2);
+        subPolys = [p1, p2, p3];
+      } else {
+        const s1 = minY + height * 0.3333;
+        const s2 = minY + height * 0.6666;
+        const p1 = clipPoly(verts, 0, -1, s1);
+        const p2Mid = clipPoly(verts, 0, 1, -s1);
+        const p2 = clipPoly(p2Mid, 0, -1, s2);
+        const p3 = clipPoly(verts, 0, 1, -s2);
+        subPolys = [p1, p2, p3];
+      }
+
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      if (!drawingsGroup) return;
+
+      const safeDagClass = targetDag.replace(/[^a-zA-Z0-9]/g, '_');
+      document.querySelectorAll(`.partition-dag-${safeDagClass}`).forEach(el => el.remove());
+
+      const subNames = ['ক', 'খ', 'গ'];
+      const colors = [
+        { fill: 'rgba(56, 189, 248, 0.22)', stroke: '#0284c7', text: '#38bdf8' },
+        { fill: 'rgba(245, 158, 11, 0.22)', stroke: '#d97706', text: '#f59e0b' },
+        { fill: 'rgba(16, 185, 129, 0.22)', stroke: '#059669', text: '#10b981' }
+      ];
+
+      const u = getUnitsPerPixel();
+      const summaryParts = [];
+
+      subPolys.forEach((poly, idx) => {
+        if (!poly || poly.length < 3) return;
+        const subDag = `${targetDag}/${subNames[idx]}`;
+
+        const worldVerts = poly.map(v => ({ x: v.x * u.upp_svg_x, y: v.y * u.upp_svg_y }));
+        let areaSum = 0;
+        let perim = 0;
+        for (let i = 0; i < worldVerts.length; i++) {
+          const j = (i + 1) % worldVerts.length;
+          areaSum += worldVerts[i].x * worldVerts[j].y - worldVerts[j].x * worldVerts[i].y;
+          perim += Math.hypot(worldVerts[j].x - worldVerts[i].x, worldVerts[j].y - worldVerts[i].y);
+        }
+        const areaSqFt = Math.abs(areaSum) / 2;
+        const areaDecimal = areaSqFt / SQFT_PER_DECIMAL;
+
+        let cx = 0, cy = 0;
+        poly.forEach(v => { cx += v.x; cy += v.y; });
+        cx /= poly.length;
+        cy /= poly.length;
+
+        const svgPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        svgPoly.setAttribute('points', poly.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+        svgPoly.setAttribute('fill', colors[idx].fill);
+        svgPoly.setAttribute('stroke', colors[idx].stroke);
+        svgPoly.setAttribute('stroke-width', '2');
+        svgPoly.setAttribute('vector-effect', 'non-scaling-stroke');
+        svgPoly.setAttribute('class', `user-plot-boundary partition-dag-${safeDagClass}`);
+        svgPoly.setAttribute('data-dag', subDag);
+        drawingsGroup.appendChild(svgPoly);
+
+        // Centroid Badge
+        const badgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        badgeGroup.setAttribute('class', `partition-dag-${safeDagClass} cadastral-plot-badge`);
+        badgeGroup.setAttribute('transform', `translate(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+
+        const s2w = getScreenPixelToWorld();
+        const bw = 96 * s2w;
+        const bh = 36 * s2w;
+        const fontT = 11 * s2w;
+        const fontA = 10 * s2w;
+
+        const badgeBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        badgeBg.setAttribute('x', (-bw / 2).toFixed(1));
+        badgeBg.setAttribute('y', (-bh / 2).toFixed(1));
+        badgeBg.setAttribute('width', bw.toFixed(1));
+        badgeBg.setAttribute('height', bh.toFixed(1));
+        badgeBg.setAttribute('rx', (3 * s2w).toFixed(1));
+        badgeBg.setAttribute('fill', '#0f172a');
+        badgeBg.setAttribute('fill-opacity', '0.92');
+        badgeBg.setAttribute('stroke', colors[idx].stroke);
+        badgeBg.setAttribute('stroke-width', '1.5');
+        badgeBg.setAttribute('vector-effect', 'non-scaling-stroke');
+        badgeGroup.appendChild(badgeBg);
+
+        const txtTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txtTitle.setAttribute('x', '0');
+        txtTitle.setAttribute('y', (-2 * s2w).toFixed(1));
+        txtTitle.setAttribute('text-anchor', 'middle');
+        txtTitle.setAttribute('font-size', fontT.toFixed(1));
+        txtTitle.setAttribute('font-weight', 'bold');
+        txtTitle.setAttribute('fill', '#f8fafc');
+        txtTitle.textContent = `দাগ ${subDag}`;
+        badgeGroup.appendChild(txtTitle);
+
+        const txtArea = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txtArea.setAttribute('x', '0');
+        txtArea.setAttribute('y', (11 * s2w).toFixed(1));
+        txtArea.setAttribute('text-anchor', 'middle');
+        txtArea.setAttribute('font-size', fontA.toFixed(1));
+        txtArea.setAttribute('font-weight', 'bold');
+        txtArea.setAttribute('fill', colors[idx].text);
+        txtArea.textContent = `${areaDecimal.toFixed(2)} শতক`;
+        badgeGroup.appendChild(txtArea);
+
+        drawingsGroup.appendChild(badgeGroup);
+
+        // Register into state.plots
+        state.plots[subDag] = {
+          mouza: pData.mouza || 'Chorbagh',
+          sheet: pData.sheet || '01',
+          dag: subDag,
+          vertices: poly,
+          areaSqFt,
+          areaDecimal,
+          katha: areaSqFt / SQFT_PER_KATHA,
+          bigha: areaSqFt / SQFT_PER_BIGHA,
+          acre: areaSqFt / 43560,
+          perimeter: perim,
+          owners: `অংশ ${subNames[idx]} (১/৩ অংশীদার)`,
+          dims: {
+            top: `${(perim * 0.3).toFixed(2)} ft`,
+            bottom: `${(perim * 0.3).toFixed(2)} ft`,
+            left: `${(perim * 0.2).toFixed(2)} ft`,
+            right: `${(perim * 0.2).toFixed(2)} ft`
+          },
+          ownerList: [{ name: `শরিক ${subNames[idx]} (বাটোয়ারা অংশ)`, share: `${areaDecimal.toFixed(2)} শতক` }]
+        };
+
+        summaryParts.push(`${subDag} (${areaDecimal.toFixed(2)} শতক)`);
+      });
+
+      const origPoly = document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"]`);
+      if (origPoly) origPoly.style.display = 'none';
+
+      selectPlot(`${targetDag}/ক`);
+      pushUndo(`Partition Plot ${targetDag}`);
+      logCommand(`PARTITION: দাগ ${targetDag} সফলভাবে বাটোয়ারা করা হয়েছে: ${summaryParts.join(', ')}`);
+    }
+
+    // =========================================================================
+    // AUTOCAD MODIFY ACTIONS (COPY, ROTATE, MIRROR, MOVE, OFFSET)
+    // =========================================================================
+    function applyCopyToSelectedPlot() {
+      const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots[targetDag]) {
+        logCommand('COPY: Please select an object or plot first.');
+        return;
+      }
+      const orig = state.plots[targetDag];
+      state.nextDagNumber = (state.nextDagNumber || 250) + 1;
+      const newDag = String(state.nextDagNumber);
+      
+      const shift = 35;
+      const newVerts = orig.vertices.map(v => ({ x: v.x + shift, y: v.y + shift }));
+
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      if (drawingsGroup) {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', newVerts.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+        poly.setAttribute('fill', 'rgba(56, 189, 248, 0.25)');
+        poly.setAttribute('stroke', '#38bdf8');
+        poly.setAttribute('stroke-width', '2');
+        poly.setAttribute('vector-effect', 'non-scaling-stroke');
+        poly.setAttribute('class', 'user-plot-boundary');
+        poly.setAttribute('data-dag', newDag);
+        drawingsGroup.appendChild(poly);
+      }
+
+      state.plots[newDag] = {
+        ...orig,
+        dag: newDag,
+        vertices: newVerts
+      };
+
+      selectPlot(newDag);
+      pushUndo(`Copy Plot ${orig.dag} -> ${newDag}`);
+      logCommand(`COPY: Plot ${orig.dag} copied to Plot ${newDag} (shifted +35px).`);
+    }
+
+    function applyRotateToSelectedPlot(angleDeg = 45) {
+      const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots[targetDag]) {
+        logCommand('ROTATE: Please select an object or plot first.');
+        return;
+      }
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      if (!verts || verts.length < 2) return;
+
+      let cx = 0, cy = 0;
+      verts.forEach(v => { cx += v.x; cy += v.y; });
+      cx /= verts.length;
+      cy /= verts.length;
+
+      const rad = (angleDeg * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      pData.vertices = verts.map(v => {
+        const dx = v.x - cx;
+        const dy = v.y - cy;
+        return {
+          x: cx + dx * cos - dy * sin,
+          y: cy + dx * sin + dy * cos
+        };
+      });
+
+      const el = document.querySelector(`[data-dag="${targetDag}"]`);
+      if (el) {
+        el.setAttribute('points', pData.vertices.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+      }
+
+      recalculateAllPlacedDimensions();
+      pushUndo(`Rotate Plot ${targetDag} (${angleDeg}°)`);
+      logCommand(`ROTATE: Plot ${targetDag} rotated by ${angleDeg}°.`);
+    }
+
+    function applyMirrorToSelectedPlot() {
+      const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots[targetDag]) {
+        logCommand('MIRROR: Please select an object or plot first.');
+        return;
+      }
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      if (!verts || verts.length < 2) return;
+
+      let cx = 0;
+      verts.forEach(v => { cx += v.x; });
+      cx /= verts.length;
+
+      pData.vertices = verts.map(v => ({
+        x: cx - (v.x - cx),
+        y: v.y
+      }));
+
+      const el = document.querySelector(`[data-dag="${targetDag}"]`);
+      if (el) {
+        el.setAttribute('points', pData.vertices.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+      }
+
+      recalculateAllPlacedDimensions();
+      pushUndo(`Mirror Plot ${targetDag}`);
+      logCommand(`MIRROR: Plot ${targetDag} mirrored across center vertical axis.`);
+    }
+
+    function applyMoveToSelectedPlot(dx = 30, dy = 30) {
+      const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots[targetDag]) {
+        logCommand('MOVE: Please select an object or plot first.');
+        return;
+      }
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      if (!verts) return;
+
+      pData.vertices = verts.map(v => ({ x: v.x + dx, y: v.y + dy }));
+      const el = document.querySelector(`[data-dag="${targetDag}"]`);
+      if (el) {
+        el.setAttribute('points', pData.vertices.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+      }
+      recalculateAllPlacedDimensions();
+      pushUndo(`Move Plot ${targetDag}`);
+      logCommand(`MOVE: Plot ${targetDag} moved by (${dx}px, ${dy}px).`);
+    }
+
+    function applyOffsetToSelectedPlot(distFt = 10) {
+      const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
+      if (!targetDag || !state.plots[targetDag]) {
+        setActiveTool('offset');
+        return;
+      }
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      if (!verts || verts.length < 3) {
+        setActiveTool('offset');
+        return;
+      }
+
+      let cx = 0, cy = 0;
+      verts.forEach(v => { cx += v.x; cy += v.y; });
+      cx /= verts.length;
+      cy /= verts.length;
+
+      const u = getUnitsPerPixel();
+      const offsetSvg = distFt / (u.upp_svg_x || 1);
+
+      const offsetVerts = verts.map(v => {
+        const dx = cx - v.x;
+        const dy = cy - v.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 1) return { ...v };
+        const factor = Math.max(0.1, (d - offsetSvg) / d);
+        return { x: cx - dx * factor, y: cy - dy * factor };
+      });
+
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      if (drawingsGroup) {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', offsetVerts.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', '#f59e0b');
+        poly.setAttribute('stroke-width', '1.8');
+        poly.setAttribute('stroke-dasharray', '5 3');
+        poly.setAttribute('vector-effect', 'non-scaling-stroke');
+        poly.setAttribute('class', 'user-drawn-offset-polygon');
+        drawingsGroup.appendChild(poly);
+
+        createAlignedDimension(verts[0], offsetVerts[0]);
+        pushUndo(`Setback Offset (${distFt} ft)`);
+        logCommand(`OFFSET: Setback boundary created with ${distFt} ft inward offset.`);
+      }
+    }
+
+    function toggleOrthoMode() {
+      state.orthoEnabled = !state.orthoEnabled;
+      const btn = document.getElementById('btnToggleOrtho');
+      if (btn) btn.classList.toggle('active', state.orthoEnabled);
+      logCommand(state.orthoEnabled ? '<Ortho on (F8)>' : '<Ortho off (F8)>');
+    }
+
+    function toggleOsnapMode() {
+      state.osnapEnabled = (state.osnapEnabled !== undefined) ? !state.osnapEnabled : false;
+      const btn = document.getElementById('btnToggleOsnap');
+      if (btn) btn.classList.toggle('active', state.osnapEnabled);
+      logCommand(state.osnapEnabled ? '<Object Snap on (F3)>' : '<Object Snap off (F3)>');
+    }
+
     // 3. Partition Modal
     const btnApplyPartition = document.getElementById('btnApplyPartitionToCanvas');
     if (btnApplyPartition) {
       btnApplyPartition.addEventListener('click', () => {
+        const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : '126');
         closeModal('modalPartitionFaraiz');
-        drawPartitionOnCanvas(state.selectedDag);
-        pushUndo(`Partition (Plot ${state.selectedDag})`);
-        logCommand(`PARTITION: Dag ${state.selectedDag} split into 3 sub-dags (, , ) of 10.00 Decimal each.`);
+        drawPartitionOnCanvas(targetDag);
       });
     }
 
@@ -5778,28 +6650,74 @@ const ribbonTemplates = {
 
         // AutoCAD Magnetic OSNAP (Object Snap) Detection
         const isDrawTool = (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline' || state.activeTool === 'dimension' || state.activeTool === 'line');
-        const bestSnap = isDrawTool ? findBestOsnapPoint(pt, snapThresh) : null;
+        const bestSnap = (isDrawTool && state.osnapEnabled !== false) ? findBestOsnapPoint(pt, snapThresh) : null;
         let snapScreen = null;
 
+        const osnapTriangle = document.getElementById('osnapMarkerTriangle');
+        const osnapPerp = document.getElementById('osnapMarkerPerp');
+        const osnapIntersect = document.getElementById('osnapMarkerIntersect');
+
         if (bestSnap) {
-          state.snappedPoint = { x: bestSnap.x, y: bestSnap.y, isStart: bestSnap.isStart, label: bestSnap.label };
+          state.snappedPoint = { x: bestSnap.x, y: bestSnap.y, type: bestSnap.type, isStart: bestSnap.isStart, label: bestSnap.label };
           snapScreen = svgPointToScreen(bestSnap.x, bestSnap.y);
 
-          // Magnetic crosshair pull: snap crosshair directly onto target vertex (Image 4 standard)
+          // Magnetic crosshair pull: snap crosshair directly onto target vertex
           if (crosshair) {
             crosshair.style.left = `${snapScreen.x}px`;
             crosshair.style.top = `${snapScreen.y}px`;
           }
 
-          if (osnapBox && osnapMarker) {
-            osnapBox.setAttribute('x', (bestSnap.x - 5.5 * s2w).toFixed(1));
-            osnapBox.setAttribute('y', (bestSnap.y - 5.5 * s2w).toFixed(1));
-            osnapBox.setAttribute('width', (11.0 * s2w).toFixed(1));
-            osnapBox.setAttribute('height', (11.0 * s2w).toFixed(1));
+          if (osnapMarker) {
+            if (osnapBox) osnapBox.classList.add('hidden');
+            if (osnapTriangle) osnapTriangle.classList.add('hidden');
+            if (osnapPerp) osnapPerp.classList.add('hidden');
+            if (osnapIntersect) osnapIntersect.classList.add('hidden');
+
+            if (bestSnap.type === 'midpoint' && osnapTriangle) {
+              const tx = bestSnap.x;
+              const ty = bestSnap.y;
+              osnapTriangle.setAttribute('points', `${tx.toFixed(1)},${(ty - 6.5 * s2w).toFixed(1)} ${(tx - 6.0 * s2w).toFixed(1)},${(ty + 5.0 * s2w).toFixed(1)} ${(tx + 6.0 * s2w).toFixed(1)},${(ty + 5.0 * s2w).toFixed(1)}`);
+              osnapTriangle.classList.remove('hidden');
+            } else if (bestSnap.type === 'perpendicular' && osnapPerp) {
+              const l1 = document.getElementById('osnapPerpL1');
+              const l2 = document.getElementById('osnapPerpL2');
+              if (l1 && l2) {
+                l1.setAttribute('x1', (bestSnap.x - 5.5 * s2w).toFixed(1));
+                l1.setAttribute('y1', (bestSnap.y).toFixed(1));
+                l1.setAttribute('x2', (bestSnap.x + 5.5 * s2w).toFixed(1));
+                l1.setAttribute('y2', (bestSnap.y).toFixed(1));
+                l2.setAttribute('x1', (bestSnap.x).toFixed(1));
+                l2.setAttribute('y1', (bestSnap.y).toFixed(1));
+                l2.setAttribute('x2', (bestSnap.x).toFixed(1));
+                l2.setAttribute('y2', (bestSnap.y - 7.0 * s2w).toFixed(1));
+              }
+              osnapPerp.classList.remove('hidden');
+            } else if (bestSnap.type === 'intersection' && osnapIntersect) {
+              const l1 = document.getElementById('osnapIntL1');
+              const l2 = document.getElementById('osnapIntL2');
+              if (l1 && l2) {
+                l1.setAttribute('x1', (bestSnap.x - 4.5 * s2w).toFixed(1));
+                l1.setAttribute('y1', (bestSnap.y - 4.5 * s2w).toFixed(1));
+                l1.setAttribute('x2', (bestSnap.x + 4.5 * s2w).toFixed(1));
+                l1.setAttribute('y2', (bestSnap.y + 4.5 * s2w).toFixed(1));
+                l2.setAttribute('x1', (bestSnap.x - 4.5 * s2w).toFixed(1));
+                l2.setAttribute('y1', (bestSnap.y + 4.5 * s2w).toFixed(1));
+                l2.setAttribute('x2', (bestSnap.x + 4.5 * s2w).toFixed(1));
+                l2.setAttribute('y2', (bestSnap.y - 4.5 * s2w).toFixed(1));
+              }
+              osnapIntersect.classList.remove('hidden');
+            } else if (osnapBox) {
+              osnapBox.setAttribute('x', (bestSnap.x - 5.5 * s2w).toFixed(1));
+              osnapBox.setAttribute('y', (bestSnap.y - 5.5 * s2w).toFixed(1));
+              osnapBox.setAttribute('width', (11.0 * s2w).toFixed(1));
+              osnapBox.setAttribute('height', (11.0 * s2w).toFixed(1));
+              osnapBox.classList.remove('hidden');
+            }
             osnapMarker.classList.remove('hidden');
           }
           if (dynOsnapTooltip) {
-            dynOsnapTooltip.innerHTML = `<span>■</span> ${bestSnap.label}`;
+            const sym = bestSnap.type === 'midpoint' ? '▲' : (bestSnap.type === 'perpendicular' ? '⏊' : (bestSnap.type === 'intersection' ? '✕' : '■'));
+            dynOsnapTooltip.innerHTML = `<span>${sym}</span> ${bestSnap.label}`;
             dynOsnapTooltip.classList.remove('hidden');
           }
         } else {
@@ -5808,9 +6726,68 @@ const ribbonTemplates = {
           if (dynOsnapTooltip) dynOsnapTooltip.classList.add('hidden');
         }
 
-        const targetPt = state.snappedPoint ? state.snappedPoint : pt;
-        const hudPosX = snapScreen ? snapScreen.x : mouseX;
-        const hudPosY = snapScreen ? snapScreen.y : mouseY;
+        let targetPt = state.snappedPoint ? state.snappedPoint : pt;
+
+        // Ortho Mode constraints
+        if (!state.snappedPoint && state.orthoEnabled) {
+          const orthoBase = (state.activeTool === 'line' && state.lineStartPoint) ? state.lineStartPoint :
+                           ((state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline') && state.drawingPoints && state.drawingPoints.length > 0 ? state.drawingPoints[state.drawingPoints.length - 1] :
+                           (state.activeTool === 'dimension' && state.dimensionPoints && state.dimensionPoints.length > 0 ? state.dimensionPoints[0] : null));
+          if (orthoBase) {
+            const odx = Math.abs(pt.x - orthoBase.x);
+            const ody = Math.abs(pt.y - orthoBase.y);
+            if (odx >= ody) {
+              targetPt = { x: pt.x, y: orthoBase.y };
+            } else {
+              targetPt = { x: orthoBase.x, y: pt.y };
+            }
+            state.orthoTargetPt = targetPt;
+            const orthoScreen = svgPointToScreen(targetPt.x, targetPt.y);
+            if (crosshair) {
+              crosshair.style.left = `${orthoScreen.x}px`;
+              crosshair.style.top = `${orthoScreen.y}px`;
+            }
+          } else {
+            state.orthoTargetPt = null;
+          }
+        } else {
+          state.orthoTargetPt = null;
+        }
+
+        const hudPosX = snapScreen ? snapScreen.x : (state.orthoTargetPt ? svgPointToScreen(state.orthoTargetPt.x, state.orthoTargetPt.y).x : mouseX);
+        const hudPosY = snapScreen ? snapScreen.y : (state.orthoTargetPt ? svgPointToScreen(state.orthoTargetPt.x, state.orthoTargetPt.y).y : mouseY);
+
+        // Straight Line Tool (L) Live Preview Guide
+        if (state.activeTool === 'line' && state.lineStartPoint) {
+          const lastP = state.lineStartPoint;
+          if (guide) {
+            guide.setAttribute('x1', lastP.x.toFixed(1));
+            guide.setAttribute('y1', lastP.y.toFixed(1));
+            guide.setAttribute('x2', targetPt.x.toFixed(1));
+            guide.setAttribute('y2', targetPt.y.toFixed(1));
+            guide.classList.remove('hidden');
+          }
+
+          const u = getUnitsPerPixel();
+          const distFeet = Math.hypot((targetPt.x - lastP.x) * u.upp_svg_x, (targetPt.y - lastP.y) * u.upp_svg_y);
+          const formattedDist = formatDistanceFeetInches(distFeet);
+
+          const ldx = targetPt.x - lastP.x;
+          const ldy = targetPt.y - lastP.y;
+          const angleDeg = Math.round((Math.atan2(-ldy, ldx) * 180 / Math.PI + 360) % 360);
+
+          if (dynDistBadge) {
+            dynDistBadge.textContent = formattedDist;
+            dynDistBadge.style.display = 'block';
+          }
+          if (dynAngBadge) {
+            dynAngBadge.textContent = `${angleDeg}°`;
+            dynAngBadge.style.display = 'block';
+          }
+          if (dynPromptBadge) {
+            dynPromptBadge.textContent = 'Specify next point • [Esc] to finish';
+          }
+        }
 
         // AutoCAD Dynamic Input (DYN) & Real-time Guide Line Handling
         if (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline') {
@@ -6039,10 +7016,14 @@ const ribbonTemplates = {
       const b = document.getElementById(btnId);
       if (b) {
         b.addEventListener('click', () => {
-          b.classList.toggle('active');
           if (btnId === 'btnToggleGrid') {
             toggleGrid();
+          } else if (btnId === 'btnToggleOrtho') {
+            toggleOrthoMode();
+          } else if (btnId === 'btnToggleOsnap') {
+            toggleOsnapMode();
           } else {
+            b.classList.toggle('active');
             logCommand(`DRAFTING: ${btnId.replace('btnToggle', '').toUpperCase()} Toggled.`);
           }
         });
@@ -6282,8 +7263,22 @@ const ribbonTemplates = {
 
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+      if (e.key === 'F8' || e.code === 'F8') {
+        e.preventDefault();
+        toggleOrthoMode();
+        return;
+      }
+      if (e.key === 'F3' || e.code === 'F3') {
+        e.preventDefault();
+        toggleOsnapMode();
+        return;
+      }
+
       if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
         finishPolyline();
+      } else if (e.key === 'Enter' && state.activeTool === 'line') {
+        state.lineStartPoint = null;
+        logCommand('LINE: Finished drawing line.');
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelectedObject();
