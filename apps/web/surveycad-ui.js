@@ -554,9 +554,9 @@
     width: 750,
     height: 550,
     opacity: 0.85,
-    dpi: 57.5,
-    dpiX: 57.5,
-    dpiY: 57.5,
+    dpi: 300,
+    dpiX: 300,
+    dpiY: 300,
     isDragging: false,
     isResizing: false,
     startX: 0,
@@ -1397,6 +1397,10 @@
               if (units === 2 && xDens >= 10 && xDens <= 1000) {
                 return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
               }
+              // Many scanners & image editors write density without unit specified (units = 0)
+              if (xDens >= 72 && xDens <= 2400) {
+                return { dpi: xDens, source: 'JFIF APP0 (Density)' };
+              }
             }
             offset += len;
           } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF
@@ -1472,12 +1476,9 @@
     if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 30 && fileDpiInfo.dpi <= 2400) {
       return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
     }
-    // DLRS Cadastral Mouza Map Standard: Standard physical sheet width = 30 inches (30" x 20")
-    if (naturalWidth && naturalWidth >= 1500) {
-      const calculatedDpi = Math.round(naturalWidth / 30);
-      return { dpi: calculatedDpi, source: `30" Cadastral Sheet (${naturalWidth}px)` };
-    }
-    return { dpi: 300, source: 'Standard 300 DPI Scanner' };
+    // Universal AutoCAD Mouza & Cadastral Scanner Standard is strictly 300 DPI.
+    // Never divide naturalWidth by 30 because sheet margins and physical sizes vary!
+    return { dpi: 300, source: 'AutoCAD Standard (300 DPI)' };
   }
 
   function applyDetectedDpiToUI(dpi, sourceInfo = '') {
@@ -5461,7 +5462,7 @@ const ribbonTemplates = {
           };
           reader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, 524288));
+        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
         return;
       }
       const reader = new FileReader();
@@ -6228,7 +6229,7 @@ const ribbonTemplates = {
           };
           urlReader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, 524288));
+        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
       });
     }
 
