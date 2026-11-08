@@ -1310,7 +1310,7 @@
   }
 
   // =========================================================================
-  // AUTOMATIC IMAGE DPI EXTRACTION (JFIF / EXIF / PNG pHYs & Cadastral Sheet)
+  // AUTOMATIC IMAGE DPI EXTRACTION (JFIF / EXIF / Photoshop APP13 / PNG pHYs)
   // =========================================================================
   function parseDpiFromBuffer(buffer) {
     if (!buffer) return null;
@@ -1342,14 +1342,25 @@
         while (offset < view.byteLength - 4) {
           const marker = view.getUint16(offset);
           offset += 2;
-          if (marker === 0xFFE0 && offset + 12 <= view.byteLength) { // APP0 JFIF
+          if (marker === 0xFFE0 && offset + 14 <= view.byteLength) { // APP0 JFIF
             const len = view.getUint16(offset);
             const jfif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
             if (jfif === 'JFIF') {
-              const units = view.getUint8(offset + 7);
-              const xDens = view.getUint16(offset + 8);
-              if (units === 1 && xDens >= 30) return { dpi: xDens, source: 'JFIF APP0 (Inch)' };
-              if (units === 2 && xDens >= 10) return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
+              // Exact JFIF Specification offsets:
+              // offset + 2..6: 'JFIF\0'
+              // offset + 7: version major (e.g. 1)
+              // offset + 8: version minor (e.g. 1 or 2)
+              // offset + 9: units (1 = dots per inch, 2 = dots per cm)
+              // offset + 10..11: Xdensity (uint16)
+              // offset + 12..13: Ydensity (uint16)
+              const units = view.getUint8(offset + 9);
+              const xDens = view.getUint16(offset + 10);
+              if (units === 1 && xDens >= 30 && xDens <= 2400) {
+                return { dpi: xDens, source: 'JFIF APP0 (Inch)' };
+              }
+              if (units === 2 && xDens >= 10 && xDens <= 1000) {
+                return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
+              }
             }
             offset += len;
           } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF
@@ -1381,7 +1392,25 @@
                   }
                   if (xRes >= 30) {
                     const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
-                    return { dpi, source: 'EXIF APP1' };
+                    if (dpi >= 30 && dpi <= 2400) {
+                      return { dpi, source: 'EXIF APP1' };
+                    }
+                  }
+                }
+              }
+            }
+            offset += len;
+          } else if (marker === 0xFFED && offset + 14 <= view.byteLength) { // APP13 Photoshop / Scanner IPTC
+            const len = view.getUint16(offset);
+            for (let p = offset + 2; p < offset + len - 16; p++) {
+              if (view.getUint32(p) === 0x3842494D && view.getUint16(p + 4) === 0x03ED) { // 8BIM ResolutionInfo
+                const resOffset = p + 6 + 2;
+                if (resOffset + 6 <= view.byteLength) {
+                  const intPart = view.getUint16(resOffset);
+                  const unit = view.getUint16(resOffset + 4);
+                  if (intPart >= 30 && intPart <= 2400) {
+                    const dpi = unit === 2 ? Math.round(intPart * 2.54) : intPart;
+                    return { dpi, source: 'Photoshop 8BIM' };
                   }
                 }
               }
@@ -1404,16 +1433,13 @@
   }
 
   function resolveMouzaDpi(fileDpiInfo, naturalWidth) {
-    if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 50 && fileDpiInfo.dpi <= 1200 && fileDpiInfo.dpi !== 72 && fileDpiInfo.dpi !== 96) {
+    if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 30 && fileDpiInfo.dpi <= 2400) {
       return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
     }
     // DLRS Cadastral Mouza Map Standard: Standard physical sheet width = 30 inches (30" x 20")
     if (naturalWidth && naturalWidth >= 1500) {
       const calculatedDpi = Math.round(naturalWidth / 30);
       return { dpi: calculatedDpi, source: `30" Cadastral Sheet (${naturalWidth}px)` };
-    }
-    if (fileDpiInfo && fileDpiInfo.dpi) {
-      return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
     }
     return { dpi: 300, source: 'Standard 300 DPI Scanner' };
   }
@@ -4898,7 +4924,7 @@ const ribbonTemplates = {
           };
           reader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, 131072));
+        headerReader.readAsArrayBuffer(file.slice(0, 524288));
         return;
       }
       const reader = new FileReader();
@@ -5273,7 +5299,7 @@ const ribbonTemplates = {
           };
           urlReader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, 131072));
+        headerReader.readAsArrayBuffer(file.slice(0, 524288));
       });
     }
 
