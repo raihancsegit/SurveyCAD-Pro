@@ -28,14 +28,14 @@
     activeLayer: 'plot_boundary',
     showPlotLabels: true,
     sheets: {
-      'sheet01': { name: 'Chorbagh_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: '126' },
-      'sheet02': { name: 'Chorbagh_Sheet02.dwg', drawingsHtml: '', plots: {}, selectedDag: null },
-      'dakshinpara': { name: 'Dakshinpara_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: null }
+      'sheet01': { name: 'Chorbagh_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: null, raster: null },
+      'sheet02': { name: 'Chorbagh_Sheet02.dwg', drawingsHtml: '', plots: {}, selectedDag: null, raster: null },
+      'dakshinpara': { name: 'Dakshinpara_Sheet01.dwg', drawingsHtml: '', plots: {}, selectedDag: null, raster: null }
     },
     activeTool: 'select',
     activeTab: 'home',
-    activeSidebarTab: 'layers',
-    selectedDag: '126',
+    activeSidebarTab: 'properties',
+    selectedDag: null,
     scalePreset: 16,
     scaleFactor: 3960, // S = 63360 / 16 = 3960
     unit: 'feet', // 'feet' | 'links' | 'meters'
@@ -567,12 +567,15 @@
       toggleDemoPlots();
     }
     state.selectedDag = null;
+    clearSelectedPlotInfo();
     const poly126 = document.getElementById('plotPoly126');
     if (poly126) poly126.classList.remove('selected');
     const labelGroup = document.getElementById('groupSelectedPlotLabel');
     if (labelGroup) labelGroup.remove();
 
     clearUserDrawings();
+    detachMouzaRaster();
+    state.plots = {};
 
     const topProjName = document.querySelector('.font-bold.text-slate-200');
     if (topProjName) topProjName.textContent = 'Drawing1.dwg (Model)';
@@ -885,6 +888,8 @@
     if (halo) halo.classList.add('hidden');
     const rubberBand = document.getElementById('activeRubberBand');
     if (rubberBand) rubberBand.classList.add('hidden');
+    const banner = document.getElementById('toolGuidanceBanner');
+    if (banner) banner.classList.add('hidden');
   }
 
   function setActiveTool(toolName) {
@@ -1775,7 +1780,7 @@
   }
 
   function flashPlotBoundary(el) {
-    if (!el) return;
+    if (!el || el.classList.contains('user-polyline-boundary')) return;
     el.classList.add('plot-flash-highlight');
     setTimeout(() => el.classList.remove('plot-flash-highlight'), 1200);
   }
@@ -1830,11 +1835,11 @@
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', ptsAttr);
     if (isPolyline) {
-      poly.setAttribute('fill', 'rgba(255, 255, 255, 0.08)');
+      poly.setAttribute('fill', 'none');
       poly.setAttribute('stroke', '#ffffff');
       poly.setAttribute('stroke-width', '1.8');
       poly.setAttribute('vector-effect', 'non-scaling-stroke');
-      poly.setAttribute('class', `mouza-plot user-plot-boundary selected${wandClass}`);
+      poly.setAttribute('class', `mouza-plot user-plot-boundary user-polyline-boundary selected${wandClass}`);
     } else {
       poly.setAttribute('fill', 'rgba(245, 158, 11, 0.22)');
       poly.setAttribute('stroke', '#f59e0b');
@@ -1942,10 +1947,11 @@
         const bx = mx + nx * offsetDist;
         const by = my + ny * offsetDist;
 
+        const dimStroke = isPolyline ? '#0284c7' : '#f59e0b';
         const gDim = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         gDim.setAttribute('class', 'mouza-side-dimension');
         gDim.innerHTML = `
-          <rect x="${(bx - badgeW / 2).toFixed(1)}" y="${(by - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(2.5 * s2wDim).toFixed(1)}" fill="rgba(15, 23, 42, 0.88)" stroke="#f59e0b" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
+          <rect x="${(bx - badgeW / 2).toFixed(1)}" y="${(by - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(2.5 * s2wDim).toFixed(1)}" fill="rgba(15, 23, 42, 0.88)" stroke="${dimStroke}" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
           <text x="${bx.toFixed(1)}" y="${(by + fontDim * 0.35).toFixed(1)}" fill="#38bdf8" font-size="${fontDim.toFixed(1)}" font-weight="600" font-family="'Fira Code', 'Noto Sans Bengali', monospace" text-anchor="middle">${dimText}</text>
         `;
         gDims.appendChild(gDim);
@@ -1978,10 +1984,12 @@
     const maxChars = Math.max(plotTitle.length, areaSubText.length);
     const badgeW = Math.max(52 * s2wBadge, (maxChars * 6.8 + 12) * s2wBadge);
     const badgeH = 26.0 * s2wBadge;
+    const badgeStroke = isPolyline ? '#0284c7' : '#f59e0b';
+    const badgeTitleCol = isPolyline ? '#ffffff' : '#fbbf24';
 
     gLabel.innerHTML = `
-      <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(3.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.90)" stroke="#f59e0b" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
-      <text x="${cx.toFixed(1)}" y="${(cy - 2.5 * s2wBadge).toFixed(1)}" fill="#fbbf24" font-size="${fontPlot.toFixed(1)}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${plotTitle}</text>
+      <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(3.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.90)" stroke="${badgeStroke}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <text x="${cx.toFixed(1)}" y="${(cy - 2.5 * s2wBadge).toFixed(1)}" fill="${badgeTitleCol}" font-size="${fontPlot.toFixed(1)}" font-weight="bold" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${plotTitle}</text>
       <text x="${cx.toFixed(1)}" y="${(cy + 8.5 * s2wBadge).toFixed(1)}" fill="#38bdf8" font-size="${fontArea.toFixed(1)}" font-weight="600" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${areaSubText}</text>
     `;
     drawingsGroup.appendChild(gLabel);
@@ -3277,8 +3285,8 @@
     if (pts.length >= 3) {
       const p1 = pts[0];
       vHtml += `
-        <circle cx="${p1.x.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="${snapRingR.toFixed(2)}" fill="none" stroke="#f97316" stroke-width="2.0" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" class="animate-pulse"/>
-        <circle cx="${p1.x.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="${dotR.toFixed(2)}" fill="#f97316" vector-effect="non-scaling-stroke"/>
+        <circle cx="${p1.x.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="${snapRingR.toFixed(2)}" fill="none" stroke="#22c55e" stroke-width="2.0" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" class="animate-pulse"/>
+        <circle cx="${p1.x.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="${dotR.toFixed(2)}" fill="#22c55e" vector-effect="non-scaling-stroke"/>
       `;
     }
     vGroup.innerHTML = vHtml;
@@ -4117,11 +4125,31 @@
 
     rasterState.src = url;
     rasterState.filename = filename;
+    rasterState.hasImage = true;
     rasterState.x = 180;
     rasterState.y = 150;
     rasterState.width = 750;
     rasterState.height = 550;
     updateRasterDOM();
+
+    // Associate raster map specifically with current sheet
+    if (state.sheets && state.currentSheet && state.sheets[state.currentSheet]) {
+      state.sheets[state.currentSheet].raster = {
+        hasImage: true,
+        src: url,
+        filename: filename,
+        x: rasterState.x,
+        y: rasterState.y,
+        width: rasterState.width,
+        height: rasterState.height,
+        opacity: rasterState.opacity,
+        dpi: rasterState.dpi,
+        dpiX: rasterState.dpiX,
+        dpiY: rasterState.dpiY,
+        naturalWidth: rasterState.naturalWidth,
+        naturalHeight: rasterState.naturalHeight
+      };
+    }
 
     // Reset 2-point scale bar calibration so new map uses fresh AutoCAD DPI scale
     if (state.guniya) {
@@ -4160,6 +4188,20 @@
     const hudTools = document.getElementById('hudRasterTools');
     if (group) group.classList.add('hidden');
     if (hudTools) hudTools.classList.add('hidden');
+    const img = document.getElementById('canvasRasterMap');
+    if (img) {
+      img.removeAttribute('href');
+      img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+    }
+    rasterState.src = '';
+    rasterState.filename = '';
+    rasterState.hasImage = false;
+    rasterCache.loaded = false;
+    rasterCache.canvas = null;
+    rasterCache.ctx = null;
+    if (state.sheets && state.currentSheet && state.sheets[state.currentSheet]) {
+      state.sheets[state.currentSheet].raster = null;
+    }
     logCommand('MOUZA MAP: Detached from workspace.');
   }
 
@@ -4730,6 +4772,20 @@ const ribbonTemplates = {
     }
   }
 
+  function showSheet(sheetKey) {
+    if (!state.sheets || !state.sheets[sheetKey]) return;
+    saveCurrentSheetState();
+    state.currentSheet = sheetKey;
+    document.querySelectorAll('#dwgTabsContainer .dwg-tab').forEach(t => {
+      if (t.getAttribute('data-sheet') === sheetKey) {
+        t.classList.add('active');
+      } else {
+        t.classList.remove('active');
+      }
+    });
+    loadSheetState(sheetKey);
+  }
+
   // Multi-sheet workspace state helper
   function saveCurrentSheetState() {
     if (!state.currentSheet) state.currentSheet = 'sheet01';
@@ -4739,12 +4795,45 @@ const ribbonTemplates = {
     state.sheets[state.currentSheet].drawingsHtml = drawingsGroup ? drawingsGroup.innerHTML : '';
     state.sheets[state.currentSheet].plots = JSON.parse(JSON.stringify(state.plots || {}));
     state.sheets[state.currentSheet].selectedDag = state.selectedDag;
+
+    // Save raster map state per sheet
+    const group = document.getElementById('groupRasterMouza');
+    const isRasterVisible = group && !group.classList.contains('hidden') && !!rasterState.src;
+    if (isRasterVisible) {
+      state.sheets[state.currentSheet].raster = {
+        hasImage: true,
+        src: rasterState.src,
+        filename: rasterState.filename || 'Mouza_Sheet.jpg',
+        x: rasterState.x,
+        y: rasterState.y,
+        width: rasterState.width,
+        height: rasterState.height,
+        opacity: rasterState.opacity,
+        dpi: rasterState.dpi,
+        dpiX: rasterState.dpiX,
+        dpiY: rasterState.dpiY,
+        naturalWidth: rasterState.naturalWidth,
+        naturalHeight: rasterState.naturalHeight
+      };
+    } else {
+      state.sheets[state.currentSheet].raster = null;
+    }
+
+    // Save viewport per sheet
+    state.sheets[state.currentSheet].viewport = {
+      x: viewport.x,
+      y: viewport.y,
+      width: viewport.width,
+      height: viewport.height
+    };
   }
 
   function loadSheetState(sheetKey) {
     if (!state.sheets || !state.sheets[sheetKey]) return;
     state.currentSheet = sheetKey;
     const sheetData = state.sheets[sheetKey];
+
+    // 1. Restore User Drawings
     const drawingsGroup = document.getElementById('userDrawingsGroup');
     if (drawingsGroup) {
       drawingsGroup.innerHTML = sheetData.drawingsHtml || '';
@@ -4755,12 +4844,89 @@ const ribbonTemplates = {
           if (dag) selectPlot(dag);
         });
       });
+      // Rebind vertex handles
+      drawingsGroup.querySelectorAll('.mouza-vertex-drag-handle').forEach(handle => {
+        const dag = handle.getAttribute('data-dag');
+        const vIdx = parseInt(handle.getAttribute('data-vertex-index'), 10);
+        handle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          startVertexDrag(dag, vIdx, e);
+        });
+        handle.addEventListener('mouseenter', () => {
+          handle.setAttribute('fill', '#fef08a');
+          handle.setAttribute('stroke', '#f59e0b');
+        });
+        handle.addEventListener('mouseleave', () => {
+          handle.setAttribute('fill', '#ffffff');
+          handle.setAttribute('stroke', '#0284c7');
+        });
+      });
     }
-    if (sheetData.plots && Object.keys(sheetData.plots).length > 0) {
-      state.plots = sheetData.plots;
-    }
-    if (sheetData.selectedDag) {
+
+    // 2. Restore Plots or Clear
+    state.plots = sheetData.plots ? JSON.parse(JSON.stringify(sheetData.plots)) : {};
+
+    // 3. Restore Selected Dag or Clear
+    if (sheetData.selectedDag && state.plots[sheetData.selectedDag]) {
       selectPlot(sheetData.selectedDag);
+    } else {
+      clearSelectedPlotInfo();
+    }
+
+    // 4. Restore Raster Mouza Map per Sheet (or detach if sheet has no map)
+    const group = document.getElementById('groupRasterMouza');
+    const img = document.getElementById('canvasRasterMap');
+    const hudTools = document.getElementById('hudRasterTools');
+
+    if (sheetData.raster && sheetData.raster.hasImage && sheetData.raster.src) {
+      const r = sheetData.raster;
+      rasterState.src = r.src;
+      rasterState.filename = r.filename || 'Mouza_Sheet.jpg';
+      rasterState.x = r.x ?? 180;
+      rasterState.y = r.y ?? 150;
+      rasterState.width = r.width ?? 750;
+      rasterState.height = r.height ?? 550;
+      rasterState.opacity = r.opacity ?? 0.85;
+      rasterState.dpi = r.dpi || 300;
+      rasterState.dpiX = r.dpiX || 300;
+      rasterState.dpiY = r.dpiY || 300;
+      rasterState.naturalWidth = r.naturalWidth;
+      rasterState.naturalHeight = r.naturalHeight;
+      rasterState.hasImage = true;
+
+      if (img) {
+        img.setAttribute('href', r.src);
+        img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', r.src);
+        img.style.opacity = String(rasterState.opacity);
+      }
+      if (group) group.classList.remove('hidden');
+      if (hudTools) hudTools.classList.remove('hidden');
+      updateRasterDOM();
+      cacheRasterImage(r.src);
+    } else {
+      // Detach and hide raster completely for empty sheets ("faka")
+      if (group) group.classList.add('hidden');
+      if (hudTools) hudTools.classList.add('hidden');
+      if (img) {
+        img.removeAttribute('href');
+        img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      }
+      rasterState.src = '';
+      rasterState.filename = '';
+      rasterState.hasImage = false;
+      rasterCache.loaded = false;
+      rasterCache.canvas = null;
+      rasterCache.ctx = null;
+    }
+
+    // 5. Restore Viewport if stored, or reset
+    if (sheetData.viewport) {
+      viewport.x = sheetData.viewport.x;
+      viewport.y = sheetData.viewport.y;
+      viewport.width = sheetData.viewport.width;
+      viewport.height = sheetData.viewport.height;
+      updateViewBox();
     }
   }
 
@@ -4814,7 +4980,8 @@ const ribbonTemplates = {
             name: tab.querySelector('.tab-label')?.textContent?.trim() || sheetKey + '.dwg',
             drawingsHtml: '',
             plots: {},
-            selectedDag: null
+            selectedDag: null,
+            raster: null
           };
           loadSheetState(sheetKey);
         }
@@ -4901,13 +5068,15 @@ const ribbonTemplates = {
         name: cleanName,
         drawingsHtml: '',
         plots: {},
-        selectedDag: null
+        selectedDag: null,
+        raster: null, // COMPLETELY CLEAN AND EMPTY ("faka")
+        viewport: { x: 0, y: 0, width: 1000, height: 650 }
       };
 
       const container = document.getElementById('dwgTabsContainer');
       const addBtn = document.getElementById('btnNewDwgTab');
 
-      document.querySelectorAll('.dwg-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('#dwgTabsContainer .dwg-tab').forEach(t => t.classList.remove('active'));
 
       const newTab = document.createElement('div');
       newTab.className = 'dwg-tab active cursor-pointer select-none';
@@ -4924,12 +5093,8 @@ const ribbonTemplates = {
       }
 
       state.currentSheet = sheetKey;
-      // Clear drawings canvas for new blank sheet
-      const drawingsGroup = document.getElementById('userDrawingsGroup');
-      if (drawingsGroup) drawingsGroup.innerHTML = '';
-      state.plots = {};
-      clearSelectedPlotInfo();
-      logCommand(`SHEET: Created new drawing sheet "${cleanName}".`);
+      loadSheetState(sheetKey);
+      logCommand(`SHEET: Created new blank drawing sheet "${cleanName}".`);
     });
   }
 
@@ -5798,7 +5963,9 @@ const ribbonTemplates = {
             name: initialSheetName,
             drawingsHtml: '',
             plots: {},
-            selectedDag: null
+            selectedDag: null,
+            raster: null,
+            viewport: { x: 0, y: 0, width: 1000, height: 650 }
           }
         };
         state.currentSheet = initialSheetKey;
@@ -5806,11 +5973,13 @@ const ribbonTemplates = {
         // 3. Rebuild DWG Tabs in tab bar
         rebuildSheetTabs();
 
-        // 4. Clear canvas drawings & plots for fresh project
+        // 4. Detach old raster map, clear canvas drawings & plots for fresh project
+        detachMouzaRaster();
         const drawingsGroup = document.getElementById('userDrawingsGroup');
         if (drawingsGroup) drawingsGroup.innerHTML = '';
         state.plots = {};
         clearSelectedPlotInfo();
+        zoomExtents();
 
         applyMouzaScale(scaleVal);
         closeModal('modalNewProject');

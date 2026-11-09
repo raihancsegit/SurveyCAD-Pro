@@ -597,6 +597,20 @@ html, body {
   filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.85)) !important;
 }
 
+/* AutoCAD Standard Polyline Boundary (Crisp White #ffffff, Fill None, AutoCAD Standard) */
+.user-polyline-boundary,
+.user-polyline-boundary:hover,
+.user-polyline-boundary.selected,
+polygon.user-polyline-boundary,
+polygon.user-polyline-boundary.selected,
+polygon.user-polyline-boundary:hover {
+  fill: none !important;
+  stroke: #ffffff !important;
+  stroke-width: 1.8px !important;
+  vector-effect: non-scaling-stroke !important;
+  filter: none !important;
+}
+
 .mouza-dag-label {
   pointer-events: none !important;
   user-select: none !important;
