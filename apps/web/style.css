@@ -609,6 +609,35 @@ html, body {
   user-select: none;
 }
 
+/* Vertex Corner Drag Handles (CAD Square grip nodes, Image 2 standard) */
+.mouza-vertex-drag-handle {
+  cursor: grab !important;
+  pointer-events: auto !important;
+  vector-effect: non-scaling-stroke !important;
+  transition: fill 0.12s ease, stroke 0.12s ease;
+}
+.mouza-vertex-drag-handle:hover {
+  cursor: grab !important;
+  fill: #fef08a !important;
+  stroke: #f59e0b !important;
+}
+.mouza-node-handles-group {
+  pointer-events: auto !important;
+}
+
+.user-drawn-line {
+  cursor: pointer;
+  transition: stroke 0.15s ease;
+}
+.user-drawn-line:hover {
+  stroke: #67e8f9 !important;
+}
+.user-drawn-line.selected {
+  stroke: #f59e0b !important;
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.85)) !important;
+}
+
 /* Vertex Corner Handles (Square green nodes like Image 1) */
 .mouza-node-handle {
   pointer-events: none !important;

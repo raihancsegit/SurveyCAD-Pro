@@ -456,21 +456,59 @@
         }
       }
     });
+
+    // Rescale mouza-side-dimension annotatively live during zoom so side lengths NEVER vanish when zooming out
+    document.querySelectorAll('.mouza-side-dimension').forEach(gDim => {
+      const t = gDim.querySelector('text');
+      const r = gDim.querySelector('rect');
+      if (t) {
+        const tx = parseFloat(t.getAttribute('x'));
+        const ty = parseFloat(t.getAttribute('y'));
+        const fontDim = 10.5 * s2wBadges;
+        t.setAttribute('font-size', fontDim.toFixed(1));
+        if (r && isFinite(tx) && isFinite(ty)) {
+          const textChars = (t.textContent || '').trim().length;
+          const bw = Math.max(26 * s2wBadges, (textChars * 6.5 + 8) * s2wBadges);
+          const bh = 15.0 * s2wBadges;
+          r.setAttribute('x', (tx - bw / 2).toFixed(1));
+          r.setAttribute('y', (ty - fontDim * 0.35 - bh / 2 + 1).toFixed(1));
+          r.setAttribute('width', bw.toFixed(1));
+          r.setAttribute('height', bh.toFixed(1));
+          r.setAttribute('rx', (2.5 * s2wBadges).toFixed(1));
+        }
+      }
+    });
+
+    // Also rescale demo plot numbers in #layerPlotNo
+    document.querySelectorAll('#layerPlotNo text').forEach(t => {
+      t.setAttribute('font-size', (11.0 * s2wBadges).toFixed(1));
+    });
   }
 
   function zoomAtPoint(factor, clientX, clientY) {
     const svg = document.getElementById('cadSvgCanvas');
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    // Sanity check viewport state
+    if (!isFinite(viewport.x) || !isFinite(viewport.y) || !isFinite(viewport.width) || !isFinite(viewport.height) || viewport.width <= 0) {
+      viewport.x = 0;
+      viewport.y = 0;
+      viewport.width = 1000;
+      viewport.height = 650;
+    }
+
     const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const relY = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
 
     const svgX = viewport.x + relX * viewport.width;
     const svgY = viewport.y + relY * viewport.height;
 
-    // AutoCAD Unlimited Deep Zoom: allows zooming from 10% all the way to 200,000%+
-    const newWidth = Math.max(0.4, Math.min(60000, viewport.width * factor));
-    const newHeight = Math.max(0.26, Math.min(39000, viewport.height * factor));
+    const aspect = rect.height / rect.width;
+    // AutoCAD smooth deep zoom clamping (5.0 world units deep to 50,000 units wide)
+    const newWidth = Math.max(5.0, Math.min(50000, viewport.width * factor));
+    const newHeight = newWidth * aspect;
 
     viewport.x = svgX - relX * newWidth;
     viewport.y = svgY - relY * newHeight;
@@ -1382,13 +1420,6 @@
             const len = view.getUint16(offset);
             const jfif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
             if (jfif === 'JFIF') {
-              // Exact JFIF Specification offsets:
-              // offset + 2..6: 'JFIF\0'
-              // offset + 7: version major (e.g. 1)
-              // offset + 8: version minor (e.g. 1 or 2)
-              // offset + 9: units (1 = dots per inch, 2 = dots per cm)
-              // offset + 10..11: Xdensity (uint16)
-              // offset + 12..13: Ydensity (uint16)
               const units = view.getUint8(offset + 9);
               const xDens = view.getUint16(offset + 10);
               if (units === 1 && xDens >= 30 && xDens <= 2400) {
@@ -1397,16 +1428,15 @@
               if (units === 2 && xDens >= 10 && xDens <= 1000) {
                 return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
               }
-              // Many scanners & image editors write density without unit specified (units = 0)
-              if (xDens >= 72 && xDens <= 2400) {
+              if (xDens >= 50 && xDens <= 2400) {
                 return { dpi: xDens, source: 'JFIF APP0 (Density)' };
               }
             }
             offset += len;
-          } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF
+          } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF or Adobe XMP
             const len = view.getUint16(offset);
-            const exif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
-            if (exif === 'Exif') {
+            const sig = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
+            if (sig === 'Exif') {
               const tiffStart = offset + 8;
               if (tiffStart + 8 <= view.byteLength) {
                 const isLE = view.getUint16(tiffStart) === 0x4949;
@@ -1419,12 +1449,19 @@
                     const entryOffset = ifdStart + 2 + i * 12;
                     if (entryOffset + 12 > view.byteLength) break;
                     const tag = view.getUint16(entryOffset, isLE);
-                    if (tag === 0x011A) { // XResolution
-                      const valOffset = tiffStart + view.getUint32(entryOffset + 8, isLE);
-                      if (valOffset + 8 <= view.byteLength) {
-                        const num = view.getUint32(valOffset, isLE);
-                        const den = view.getUint32(valOffset + 4, isLE);
-                        if (den > 0) xRes = num / den;
+                    const type = view.getUint16(entryOffset + 2, isLE);
+                    if (tag === 0x011A || tag === 0x011B) { // XResolution or YResolution
+                      if (type === 5) { // RATIONAL
+                        const valOffset = tiffStart + view.getUint32(entryOffset + 8, isLE);
+                        if (valOffset + 8 <= view.byteLength) {
+                          const num = view.getUint32(valOffset, isLE);
+                          const den = view.getUint32(valOffset + 4, isLE);
+                          if (den > 0) xRes = num / den;
+                        }
+                      } else if (type === 3) { // SHORT
+                        xRes = view.getUint16(entryOffset + 8, isLE);
+                      } else if (type === 4) { // LONG
+                        xRes = view.getUint32(entryOffset + 8, isLE);
                       }
                     } else if (tag === 0x0128) { // ResolutionUnit
                       unit = view.getUint16(entryOffset + 8, isLE);
@@ -1438,13 +1475,30 @@
                   }
                 }
               }
+            } else {
+              // Adobe XMP in APP1
+              try {
+                const xmpStr = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(view.buffer, view.byteOffset + offset + 2, Math.min(len - 2, 65536)));
+                if (xmpStr.includes('http://ns.adobe.com/xap/1.0/')) {
+                  const xResMatch = xmpStr.match(/(?:tiff:XResolution|photoshop:XResolution)[\s=:\x22\x27>]+([0-9]+(?:\.[0-9]+)?)/i);
+                  if (xResMatch) {
+                    let xRes = parseFloat(xResMatch[1]);
+                    const unitMatch = xmpStr.match(/tiff:ResolutionUnit[\s=:\x22\x27>]+([1-3])/i);
+                    if (unitMatch && unitMatch[1] === '3') xRes *= 2.54;
+                    const dpi = Math.round(xRes);
+                    if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'Adobe XMP' };
+                  }
+                }
+              } catch (xmpErr) {}
             }
             offset += len;
-          } else if (marker === 0xFFED && offset + 14 <= view.byteLength) { // APP13 Photoshop / Scanner IPTC
+          } else if (marker === 0xFFED && offset + 14 <= view.byteLength) { // APP13 Photoshop 8BIM
             const len = view.getUint16(offset);
             for (let p = offset + 2; p < offset + len - 16; p++) {
-              if (view.getUint32(p) === 0x3842494D && view.getUint16(p + 4) === 0x03ED) { // 8BIM ResolutionInfo
-                const resOffset = p + 6 + 2;
+              if (view.getUint32(p) === 0x3842494D && view.getUint16(p + 4) === 0x03ED) { // 8BIM ResolutionInfo (0x03ED)
+                const nameLengthByte = view.getUint8(p + 6);
+                const nameLen = (nameLengthByte + 1 + 1) & ~1;
+                const resOffset = p + 6 + nameLen + 4;
                 if (resOffset + 6 <= view.byteLength) {
                   const intPart = view.getUint16(resOffset);
                   const unit = view.getUint16(resOffset + 4);
@@ -1466,6 +1520,52 @@
           }
         }
       }
+
+      // 3. Check Standalone TIFF (II = 0x4949, MM = 0x4D4D)
+      if (view.byteLength >= 16 && (view.getUint16(0) === 0x4949 || view.getUint16(0) === 0x4D4D)) {
+        const isLE = view.getUint16(0) === 0x4949;
+        const magic = view.getUint16(2, isLE);
+        if (magic === 42) {
+          const ifdOffset = view.getUint32(4, isLE);
+          if (ifdOffset + 2 <= view.byteLength) {
+            const numEntries = view.getUint16(ifdOffset, isLE);
+            let xRes = 0, unit = 2;
+            for (let i = 0; i < numEntries; i++) {
+              const entryOffset = ifdOffset + 2 + i * 12;
+              if (entryOffset + 12 > view.byteLength) break;
+              const tag = view.getUint16(entryOffset, isLE);
+              const type = view.getUint16(entryOffset + 2, isLE);
+              if (tag === 0x011A || tag === 0x011B) {
+                if (type === 5) {
+                  const valOffset = view.getUint32(entryOffset + 8, isLE);
+                  if (valOffset + 8 <= view.byteLength) {
+                    const num = view.getUint32(valOffset, isLE);
+                    const den = view.getUint32(valOffset + 4, isLE);
+                    if (den > 0) xRes = num / den;
+                  }
+                } else if (type === 3 || type === 4) {
+                  xRes = view.getUint16(entryOffset + 8, isLE) || view.getUint32(entryOffset + 8, isLE);
+                }
+              } else if (tag === 0x0128) {
+                unit = view.getUint16(entryOffset + 8, isLE);
+              }
+            }
+            if (xRes >= 30) {
+              const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
+              if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'TIFF Header' };
+            }
+          }
+        }
+      }
+
+      // 4. Check BMP ('BM' = 0x424D)
+      if (view.byteLength >= 54 && view.getUint16(0) === 0x424D) {
+        const ppmX = view.getUint32(38, true);
+        if (ppmX > 0) {
+          const dpi = Math.round(ppmX * 0.0254);
+          if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'BMP Header' };
+        }
+      }
     } catch (err) {
       console.warn('Error reading DPI from image buffer:', err);
     }
@@ -1476,8 +1576,18 @@
     if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 30 && fileDpiInfo.dpi <= 2400) {
       return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
     }
-    // Universal AutoCAD Mouza & Cadastral Scanner Standard is strictly 300 DPI.
-    // Never divide naturalWidth by 30 because sheet margins and physical sizes vary!
+    // Infer scanner DPI from cadastral map pixel width (Standard sheet is 30" - 33")
+    if (naturalWidth && naturalWidth > 0) {
+      if (naturalWidth >= 7000) {
+        return { dpi: 300, source: 'Cadastral Sheet Resolution (300 DPI)' };
+      }
+      if (naturalWidth >= 5000) {
+        return { dpi: 200, source: 'Cadastral Sheet Resolution (200 DPI)' };
+      }
+      if (naturalWidth >= 3500) {
+        return { dpi: 150, source: 'Cadastral Sheet Resolution (150 DPI)' };
+      }
+    }
     return { dpi: 300, source: 'AutoCAD Standard (300 DPI)' };
   }
 
@@ -1498,6 +1608,7 @@
     rasterState.dpi = dpi;
     rasterState.dpiX = dpi;
     rasterState.dpiY = dpi;
+    rasterState.source = sourceInfo || `Auto (${dpi} DPI)`;
   }
 
   function applyScaleAndDpiFromModal() {
@@ -1715,15 +1826,15 @@
     const u = getUnitsPerPixel();
     const wandClass = isMagicWand ? ' magic-wand-detected' : '';
 
-    // 1. Plot Polygon (AutoCAD Clean White Boundary for polyline, matching Image 1 standard)
+    // 1. Plot Polygon (AutoCAD Clean Boundary with crisp outline and corner grip support)
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', ptsAttr);
     if (isPolyline) {
-      poly.setAttribute('fill', 'none');
+      poly.setAttribute('fill', 'rgba(255, 255, 255, 0.08)');
       poly.setAttribute('stroke', '#ffffff');
       poly.setAttribute('stroke-width', '1.8');
       poly.setAttribute('vector-effect', 'non-scaling-stroke');
-      poly.setAttribute('class', `mouza-plot user-plot-boundary${wandClass}`);
+      poly.setAttribute('class', `mouza-plot user-plot-boundary selected${wandClass}`);
     } else {
       poly.setAttribute('fill', 'rgba(245, 158, 11, 0.22)');
       poly.setAttribute('stroke', '#f59e0b');
@@ -1742,11 +1853,6 @@
     // Ensure plot vertices are recorded in state for grip editing and undo
     if (state.plots[String(dag)]) {
       state.plots[String(dag)].vertices = vertices.map(v => ({ x: v.x, y: v.y }));
-    }
-
-    if (isPolyline) {
-      // Polyline drawn boundary: simple white outline only (Image 1 standard)
-      return poly;
     }
 
     // 2. Corner Node Handles (Crisp, easily draggable CAD grip nodes)
@@ -1799,14 +1905,14 @@
     gDims.setAttribute('pointer-events', 'none');
 
     // Only render side badges if the plot is reasonably sized to prevent collision
-    const renderSideBadges = (plotW >= 35 && plotH >= 25);
+    const renderSideBadges = (plotW >= 15 && plotH >= 15);
 
     if (renderSideBadges) {
       for (let i = 0; i < numV; i++) {
         const p1 = vertices[i];
         const p2 = vertices[(i + 1) % numV];
         const segPixelLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        if (segPixelLen < 22) continue; // Skip tiny segments
+        if (segPixelLen < 12) continue; // Skip tiny segments
 
         // AutoCAD distance in feet & inches
         const segFeet = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
@@ -1828,18 +1934,18 @@
         }
 
         const s2wDim = getScreenPixelToWorld();
-        const fontDim = Math.max(3.5, Math.min(Math.min(6.5, segPixelLen * 0.12), 11 * s2wDim));
-        const badgeH = fontDim * 1.5;
-        const badgeW = Math.min(segPixelLen * 0.75, dimText.length * (fontDim * 0.58) + 6);
+        const fontDim = 10.5 * s2wDim;
+        const badgeH = 15.0 * s2wDim;
+        const badgeW = Math.max(26 * s2wDim, (dimText.length * 6.5 + 8) * s2wDim);
 
-        const offsetDist = badgeH / 2 + 3.0;
+        const offsetDist = badgeH / 2 + 3.0 * s2wDim;
         const bx = mx + nx * offsetDist;
         const by = my + ny * offsetDist;
 
         const gDim = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         gDim.setAttribute('class', 'mouza-side-dimension');
         gDim.innerHTML = `
-          <rect x="${(bx - badgeW / 2).toFixed(1)}" y="${(by - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="2.5" fill="rgba(15, 23, 42, 0.88)" stroke="#f59e0b" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
+          <rect x="${(bx - badgeW / 2).toFixed(1)}" y="${(by - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(2.5 * s2wDim).toFixed(1)}" fill="rgba(15, 23, 42, 0.88)" stroke="#f59e0b" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
           <text x="${bx.toFixed(1)}" y="${(by + fontDim * 0.35).toFixed(1)}" fill="#38bdf8" font-size="${fontDim.toFixed(1)}" font-weight="600" font-family="'Fira Code', 'Noto Sans Bengali', monospace" text-anchor="middle">${dimText}</text>
         `;
         gDims.appendChild(gDim);
@@ -2059,19 +2165,49 @@
     if (infoArea) infoArea.textContent = '—';
     if (infoPerimeter) infoPerimeter.textContent = '—';
 
+    // Show Empty State and hide Data Container in Properties Tab
+    const emptyState = document.getElementById('propEmptyState');
+    const dataContainer = document.getElementById('propDataContainer');
+    if (emptyState) emptyState.classList.remove('hidden');
+    if (dataContainer) dataContainer.classList.add('hidden');
+  }
+
+  function inspectGeometricObject(info) {
+    if (!info) {
+      clearSelectedPlotInfo();
+      return;
+    }
+    const emptyState = document.getElementById('propEmptyState');
+    const dataContainer = document.getElementById('propDataContainer');
+    if (emptyState) emptyState.classList.add('hidden');
+    if (dataContainer) dataContainer.classList.remove('hidden');
+
     const propDagNo = document.getElementById('propDagNo');
+    const propMouzaJl = document.getElementById('propMouzaJl');
+    const propSheetNo = document.getElementById('propSheetNo');
     const propArea = document.getElementById('propArea');
     const propDecimal = document.getElementById('propDecimal');
     const propKathaBigha = document.getElementById('propKathaBigha');
     const propPerimeter = document.getElementById('propPerimeter');
-    if (propDagNo) propDagNo.textContent = '—';
-    if (propArea) propArea.textContent = '—';
-    if (propDecimal) propDecimal.textContent = '—';
-    if (propKathaBigha) propKathaBigha.textContent = '—';
-    if (propPerimeter) propPerimeter.textContent = '—';
+    const propObjectType = document.getElementById('propObjectType');
+    const propActiveLayer = document.getElementById('propActiveLayer');
+
+    if (propDagNo) propDagNo.textContent = info.id || '--';
+    if (propMouzaJl) propMouzaJl.textContent = info.mouza || 'Chorbagh (JL-42)';
+    if (propSheetNo) propSheetNo.textContent = info.sheet || '01 (CS Survey)';
+    if (propArea) propArea.textContent = info.area ? `${info.area}` : 'N/A (Linear)';
+    if (propDecimal) propDecimal.textContent = info.decimal ? `${info.decimal}` : 'N/A (Linear)';
+    if (propKathaBigha) propKathaBigha.textContent = info.kathaBigha || '—';
+    if (propPerimeter) propPerimeter.textContent = info.length || info.perimeter || '--';
+    if (propObjectType) propObjectType.textContent = info.type || 'Object';
+    if (propActiveLayer) propActiveLayer.textContent = info.layer || 'Dimension';
   }
 
   function selectPlot(dagNo) {
+    if (!dagNo) {
+      clearSelectedPlotInfo();
+      return;
+    }
     state.selectedDag = dagNo;
     const data = state.plots[dagNo] || {
       mouza: 'Chorbagh',
@@ -2087,6 +2223,12 @@
       dims: { top: '120.00 ft', bottom: '118.00 ft', left: '72.00 ft', right: '74.00 ft' },
       ownerList: [{ name: '1. Recorded Owner', share: '20.00 Decimal' }]
     };
+
+    // Show Data Container and hide Empty State in Properties Tab
+    const emptyState = document.getElementById('propEmptyState');
+    const dataContainer = document.getElementById('propDataContainer');
+    if (emptyState) emptyState.classList.add('hidden');
+    if (dataContainer) dataContainer.classList.remove('hidden');
 
     // Update Plot Polygon Visual Selection
     document.querySelectorAll('.mouza-plot, .user-plot-boundary').forEach(p => {
@@ -2130,17 +2272,26 @@
     if (infoPerimeter) infoPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft`;
     if (infoOwner) infoOwner.textContent = data.owners;
 
-    // Update Properties Tab
+    // Update Properties Tab fields matching Image 3 standard
     const propDagNo = document.getElementById('propDagNo');
+    const propMouzaJl = document.getElementById('propMouzaJl');
+    const propSheetNo = document.getElementById('propSheetNo');
     const propArea = document.getElementById('propArea');
     const propDecimal = document.getElementById('propDecimal');
     const propKathaBigha = document.getElementById('propKathaBigha');
     const propPerimeter = document.getElementById('propPerimeter');
+    const propObjectType = document.getElementById('propObjectType');
+    const propActiveLayer = document.getElementById('propActiveLayer');
+
     if (propDagNo) propDagNo.textContent = data.dag;
+    if (propMouzaJl) propMouzaJl.textContent = data.mouza ? `${data.mouza} (JL-42)` : 'Chorbagh (JL-42)';
+    if (propSheetNo) propSheetNo.textContent = data.sheet || '01 (CS Survey)';
     if (propArea) propArea.textContent = `${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft`;
     if (propDecimal) propDecimal.textContent = `${Number(data.areaDecimal).toFixed(2)} Decimal`;
     if (propKathaBigha) propKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} Katha (${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} Bigha)`;
     if (propPerimeter) propPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft`;
+    if (propObjectType) propObjectType.textContent = data.objectType || (data.isPolyline ? 'Polyline (Closed)' : 'Polygon (Parcel)');
+    if (propActiveLayer) propActiveLayer.textContent = state.activeLayerKey ? state.activeLayerKey.replace('_', ' ') : 'Plot_Boundary';
 
     // Update Partition Modal Inputs
     const partDagNo = document.getElementById('partDagNo');
@@ -2325,10 +2476,32 @@
       document.querySelectorAll('.mouza-plot.selected, .user-plot-boundary.selected').forEach(el => el.classList.remove('selected'));
       g.classList.add('selected');
       state.selectedDim = g;
+      inspectGeometricObject({
+        id: `Dim (${p1.x.toFixed(0)}, ${p1.y.toFixed(0)})`,
+        mouza: 'Chorbagh (CAD Dim)',
+        sheet: '01 (CS)',
+        area: 'N/A (Linear)',
+        decimal: 'N/A',
+        kathaBigha: '—',
+        length: `${realFeet.toFixed(2)} ft (${(realFeet / FEET_PER_LINK).toFixed(1)} Links)`,
+        type: 'Aligned Dimension',
+        layer: 'Dimension'
+      });
       logCommand(`DIMENSION: Aligned dimension ${formattedText} selected. Press Delete or Erase to delete.`);
     });
 
     drawingsGroup.appendChild(g);
+    inspectGeometricObject({
+      id: `Dim (${p1.x.toFixed(0)}, ${p1.y.toFixed(0)})`,
+      mouza: 'Chorbagh (CAD Dim)',
+      sheet: '01 (CS)',
+      area: 'N/A (Linear)',
+      decimal: 'N/A',
+      kathaBigha: '—',
+      length: `${realFeet.toFixed(2)} ft (${(realFeet / FEET_PER_LINK).toFixed(1)} Links)`,
+      type: 'Aligned Dimension',
+      layer: 'Dimension'
+    });
     pushUndo(`Add Dimension (${formattedText})`);
     logCommand(`DIMENSION: Aligned dimension ${formattedText} placed.`);
     return g;
@@ -3366,10 +3539,30 @@
           line.setAttribute('stroke-width', '2');
           line.setAttribute('vector-effect', 'non-scaling-stroke');
           line.setAttribute('class', 'user-drawn-line');
+          line.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
           drawingsGroup.appendChild(line);
 
           const u = getUnitsPerPixel();
           const distFt = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
+          const lineInfo = {
+            id: `Line (${p1.x.toFixed(0)},${p1.y.toFixed(0)})`,
+            mouza: 'Chorbagh (CAD Line)',
+            sheet: '01 (CS)',
+            area: 'N/A (Linear)',
+            decimal: 'N/A',
+            kathaBigha: '—',
+            length: `${distFt.toFixed(2)} ft (${(distFt / FEET_PER_LINK).toFixed(1)} Links)`,
+            type: 'Straight Line (Line)',
+            layer: 'Dimension'
+          };
+          line.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.cad-dim-elem.selected, .cad-text-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected, .user-drawn-line.selected').forEach(el => el.classList.remove('selected'));
+            line.classList.add('selected');
+            inspectGeometricObject(lineInfo);
+          });
+          inspectGeometricObject(lineInfo);
+
           pushUndo('Draw Line');
           logCommand(`LINE: Length = ${formatDistanceFeetInches(distFt)} (${distFt.toFixed(2)} ft)`);
         }
@@ -3824,6 +4017,8 @@
       bigha: realAreaSqFt / SQFT_PER_BIGHA,
       acre: realAreaSqFt / 43560,
       perimeter: realPerimeter,
+      objectType: 'Polyline (Closed Boundary)',
+      isPolyline: true,
       owners: '1 Person',
       dims: {
         top: `${(realPerimeter * 0.32).toFixed(2)} ft`,
@@ -3835,7 +4030,7 @@
     };
 
     renderParcelPolygon(pts, newDagNum, realAreaSqFt, realDecimal, realPerimeter, false, true);
-    state.selectedDag = newDagNum;
+    selectPlot(newDagNum);
     pushUndo(`Polyline Draw (Plot ${newDagNum})`);
     logCommand(`PLINE: Closed boundary created for Dag ${newDagNum}! Area = ${realAreaSqFt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} sq.ft (${realDecimal.toFixed(2)} Decimal), Perimeter = ${realPerimeter.toFixed(2)} ft (AutoCAD Scale 1:${u.scale}).`);
   }
@@ -5408,6 +5603,22 @@ const ribbonTemplates = {
     if (el) {
       el.classList.add('show');
     }
+    if (modalId === 'modalScaleCalculator') {
+      const currentDpi = rasterState.dpi || 300;
+      const inputDpi = document.getElementById('inputCustomScaleDpi');
+      if (inputDpi) {
+        inputDpi.value = currentDpi;
+      }
+      const badge = document.getElementById('dpiAutoBadge');
+      if (badge) {
+        badge.textContent = `✓ Auto (${currentDpi} DPI)`;
+        badge.classList.remove('hidden');
+      }
+      const hint = document.getElementById('dpiHintText');
+      if (hint) {
+        hint.textContent = rasterState.source ? `Source: ${rasterState.source}` : `Auto-detected: ${currentDpi} DPI`;
+      }
+    }
   }
 
   function closeModal(modalId) {
@@ -5458,7 +5669,7 @@ const ribbonTemplates = {
         reader.readAsText(file);
         return;
       }
-      if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
+      if (lower.match(/\.(jpg|jpeg|png|webp|bmp|tif|tiff)$/i) || (file.type && file.type.startsWith('image/'))) {
         const headerReader = new FileReader();
         headerReader.onload = (hEv) => {
           const dpiMeta = parseDpiFromBuffer(hEv.target.result);
@@ -6260,8 +6471,10 @@ const ribbonTemplates = {
       });
     }
 
-    // 7. Right Sidebar Initialization (Layers, Properties, Measure, Survey)
+    // 7. Right Sidebar Initialization (Properties, Layers, Measure, Survey)
     function initRightSidebar() {
+      state.activeSidebarTab = 'properties';
+
       // Top 4 Tabs Switching
       document.querySelectorAll('.sidebar-tab').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -6281,6 +6494,7 @@ const ribbonTemplates = {
 
           if (sidetab === 'properties' || sidetab === 'measure' || sidetab === 'survey') {
             if (state.selectedDag) selectPlot(state.selectedDag);
+            else selectPlot(null);
           }
         });
       });
@@ -7325,8 +7539,8 @@ const ribbonTemplates = {
     // 17. CAD Viewport Pan/Zoom & Mouza Raster Drag Engine
     setupViewportAndRasterEngine();
 
-    // Default: select plot 126
-    selectPlot('126');
+    // Default: Start with empty properties inspector (clean canvas)
+    selectPlot(null);
 
     // Baseline snapshot for undo/redo
     pushUndo('Initial Workspace');
@@ -7340,13 +7554,77 @@ const ribbonTemplates = {
     // Initial ViewBox sync
     updateViewBox();
 
-    // Mouse Wheel Zoom
+    // Smooth Mouse Wheel Zoom (debounced via requestAnimationFrame to prevent hitching/freezing)
+    let wheelZoomFactor = 1.0;
+    let wheelClientX = 0;
+    let wheelClientY = 0;
+    let wheelRafId = null;
+
     cadWorkspace.addEventListener('wheel', (e) => {
       if (e.target.closest('#virtualGuniyaScale')) return;
       e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 0.88 : 1.14;
-      zoomAtPoint(zoomFactor, e.clientX, e.clientY);
+      
+      const step = e.deltaY < 0 ? 0.88 : 1.14;
+      wheelZoomFactor *= step;
+      wheelClientX = e.clientX;
+      wheelClientY = e.clientY;
+
+      if (!wheelRafId) {
+        wheelRafId = requestAnimationFrame(() => {
+          wheelRafId = null;
+          zoomAtPoint(wheelZoomFactor, wheelClientX, wheelClientY);
+          wheelZoomFactor = 1.0;
+        });
+      }
     }, { passive: false });
+
+    // Drag and Drop Image File onto Canvas / Workspace with Auto DPI Detection
+    cadWorkspace.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+    cadWorkspace.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        const lower = file.name.toLowerCase();
+        if (lower.match(/\.(jpg|jpeg|png|webp|bmp|tif|tiff)$/i) || (file.type && file.type.startsWith('image/'))) {
+          // Trigger header read for auto DPI detection
+          const headerReader = new FileReader();
+          headerReader.onload = (hEv) => {
+            const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+            const reader = new FileReader();
+            reader.onload = (loadEvent) => {
+              const dataUrl = loadEvent.target.result;
+              attachMouzaRaster(dataUrl, file.name);
+              const tempImg = new Image();
+              tempImg.onload = () => {
+                rasterState.naturalWidth = tempImg.naturalWidth;
+                rasterState.naturalHeight = tempImg.naturalHeight;
+                const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+                applyDetectedDpiToUI(resolved.dpi, resolved.source);
+                applyMouzaScale(16, 3960, resolved.dpi);
+                recalculateAllPlacedDimensions();
+                rebuildGuniyaScale();
+                openModal('modalScaleCalculator');
+                logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+              };
+              tempImg.onerror = () => {
+                const resolved = resolveMouzaDpi(dpiMeta, 0);
+                applyDetectedDpiToUI(resolved.dpi, resolved.source);
+                applyMouzaScale(16, 3960, resolved.dpi);
+                openModal('modalScaleCalculator');
+              };
+              tempImg.src = dataUrl;
+            };
+            reader.readAsDataURL(file);
+          };
+          headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
+        }
+      }
+    });
 
     // Viewport Canvas Pan
     cadWorkspace.addEventListener('mousedown', (e) => {
@@ -7379,6 +7657,10 @@ const ribbonTemplates = {
       const isPanTool = (state.activeTool === 'pan');
       const isSpaceDown = (state.isSpacePressed === true);
       const isBgClick = (e.target === cadSvgCanvas || e.target.id === 'cadGridBackgroundRect' || (e.target.tagName === 'rect' && (e.target.getAttribute('fill') || '').includes('cadGrid')));
+
+      if (isBgClick && e.button === 0 && (state.activeTool === 'select' || !state.activeTool || state.activeTool === 'cursor')) {
+        selectPlot(null);
+      }
 
       if (isMiddleClick || isPanTool || isSpaceDown || isBgClick) {
         viewport.isPanning = true;
@@ -7705,6 +7987,7 @@ const ribbonTemplates = {
   window.attachMouzaRaster = attachMouzaRaster;
   window.setActiveTool = setActiveTool;
   window.selectPlot = selectPlot;
+  window.inspectGeometricObject = inspectGeometricObject;
   window.toggleDemoPlots = toggleDemoPlots;
   window.deleteSelectedPlot = deleteSelectedPlot;
   window.deleteSelectedObject = deleteSelectedObject;

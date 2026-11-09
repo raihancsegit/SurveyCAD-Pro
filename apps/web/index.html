@@ -819,8 +819,8 @@
       
       <!-- Top 4 Tabs -->
       <div class="flex items-center border-b border-[#222630] bg-[#12141a]">
-        <div class="sidebar-tab active" data-sidetab="layers">Layers</div>
-        <div class="sidebar-tab" data-sidetab="properties">Properties</div>
+        <div class="sidebar-tab active" data-sidetab="properties">Properties</div>
+        <div class="sidebar-tab" data-sidetab="layers">Layers</div>
         <div class="sidebar-tab" data-sidetab="measure">Measure</div>
         <div class="sidebar-tab" data-sidetab="survey">Survey</div>
       </div>
@@ -828,8 +828,67 @@
       <!-- Sidebar Scrollable Body -->
       <div class="flex-1 overflow-y-auto custom-scrollbar">
 
-        <!-- Tab 1: Layers Content -->
-        <div id="panelLayers" class="p-3 space-y-3">
+        <!-- Tab 1: Properties Content (Active by default, Image 3 Standard) -->
+        <div id="panelProperties" class="p-3 space-y-3 text-[11px] font-mono">
+          <div class="text-xs font-bold text-sky-400 font-sans border-b border-slate-800 pb-1.5 flex items-center justify-between">
+            <span>Plot Geometric Properties</span>
+            <span class="text-slate-400 text-[10px]">Property Inspector</span>
+          </div>
+
+          <!-- Empty State (Shown when no plot/object is selected) -->
+          <div id="propEmptyState" class="py-10 px-2 text-center text-slate-500 font-sans">
+            <div class="w-10 h-10 mx-auto mb-2.5 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400">
+              <svg class="w-5 h-5 text-sky-400/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/></svg>
+            </div>
+            <div class="text-[11.5px] font-semibold text-slate-400">কোনও অবজেক্ট সিলেক্ট নেই</div>
+            <div class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+              ম্যাপে দাগ (Plot), পলিলাইন (Polyline) বা লাইন (Line) ড্র করুন অথবা সিলেক্ট করলে এখানে সমস্ত ফলাফল ও পরিমাপ দেখতে পাবেন।
+            </div>
+          </div>
+
+          <!-- Active Object Properties Inspector Data Container -->
+          <div id="propDataContainer" class="space-y-1.5 hidden">
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Plot No.</span>
+              <span class="text-amber-300 font-bold text-xs" id="propDagNo">--</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Mouza & J.L.</span>
+              <span class="text-white" id="propMouzaJl">Chorbagh (JL-42)</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Sheet No.</span>
+              <span class="text-white" id="propSheetNo">01 (CS Survey)</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Total Area</span>
+              <span class="text-emerald-400 font-bold" id="propArea">--</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Decimal</span>
+              <span class="text-emerald-400 font-bold" id="propDecimal">--</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Katha & Bigha</span>
+              <span class="text-white" id="propKathaBigha">--</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Perimeter (Perimeter)</span>
+              <span class="text-sky-300 font-bold" id="propPerimeter">--</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Object Type</span>
+              <span class="text-sky-300" id="propObjectType">Polygon (Parcel)</span>
+            </div>
+            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800 items-center">
+              <span class="text-slate-400 font-sans">Active Layer</span>
+              <span class="text-emerald-400" id="propActiveLayer">Plot_Boundary</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Layers Content (Hidden by default) -->
+        <div id="panelLayers" class="p-3 space-y-3 hidden">
           <!-- Layer Search & Actions -->
           <div class="flex items-center gap-1.5">
             <div class="relative flex-1">
@@ -904,52 +963,6 @@
                 <span class="w-2.5 h-2.5 rounded-sm bg-[#ffffff] flex-shrink-0"></span>
                 <span class="font-medium text-slate-300">Text</span>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 2: Properties Content (Hidden by default) -->
-        <div id="panelProperties" class="p-3 space-y-3 hidden text-[11px] font-mono">
-          <div class="text-xs font-bold text-sky-400 font-sans border-b border-slate-800 pb-1 flex items-center justify-between">
-            <span>Plot Geometric Properties</span>
-            <span class="text-slate-400 text-[10px]">Property Inspector</span>
-          </div>
-          <div class="space-y-1.5">
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Plot No.</span>
-              <span class="text-amber-300 font-bold" id="propDagNo">126</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Mouza & J.L.</span>
-              <span class="text-white">Chorbagh (JL-42)</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Sheet No.</span>
-              <span class="text-white">01 (CS Survey)</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Total Area</span>
-              <span class="text-emerald-400 font-bold" id="propArea">12,960 sq.ft</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Decimal</span>
-              <span class="text-emerald-400 font-bold" id="propDecimal">30.00 Decimal</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Katha & Bigha</span>
-              <span class="text-white" id="propKathaBigha">18.00 Katha (0.90 Bigha)</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Perimeter (Perimeter)</span>
-              <span class="text-slate-200" id="propPerimeter">482.00 ft</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Vertices (Vertices)</span>
-              <span class="text-sky-300">4 Points (Polygon)</span>
-            </div>
-            <div class="flex justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-400 font-sans">Active Layer</span>
-              <span class="text-emerald-400">Plot_Boundary</span>
             </div>
           </div>
         </div>
