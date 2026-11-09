@@ -1389,186 +1389,262 @@
   }
 
   // =========================================================================
-  // AUTOMATIC IMAGE DPI EXTRACTION (JFIF / EXIF / Photoshop APP13 / PNG pHYs)
+  // AUTOMATIC IMAGE DPI EXTRACTION (JFIF / EXIF / Photoshop APP13 / PNG pHYs / WebP / BMP / XMP)
   // =========================================================================
-  function parseDpiFromBuffer(buffer) {
+  function parseDpiFromBuffer(buffer, filename = '') {
     if (!buffer) return null;
     try {
       const view = new DataView(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
-      if (view.byteLength < 16) return null;
+      const len = view.byteLength;
+      if (len < 16) return null;
 
-      // 1. Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
-      if (view.byteLength >= 24 && view.getUint32(0) === 0x89504E47) {
-        let offset = 8;
-        while (offset < view.byteLength - 8) {
-          const len = view.getUint32(offset);
-          const type = String.fromCharCode(view.getUint8(offset + 4), view.getUint8(offset + 5), view.getUint8(offset + 6), view.getUint8(offset + 7));
-          if (type === 'pHYs' && offset + 17 <= view.byteLength) {
-            const ppuX = view.getUint32(offset + 8);
-            const unit = view.getUint8(offset + 16);
-            if (unit === 1 && ppuX > 0) { // 1 = meters
-              const dpi = Math.round(ppuX * 0.0254);
-              if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'PNG pHYs' };
+      // Helper: Parse TIFF IFD entries at a given position pos (LE or BE)
+      function parseTiffAt(pos, isLE) {
+        if (pos + 8 > len) return null;
+        const ifdOffset = view.getUint32(pos + 4, isLE);
+        let curIfd = pos + ifdOffset;
+        let visited = 0;
+        while (curIfd > 0 && curIfd + 2 <= len && visited < 4) {
+          visited++;
+          const numEntries = view.getUint16(curIfd, isLE);
+          if (numEntries <= 0 || numEntries > 1000) break;
+          let xRes = null;
+          let unit = 2; // Default in TIFF is 2 (inches)
+          let subIfdOffset = 0;
+
+          for (let i = 0; i < numEntries; i++) {
+            const entryOffset = curIfd + 2 + i * 12;
+            if (entryOffset + 12 > len) break;
+            const tag = view.getUint16(entryOffset, isLE);
+            const type = view.getUint16(entryOffset + 2, isLE);
+
+            if (tag === 0x011A || tag === 0x011B) { // XResolution or YResolution
+              if (type === 5) { // RATIONAL
+                const valOffset = pos + view.getUint32(entryOffset + 8, isLE);
+                if (valOffset + 8 <= len) {
+                  const num = view.getUint32(valOffset, isLE);
+                  const den = view.getUint32(valOffset + 4, isLE);
+                  if (den > 0) xRes = num / den;
+                }
+              } else if (type === 3) { // SHORT
+                xRes = view.getUint16(entryOffset + 8, isLE);
+              } else if (type === 4) { // LONG
+                xRes = view.getUint32(entryOffset + 8, isLE);
+              }
+            } else if (tag === 0x0128) { // ResolutionUnit
+              unit = view.getUint16(entryOffset + 8, isLE);
+            } else if (tag === 0x8769) { // Exif SubIFD
+              subIfdOffset = view.getUint32(entryOffset + 8, isLE);
             }
           }
-          offset += 12 + len;
+
+          if (xRes && xRes >= 20 && xRes <= 4800) {
+            const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
+            if (dpi >= 20 && dpi <= 4800) return dpi;
+          }
+
+          // Check SubIFD if present and tag wasn't in IFD0
+          if (subIfdOffset > 0 && pos + subIfdOffset + 2 <= len) {
+            const subIfdPos = pos + subIfdOffset;
+            const subEntries = view.getUint16(subIfdPos, isLE);
+            for (let j = 0; j < Math.min(subEntries, 100); j++) {
+              const eOff = subIfdPos + 2 + j * 12;
+              if (eOff + 12 > len) break;
+              const tag = view.getUint16(eOff, isLE);
+              const type = view.getUint16(eOff + 2, isLE);
+              if (tag === 0x011A || tag === 0x011B) {
+                if (type === 5) {
+                  const valOffset = pos + view.getUint32(eOff + 8, isLE);
+                  if (valOffset + 8 <= len) {
+                    const num = view.getUint32(valOffset, isLE);
+                    const den = view.getUint32(valOffset + 4, isLE);
+                    if (den > 0) {
+                      const dpi = Math.round(num / den);
+                      if (dpi >= 20 && dpi <= 4800) return dpi;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // Next IFD
+          const nextIfdOffsetPos = curIfd + 2 + numEntries * 12;
+          if (nextIfdOffsetPos + 4 <= len) {
+            const nextOffset = view.getUint32(nextIfdOffsetPos, isLE);
+            if (nextOffset > 0 && nextOffset < len) {
+              curIfd = pos + nextOffset;
+            } else {
+              break;
+            }
+          } else {
+            break;
+          }
         }
+        return null;
       }
 
-      // 2. Check JPEG signature: FF D8
-      if (view.byteLength >= 10 && view.getUint16(0) === 0xFFD8) {
+      // 1. JPEG Parsing with proper 0xFF fill byte handling
+      if (view.byteLength >= 4 && view.getUint16(0) === 0xFFD8) {
         let offset = 2;
-        while (offset < view.byteLength - 4) {
-          const marker = view.getUint16(offset);
-          offset += 2;
-          if (marker === 0xFFE0 && offset + 14 <= view.byteLength) { // APP0 JFIF
-            const len = view.getUint16(offset);
-            const jfif = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
-            if (jfif === 'JFIF') {
-              const units = view.getUint8(offset + 9);
-              const xDens = view.getUint16(offset + 10);
-              if (units === 1 && xDens >= 30 && xDens <= 2400) {
+        while (offset < len - 4) {
+          if (view.getUint8(offset) !== 0xFF) {
+            offset++;
+            continue;
+          }
+          while (offset < len && view.getUint8(offset) === 0xFF) {
+            offset++;
+          }
+          if (offset >= len) break;
+          const markerType = view.getUint8(offset);
+          offset++;
+
+          if (markerType === 0xD9 || markerType === 0xDA) break; // EOI or SOS
+          if (offset + 2 > len) break;
+          const markerLen = view.getUint16(offset);
+          const markerPayload = offset + 2;
+
+          // APP0 (0xE0) - JFIF
+          if (markerType === 0xE0 && markerPayload + 10 <= len) {
+            const jfifSig = String.fromCharCode(
+              view.getUint8(markerPayload),
+              view.getUint8(markerPayload + 1),
+              view.getUint8(markerPayload + 2),
+              view.getUint8(markerPayload + 3),
+              view.getUint8(markerPayload + 4)
+            );
+            if (jfifSig === 'JFIF\0') {
+              const units = view.getUint8(markerPayload + 7);
+              const xDens = view.getUint16(markerPayload + 8);
+              if (units === 1 && xDens >= 20 && xDens <= 4800) {
                 return { dpi: xDens, source: 'JFIF APP0 (Inch)' };
               }
-              if (units === 2 && xDens >= 10 && xDens <= 1000) {
+              if (units === 2 && xDens >= 8 && xDens <= 2000) {
                 return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
               }
-              if (xDens >= 50 && xDens <= 2400) {
+              if (units === 0 && xDens >= 20 && xDens <= 4800) {
                 return { dpi: xDens, source: 'JFIF APP0 (Density)' };
               }
             }
-            offset += len;
-          } else if (marker === 0xFFE1 && offset + 14 <= view.byteLength) { // APP1 EXIF or Adobe XMP
-            const len = view.getUint16(offset);
-            const sig = String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3), view.getUint8(offset + 4), view.getUint8(offset + 5));
-            if (sig === 'Exif') {
-              const tiffStart = offset + 8;
-              if (tiffStart + 8 <= view.byteLength) {
-                const isLE = view.getUint16(tiffStart) === 0x4949;
-                const ifdOffset = view.getUint32(tiffStart + 4, isLE);
-                const ifdStart = tiffStart + ifdOffset;
-                if (ifdStart + 2 <= view.byteLength) {
-                  const numEntries = view.getUint16(ifdStart, isLE);
-                  let xRes = 0, unit = 2;
-                  for (let i = 0; i < numEntries; i++) {
-                    const entryOffset = ifdStart + 2 + i * 12;
-                    if (entryOffset + 12 > view.byteLength) break;
-                    const tag = view.getUint16(entryOffset, isLE);
-                    const type = view.getUint16(entryOffset + 2, isLE);
-                    if (tag === 0x011A || tag === 0x011B) { // XResolution or YResolution
-                      if (type === 5) { // RATIONAL
-                        const valOffset = tiffStart + view.getUint32(entryOffset + 8, isLE);
-                        if (valOffset + 8 <= view.byteLength) {
-                          const num = view.getUint32(valOffset, isLE);
-                          const den = view.getUint32(valOffset + 4, isLE);
-                          if (den > 0) xRes = num / den;
-                        }
-                      } else if (type === 3) { // SHORT
-                        xRes = view.getUint16(entryOffset + 8, isLE);
-                      } else if (type === 4) { // LONG
-                        xRes = view.getUint32(entryOffset + 8, isLE);
-                      }
-                    } else if (tag === 0x0128) { // ResolutionUnit
-                      unit = view.getUint16(entryOffset + 8, isLE);
-                    }
-                  }
-                  if (xRes >= 30) {
-                    const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
-                    if (dpi >= 30 && dpi <= 2400) {
-                      return { dpi, source: 'EXIF APP1' };
-                    }
-                  }
-                }
+          }
+
+          // APP1 (0xE1) - EXIF or XMP
+          if (markerType === 0xE1 && markerPayload + 6 <= len) {
+            const maxScan = Math.min(markerPayload + 32, len - 4);
+            for (let p = markerPayload; p < maxScan; p++) {
+              if (view.getUint16(p) === 0x4949 && view.getUint16(p + 2, true) === 42) {
+                const dpi = parseTiffAt(p, true);
+                if (dpi) return { dpi, source: 'EXIF APP1 (TIFF LE)' };
+              } else if (view.getUint16(p) === 0x4D4D && view.getUint16(p + 2, false) === 42) {
+                const dpi = parseTiffAt(p, false);
+                if (dpi) return { dpi, source: 'EXIF APP1 (TIFF BE)' };
               }
-            } else {
-              // Adobe XMP in APP1
-              try {
-                const xmpStr = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(view.buffer, view.byteOffset + offset + 2, Math.min(len - 2, 65536)));
-                if (xmpStr.includes('http://ns.adobe.com/xap/1.0/')) {
-                  const xResMatch = xmpStr.match(/(?:tiff:XResolution|photoshop:XResolution)[\s=:\x22\x27>]+([0-9]+(?:\.[0-9]+)?)/i);
-                  if (xResMatch) {
-                    let xRes = parseFloat(xResMatch[1]);
-                    const unitMatch = xmpStr.match(/tiff:ResolutionUnit[\s=:\x22\x27>]+([1-3])/i);
-                    if (unitMatch && unitMatch[1] === '3') xRes *= 2.54;
-                    const dpi = Math.round(xRes);
-                    if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'Adobe XMP' };
-                  }
-                }
-              } catch (xmpErr) {}
             }
-            offset += len;
-          } else if (marker === 0xFFED && offset + 14 <= view.byteLength) { // APP13 Photoshop 8BIM
-            const len = view.getUint16(offset);
-            for (let p = offset + 2; p < offset + len - 16; p++) {
-              if (view.getUint32(p) === 0x3842494D && view.getUint16(p + 4) === 0x03ED) { // 8BIM ResolutionInfo (0x03ED)
-                const nameLengthByte = view.getUint8(p + 6);
-                const nameLen = (nameLengthByte + 1 + 1) & ~1;
+          }
+
+          // APP13 (0xED) - Photoshop 8BIM
+          if (markerType === 0xED && markerPayload + 16 <= len) {
+            for (let p = markerPayload; p < Math.min(markerPayload + markerLen, len - 16); p++) {
+              if (view.getUint32(p) === 0x3842494D && view.getUint16(p + 4) === 0x03ED) {
+                const nameLenByte = view.getUint8(p + 6);
+                const nameLen = (nameLenByte + 1 + 1) & ~1;
                 const resOffset = p + 6 + nameLen + 4;
-                if (resOffset + 6 <= view.byteLength) {
+                if (resOffset + 6 <= len) {
                   const intPart = view.getUint16(resOffset);
                   const unit = view.getUint16(resOffset + 4);
-                  if (intPart >= 30 && intPart <= 2400) {
+                  if (intPart >= 20 && intPart <= 4800) {
                     const dpi = unit === 2 ? Math.round(intPart * 2.54) : intPart;
                     return { dpi, source: 'Photoshop 8BIM' };
                   }
                 }
               }
             }
-            offset += len;
-          } else if ((marker & 0xFF00) === 0xFF00) {
-            if (marker === 0xFFDA) break; // SOS
-            const len = view.getUint16(offset);
-            if (len <= 0) break;
-            offset += len;
-          } else {
-            break;
           }
+
+          offset += markerLen;
         }
       }
 
-      // 3. Check Standalone TIFF (II = 0x4949, MM = 0x4D4D)
-      if (view.byteLength >= 16 && (view.getUint16(0) === 0x4949 || view.getUint16(0) === 0x4D4D)) {
-        const isLE = view.getUint16(0) === 0x4949;
-        const magic = view.getUint16(2, isLE);
-        if (magic === 42) {
-          const ifdOffset = view.getUint32(4, isLE);
-          if (ifdOffset + 2 <= view.byteLength) {
-            const numEntries = view.getUint16(ifdOffset, isLE);
-            let xRes = 0, unit = 2;
-            for (let i = 0; i < numEntries; i++) {
-              const entryOffset = ifdOffset + 2 + i * 12;
-              if (entryOffset + 12 > view.byteLength) break;
-              const tag = view.getUint16(entryOffset, isLE);
-              const type = view.getUint16(entryOffset + 2, isLE);
-              if (tag === 0x011A || tag === 0x011B) {
-                if (type === 5) {
-                  const valOffset = view.getUint32(entryOffset + 8, isLE);
-                  if (valOffset + 8 <= view.byteLength) {
-                    const num = view.getUint32(valOffset, isLE);
-                    const den = view.getUint32(valOffset + 4, isLE);
-                    if (den > 0) xRes = num / den;
-                  }
-                } else if (type === 3 || type === 4) {
-                  xRes = view.getUint16(entryOffset + 8, isLE) || view.getUint32(entryOffset + 8, isLE);
-                }
-              } else if (tag === 0x0128) {
-                unit = view.getUint16(entryOffset + 8, isLE);
-              }
-            }
-            if (xRes >= 30) {
-              const dpi = unit === 3 ? Math.round(xRes * 2.54) : Math.round(xRes);
-              if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'TIFF Header' };
+      // 2. PNG pHYs & eXIf chunks
+      if (len >= 24 && view.getUint32(0) === 0x89504E47) {
+        let offset = 8;
+        while (offset < len - 8) {
+          const chunkLen = view.getUint32(offset);
+          const chunkType = String.fromCharCode(
+            view.getUint8(offset + 4),
+            view.getUint8(offset + 5),
+            view.getUint8(offset + 6),
+            view.getUint8(offset + 7)
+          );
+          const chunkData = offset + 8;
+          if (chunkType === 'pHYs' && chunkData + 9 <= len) {
+            const ppuX = view.getUint32(chunkData);
+            const unit = view.getUint8(chunkData + 8);
+            if (unit === 1 && ppuX > 0) {
+              const dpi = Math.round(ppuX * 0.0254);
+              if (dpi >= 20 && dpi <= 4800) return { dpi, source: 'PNG pHYs' };
+            } else if (unit === 0 && ppuX >= 20 && ppuX <= 4800) {
+              return { dpi: ppuX, source: 'PNG pHYs (Pixel Ratio)' };
             }
           }
+          if (chunkType === 'eXIf' && chunkData + 8 <= len) {
+            if (view.getUint16(chunkData) === 0x4949 && view.getUint16(chunkData + 2, true) === 42) {
+              const dpi = parseTiffAt(chunkData, true);
+              if (dpi) return { dpi, source: 'PNG eXIf' };
+            } else if (view.getUint16(chunkData) === 0x4D4D && view.getUint16(chunkData + 2, false) === 42) {
+              const dpi = parseTiffAt(chunkData, false);
+              if (dpi) return { dpi, source: 'PNG eXIf' };
+            }
+          }
+          offset += 12 + chunkLen;
         }
       }
 
-      // 4. Check BMP ('BM' = 0x424D)
-      if (view.byteLength >= 54 && view.getUint16(0) === 0x424D) {
+      // 3. Scan for TIFF signature anywhere in first 256KB (covers WebP, raw TIFF, EXIF streams)
+      const scanLimit = Math.min(len - 8, 262144);
+      for (let p = 0; p < scanLimit; p += 2) {
+        if (view.getUint16(p) === 0x4949 && view.getUint16(p + 2, true) === 42) {
+          const dpi = parseTiffAt(p, true);
+          if (dpi) return { dpi, source: 'TIFF Header' };
+        } else if (view.getUint16(p) === 0x4D4D && view.getUint16(p + 2, false) === 42) {
+          const dpi = parseTiffAt(p, false);
+          if (dpi) return { dpi, source: 'TIFF Header' };
+        }
+      }
+
+      // 4. BMP Header
+      if (len >= 54 && view.getUint16(0) === 0x424D) {
         const ppmX = view.getUint32(38, true);
         if (ppmX > 0) {
           const dpi = Math.round(ppmX * 0.0254);
-          if (dpi >= 30 && dpi <= 2400) return { dpi, source: 'BMP Header' };
+          if (dpi >= 20 && dpi <= 4800) return { dpi, source: 'BMP Header' };
+        }
+      }
+
+      // 5. UTF-8 / XMP Text Search in first 128KB
+      try {
+        const strLimit = Math.min(len, 131072);
+        const textChunk = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(view.buffer, view.byteOffset, strLimit));
+        const xmpMatch = textChunk.match(/(?:(?:tiff|photoshop|exif):)?XResolution[\s=:\x22\x27>]+([0-9]+(?:\.[0-9]+)?)(?:\/([0-9]+))?/i);
+        if (xmpMatch) {
+          let val = parseFloat(xmpMatch[1]);
+          if (xmpMatch[2]) {
+            const den = parseFloat(xmpMatch[2]);
+            if (den > 0) val = val / den;
+          }
+          const unitMatch = textChunk.match(/(?:tiff:ResolutionUnit|ResolutionUnit)[\s=:\x22\x27>]+([1-3])/i);
+          if (unitMatch && unitMatch[1] === '3') val *= 2.54;
+          const dpi = Math.round(val);
+          if (dpi >= 20 && dpi <= 4800) return { dpi, source: 'XMP Metadata' };
+        }
+      } catch (e) {}
+
+      // 6. Filename Hint (e.g. moja_90dpi.jpg or 90_dpi or scan_90dpi)
+      if (filename) {
+        const fnMatch = filename.match(/(?:^|[\D_])([0-9]{2,4})\s*dpi(?:\.|\b|_)/i);
+        if (fnMatch) {
+          const dpi = parseInt(fnMatch[1], 10);
+          if (dpi >= 20 && dpi <= 4800) return { dpi, source: `Filename Hint (${dpi} DPI)` };
         }
       }
     } catch (err) {
@@ -1577,20 +1653,31 @@
     return null;
   }
 
-  function resolveMouzaDpi(fileDpiInfo, naturalWidth) {
-    if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 30 && fileDpiInfo.dpi <= 2400) {
+  function resolveMouzaDpi(fileDpiInfo, naturalWidth, filename = '') {
+    if (fileDpiInfo && fileDpiInfo.dpi && fileDpiInfo.dpi >= 20 && fileDpiInfo.dpi <= 4800) {
       return { dpi: fileDpiInfo.dpi, source: fileDpiInfo.source };
     }
-    // Infer scanner DPI from cadastral map pixel width (Standard sheet is 30" - 33")
+    // Check filename hint
+    if (filename) {
+      const fnMatch = filename.match(/(?:^|[\D_])([0-9]{2,4})\s*dpi(?:\.|\b|_)/i);
+      if (fnMatch) {
+        const dpi = parseInt(fnMatch[1], 10);
+        if (dpi >= 20 && dpi <= 4800) return { dpi, source: `Filename Hint (${dpi} DPI)` };
+      }
+    }
+    // Cadastral Sheet Proportional Estimate:
+    // A standard Mouza sheet is physically 24" to 33" wide.
     if (naturalWidth && naturalWidth > 0) {
-      if (naturalWidth >= 7000) {
-        return { dpi: 300, source: 'Cadastral Sheet Resolution (300 DPI)' };
+      const calculatedDpi = Math.round(naturalWidth / 24);
+      // Snap to standard scanner DPIs if close
+      const standardDpis = [72, 90, 96, 100, 150, 200, 300, 400, 600];
+      for (const std of standardDpis) {
+        if (Math.abs(calculatedDpi - std) / std <= 0.12) {
+          return { dpi: std, source: `Estimated Sheet DPI (~${std} DPI)` };
+        }
       }
-      if (naturalWidth >= 5000) {
-        return { dpi: 200, source: 'Cadastral Sheet Resolution (200 DPI)' };
-      }
-      if (naturalWidth >= 3500) {
-        return { dpi: 150, source: 'Cadastral Sheet Resolution (150 DPI)' };
+      if (calculatedDpi >= 50 && calculatedDpi <= 1200) {
+        return { dpi: calculatedDpi, source: `Calculated Cadastral DPI (${calculatedDpi} DPI)` };
       }
     }
     return { dpi: 300, source: 'AutoCAD Standard (300 DPI)' };
@@ -1614,6 +1701,11 @@
     rasterState.dpiX = dpi;
     rasterState.dpiY = dpi;
     rasterState.source = sourceInfo || `Auto (${dpi} DPI)`;
+
+    // Keep active sheet's raster DPI in sync
+    if (state.sheets && state.sheets[state.currentSheet] && state.sheets[state.currentSheet].raster) {
+      state.sheets[state.currentSheet].raster.dpi = dpi;
+    }
   }
 
   function applyScaleAndDpiFromModal() {
@@ -5837,7 +5929,7 @@ const ribbonTemplates = {
       if (lower.match(/\.(jpg|jpeg|png|webp|bmp|tif|tiff)$/i) || (file.type && file.type.startsWith('image/'))) {
         const headerReader = new FileReader();
         headerReader.onload = (hEv) => {
-          const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+          const dpiMeta = parseDpiFromBuffer(hEv.target.result, file.name);
           const reader = new FileReader();
           reader.onload = (loadEvent) => {
             const dataUrl = loadEvent.target.result;
@@ -5846,7 +5938,7 @@ const ribbonTemplates = {
             tempImg.onload = () => {
               rasterState.naturalWidth = tempImg.naturalWidth;
               rasterState.naturalHeight = tempImg.naturalHeight;
-              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
               recalculateAllPlacedDimensions();
@@ -5855,7 +5947,7 @@ const ribbonTemplates = {
               logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
             };
             tempImg.onerror = () => {
-              const resolved = resolveMouzaDpi(dpiMeta, 0);
+              const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
               openModal('modalScaleCalculator');
@@ -5864,7 +5956,7 @@ const ribbonTemplates = {
           };
           reader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
+        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 8388608)));
         return;
       }
       const reader = new FileReader();
@@ -5924,11 +6016,23 @@ const ribbonTemplates = {
 
     const projInput = document.getElementById('projectFileInput');
     if (projInput) {
-      projInput.addEventListener('change', (e) => handleFileSelected(e.target.files[0]));
+      projInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          const f = e.target.files[0];
+          e.target.value = '';
+          handleFileSelected(f);
+        }
+      });
     }
     const drawInput = document.getElementById('drawingFileInput');
     if (drawInput) {
-      drawInput.addEventListener('change', (e) => handleFileSelected(e.target.files[0]));
+      drawInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          const f = e.target.files[0];
+          e.target.value = '';
+          handleFileSelected(f);
+        }
+      });
     }
 
     // Sample Project Item Clicks
@@ -6601,11 +6705,12 @@ const ribbonTemplates = {
       fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        e.target.value = '';
 
-        // Read binary header for DPI metadata first (128KB chunk)
+        // Read binary header for DPI metadata first (up to 8MB chunk)
         const headerReader = new FileReader();
         headerReader.onload = (hEv) => {
-          const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+          const dpiMeta = parseDpiFromBuffer(hEv.target.result, file.name);
 
           // Read full data URL for raster rendering
           const urlReader = new FileReader();
@@ -6613,12 +6718,12 @@ const ribbonTemplates = {
             const dataUrl = loadEvent.target.result;
             attachMouzaRaster(dataUrl, file.name);
 
-            // Wait for image dimensions to resolve DPI against standard Cadastral 30" sheet
+            // Wait for image dimensions to resolve DPI against standard Cadastral sheet
             const tempImg = new Image();
             tempImg.onload = () => {
               rasterState.naturalWidth = tempImg.naturalWidth;
               rasterState.naturalHeight = tempImg.naturalHeight;
-              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
               recalculateAllPlacedDimensions();
@@ -6627,7 +6732,7 @@ const ribbonTemplates = {
               logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
             };
             tempImg.onerror = () => {
-              const resolved = resolveMouzaDpi(dpiMeta, 0);
+              const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
               applyDetectedDpiToUI(resolved.dpi, resolved.source);
               applyMouzaScale(16, 3960, resolved.dpi);
               openModal('modalScaleCalculator');
@@ -6636,7 +6741,7 @@ const ribbonTemplates = {
           };
           urlReader.readAsDataURL(file);
         };
-        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
+        headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 8388608)));
       });
     }
 
@@ -7763,7 +7868,7 @@ const ribbonTemplates = {
           // Trigger header read for auto DPI detection
           const headerReader = new FileReader();
           headerReader.onload = (hEv) => {
-            const dpiMeta = parseDpiFromBuffer(hEv.target.result);
+            const dpiMeta = parseDpiFromBuffer(hEv.target.result, file.name);
             const reader = new FileReader();
             reader.onload = (loadEvent) => {
               const dataUrl = loadEvent.target.result;
@@ -7772,7 +7877,7 @@ const ribbonTemplates = {
               tempImg.onload = () => {
                 rasterState.naturalWidth = tempImg.naturalWidth;
                 rasterState.naturalHeight = tempImg.naturalHeight;
-                const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth);
+                const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
                 applyDetectedDpiToUI(resolved.dpi, resolved.source);
                 applyMouzaScale(16, 3960, resolved.dpi);
                 recalculateAllPlacedDimensions();
@@ -7781,7 +7886,7 @@ const ribbonTemplates = {
                 logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
               };
               tempImg.onerror = () => {
-                const resolved = resolveMouzaDpi(dpiMeta, 0);
+                const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
                 applyDetectedDpiToUI(resolved.dpi, resolved.source);
                 applyMouzaScale(16, 3960, resolved.dpi);
                 openModal('modalScaleCalculator');
@@ -7790,7 +7895,7 @@ const ribbonTemplates = {
             };
             reader.readAsDataURL(file);
           };
-          headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 4194304)));
+          headerReader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 8388608)));
         }
       }
     });
