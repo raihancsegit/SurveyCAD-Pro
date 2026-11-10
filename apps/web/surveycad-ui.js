@@ -1522,8 +1522,13 @@
               if (units === 2 && xDens >= 8 && xDens <= 2000) {
                 return { dpi: Math.round(xDens * 2.54), source: 'JFIF APP0 (cm)' };
               }
-              if (units === 0 && xDens >= 20 && xDens <= 4800) {
-                return { dpi: xDens, source: 'JFIF APP0 (Density)' };
+              if (units === 0) {
+                if (xDens >= 20 && xDens <= 4800) {
+                  return { dpi: xDens, source: 'JFIF APP0 (Density)' };
+                }
+                // When units=0 (aspect ratio / web standard / Windows default),
+                // Windows Explorer and GDI+ report default system resolution: 96 DPI!
+                return { dpi: 96, source: 'Windows Image Default (96 DPI)' };
               }
             }
           }
@@ -1583,8 +1588,11 @@
             if (unit === 1 && ppuX > 0) {
               const dpi = Math.round(ppuX * 0.0254);
               if (dpi >= 20 && dpi <= 4800) return { dpi, source: 'PNG pHYs' };
-            } else if (unit === 0 && ppuX >= 20 && ppuX <= 4800) {
-              return { dpi: ppuX, source: 'PNG pHYs (Pixel Ratio)' };
+            } else if (unit === 0) {
+              if (ppuX >= 20 && ppuX <= 4800) {
+                return { dpi: ppuX, source: 'PNG pHYs (Pixel Ratio)' };
+              }
+              return { dpi: 96, source: 'Windows Image Default (96 DPI)' };
             }
           }
           if (chunkType === 'eXIf' && chunkData + 8 <= len) {
@@ -1619,6 +1627,7 @@
           const dpi = Math.round(ppmX * 0.0254);
           if (dpi >= 20 && dpi <= 4800) return { dpi, source: 'BMP Header' };
         }
+        return { dpi: 96, source: 'Windows Image Default (96 DPI)' };
       }
 
       // 5. UTF-8 / XMP Text Search in first 128KB
@@ -1668,19 +1677,24 @@
     // Cadastral Sheet Proportional Estimate:
     // A standard Mouza sheet is physically 24" to 33" wide.
     if (naturalWidth && naturalWidth > 0) {
-      const calculatedDpi = Math.round(naturalWidth / 24);
-      // Snap to standard scanner DPIs if close
-      const standardDpis = [72, 90, 96, 100, 150, 200, 300, 400, 600];
-      for (const std of standardDpis) {
-        if (Math.abs(calculatedDpi - std) / std <= 0.12) {
-          return { dpi: std, source: `Estimated Sheet DPI (~${std} DPI)` };
+      if (naturalWidth >= 3500) {
+        const calculatedDpi = Math.round(naturalWidth / 24);
+        const standardDpis = [150, 200, 300, 400, 600];
+        for (const std of standardDpis) {
+          if (Math.abs(calculatedDpi - std) / std <= 0.12) {
+            return { dpi: std, source: `Estimated Sheet DPI (~${std} DPI)` };
+          }
         }
+        if (calculatedDpi >= 120 && calculatedDpi <= 1200) {
+          return { dpi: calculatedDpi, source: `Calculated Cadastral DPI (${calculatedDpi} DPI)` };
+        }
+        return { dpi: 300, source: 'Cadastral High-Res (300 DPI)' };
       }
-      if (calculatedDpi >= 50 && calculatedDpi <= 1200) {
-        return { dpi: calculatedDpi, source: `Calculated Cadastral DPI (${calculatedDpi} DPI)` };
-      }
+      // If image width < 3500px, it is a standard digital/web image or crop:
+      // Windows Explorer default resolution is always 96 DPI!
+      return { dpi: 96, source: 'Windows Default (96 DPI)' };
     }
-    return { dpi: 300, source: 'AutoCAD Standard (300 DPI)' };
+    return { dpi: 96, source: 'Windows Default (96 DPI)' };
   }
 
   function applyDetectedDpiToUI(dpi, sourceInfo = '') {
