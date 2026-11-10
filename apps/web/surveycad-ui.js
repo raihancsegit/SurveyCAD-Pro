@@ -909,34 +909,10 @@
       }
     });
 
-    // Update Floating Guidance Banner
+    // Guidance Banner suppressed per user request
     const banner = document.getElementById('toolGuidanceBanner');
-    const bannerText = document.getElementById('toolGuidanceText');
-    if (banner && bannerText) {
-      if (toolName === 'magicwand') {
-        bannerText.innerHTML = '🪄 <b>Magic Wand:</b> Click inside any parcel to auto-detect boundary • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
-        banner.classList.remove('hidden');
-      } else if (toolName === 'polyline' || toolName === 'polygon' || toolName === 'autopolyline') {
-        bannerText.innerHTML = '✏️ <b>Draw:</b> Click corners to draw plot • Press <span class="text-amber-400 font-bold">[Enter]</span> to finish • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
-        banner.classList.remove('hidden');
-      } else if (toolName === 'dimension') {
-        bannerText.innerHTML = '📏 <b>Dimension:</b> Click 2 points to measure distance • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
-        banner.classList.remove('hidden');
-      } else if (toolName === 'line') {
-        bannerText.innerHTML = '📏 <b>Line:</b> Click start point, then next point • <span class="text-amber-400 font-bold">[Esc]</span> to finish';
-        banner.classList.remove('hidden');
-      } else if (toolName === 'offset') {
-        bannerText.innerHTML = `↔️ <b>Offset:</b> Click edge to offset (${state.offsetDistFt || 10} ft), then click side • <span class="text-amber-400 font-bold">[Esc]</span> to cancel`;
-        banner.classList.remove('hidden');
-      } else if (toolName === 'trim') {
-        bannerText.innerHTML = '✂️ <b>Trim:</b> Click line segment or boundary ail to trim at intersection • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
-        banner.classList.remove('hidden');
-      } else if (toolName === 'extend') {
-        bannerText.innerHTML = '➡️ <b>Extend:</b> Click line near endpoint to extend to boundary • <span class="text-amber-400 font-bold">[Esc]</span> to cancel';
-        banner.classList.remove('hidden');
-      } else {
-        banner.classList.add('hidden');
-      }
+    if (banner) {
+      banner.classList.add('hidden');
     }
 
     // Reset temporary drawing buffer if switching tools
@@ -2656,12 +2632,60 @@
     logCommand(`ERASE: Plot boundary ${dagStr} deleted.`);
   }
 
-  function deleteSelectedObject() {
-    // 1. If actively drawing polyline, remove last vertex
+  // AutoCAD System: Undo last placed point while drawing
+  function undoLastDrawingPoint() {
+    // 1. Polyline / Polygon / AutoPolyline Mode
     if ((state.activeTool === 'polyline' || state.activeTool === 'autopolyline' || state.activeTool === 'polygon') && state.drawingPoints && state.drawingPoints.length > 0) {
       state.drawingPoints.pop();
-      updateDrawingOverlay();
-      logCommand(`PLINE: Last vertex removed (${state.drawingPoints.length} points remaining).`);
+      if (state.drawingPoints.length > 0) {
+        updateDrawingOverlay();
+        const guide = document.getElementById('drawingGuideLine');
+        if (guide && state.currentCursorPt) {
+          const lastP = state.drawingPoints[state.drawingPoints.length - 1];
+          guide.setAttribute('x1', lastP.x.toFixed(1));
+          guide.setAttribute('y1', lastP.y.toFixed(1));
+          guide.setAttribute('x2', state.currentCursorPt.x.toFixed(1));
+          guide.setAttribute('y2', state.currentCursorPt.y.toFixed(1));
+          guide.classList.remove('hidden');
+        }
+        logCommand(`PLINE: Last vertex removed (${state.drawingPoints.length} vertices remaining).`);
+      } else {
+        resetDrawingOverlay();
+        logCommand('PLINE: Start point removed.');
+      }
+      return true;
+    }
+
+    // 2. Line Tool
+    if (state.activeTool === 'line' && state.lineStartPoint) {
+      state.lineStartPoint = null;
+      resetDrawingOverlay();
+      logCommand('LINE: Start point removed.');
+      return true;
+    }
+
+    // 3. Dimension Tool
+    if (state.activeTool === 'dimension' && state.dimensionPoints && state.dimensionPoints.length > 0) {
+      state.dimensionPoints.pop();
+      resetDrawingOverlay();
+      logCommand('DIM: First point removed.');
+      return true;
+    }
+
+    // 4. Calibration 2-point
+    if (state.isCalibratingScale && state.calibrationPoints && state.calibrationPoints.length > 0) {
+      state.calibrationPoints.pop();
+      resetDrawingOverlay();
+      logCommand('SCALE: Point removed.');
+      return true;
+    }
+
+    return false;
+  }
+
+  function deleteSelectedObject() {
+    // 1. If actively drawing polyline or line, remove last vertex
+    if (undoLastDrawingPoint()) {
       return true;
     }
 
@@ -3409,17 +3433,9 @@
     }
     halo.classList.remove('hidden');
 
-    // 4. Update guidance banner text dynamically (Image 2 standard)
+    // 4. Guidance banner suppressed per user request
     const banner = document.getElementById('toolGuidanceBanner');
-    const bannerText = document.getElementById('toolGuidanceText');
-    if (banner && bannerText) {
-      banner.classList.remove('hidden');
-      if (pts.length < 3) {
-        bannerText.textContent = `✏️ Point ${pts.length} added. Click next point...`;
-      } else {
-        bannerText.textContent = `Point ${pts.length} added. Click Point 1 to close plot (or press Enter)`;
-      }
-    }
+    if (banner) banner.classList.add('hidden');
   }
 
   // =========================================================================
@@ -5836,6 +5852,9 @@ const ribbonTemplates = {
         break;
       case 'U':
       case 'UNDO':
+        if (undoLastDrawingPoint()) {
+          break;
+        }
         undo();
         break;
       case 'REDO':
@@ -7104,6 +7123,9 @@ const ribbonTemplates = {
           cmdInput.value = '';
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          if (undoLastDrawingPoint()) {
+            return;
+          }
           cancelActiveToolAndCommand();
           cmdInput.blur();
         }
@@ -7164,6 +7186,7 @@ const ribbonTemplates = {
         }
 
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         const s2w = getScreenPixelToWorld();
         const snapThresh = 22 * s2w; // Generous magnetic pull radius (AutoCAD OSNAP standard)
 
@@ -7489,6 +7512,7 @@ const ribbonTemplates = {
         e.stopPropagation();
         state.guniya.isDragging = true;
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         state.guniya.dragStartX = pt.x - state.guniya.x;
         state.guniya.dragStartY = pt.y - state.guniya.y;
         guniyaEl.classList.remove('cursor-grab');
@@ -7498,11 +7522,13 @@ const ribbonTemplates = {
       window.addEventListener('mousemove', (e) => {
         if (state.guniya.isDragging) {
           const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
           state.guniya.x = pt.x - state.guniya.dragStartX;
           state.guniya.y = pt.y - state.guniya.dragStartY;
           updateGuniyaTransform();
         } else if (state.guniya.isResizing) {
           const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
           const dx = pt.x - state.guniya.x;
           const dy = pt.y - state.guniya.y;
           const rad = -state.guniya.rotation * Math.PI / 180;
@@ -7734,6 +7760,10 @@ const ribbonTemplates = {
           if (e.shiftKey) {
             redo();
           } else {
+            // If actively drawing polyline or line, undo last vertex first
+            if (undoLastDrawingPoint()) {
+              return;
+            }
             undo();
           }
           return;
@@ -7779,7 +7809,7 @@ const ribbonTemplates = {
         return;
       }
 
-      // ESCAPE KEY: Globally cancel active tool, drawing, editor, calibration, or open modal
+      // ESCAPE KEY: In AutoCAD, if drawing a polyline/line, Esc removes the last point!
       if (e.key === 'Escape') {
         e.preventDefault();
         const openModalEl = document.querySelector('.cad-modal-backdrop.show');
@@ -7787,6 +7817,12 @@ const ribbonTemplates = {
           openModalEl.classList.remove('show');
           return;
         }
+
+        // AutoCAD System: Undo last placed point while drawing
+        if (undoLastDrawingPoint()) {
+          return;
+        }
+
         cancelActiveToolAndCommand();
         return;
       }
@@ -7809,9 +7845,16 @@ const ribbonTemplates = {
       } else if (e.key === 'Enter' && state.activeTool === 'line') {
         state.lineStartPoint = null;
         logCommand('LINE: Finished drawing line.');
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        deleteSelectedObject();
+      } else if (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'u' || e.key === 'U') {
+        if (e.key === 'u' || e.key === 'U') {
+          if (undoLastDrawingPoint()) {
+            e.preventDefault();
+            return;
+          }
+        } else {
+          e.preventDefault();
+          deleteSelectedObject();
+        }
       } else if (e.key === 'g' || e.key === 'G') {
         toggleVirtualGuniya();
       } else if (e.key === 'l' || e.key === 'L') {
@@ -7931,6 +7974,7 @@ const ribbonTemplates = {
       // Move Tool: Drag all drawings together (Mouza raster map stays fixed)
       if (state.activeTool === 'move' && e.button === 0) {
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         moveDrawingsState.isDragging = true;
         moveDrawingsState.startX = pt.x;
         moveDrawingsState.startY = pt.y;
@@ -7963,6 +8007,7 @@ const ribbonTemplates = {
     window.addEventListener('mousemove', (e) => {
       if (moveDrawingsState.isDragging) {
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         const dx = pt.x - moveDrawingsState.startX;
         const dy = pt.y - moveDrawingsState.startY;
         moveDrawingsState.currentDx = dx;
@@ -8087,6 +8132,7 @@ const ribbonTemplates = {
         e.stopPropagation();
         rasterState.isResizing = true;
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         rasterState.startX = pt.x;
         rasterState.startY = pt.y;
         rasterState.origW = rasterState.width;
@@ -8097,11 +8143,13 @@ const ribbonTemplates = {
     window.addEventListener('mousemove', (e) => {
       if (rasterState.isDragging) {
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         rasterState.x = Math.round(rasterState.origX + (pt.x - rasterState.startX));
         rasterState.y = Math.round(rasterState.origY + (pt.y - rasterState.startY));
         updateRasterDOM();
       } else if (rasterState.isResizing) {
         const pt = getCanvasCoords(e);
+        state.currentCursorPt = pt;
         const dw = pt.x - rasterState.startX;
         const newW = Math.max(150, Math.round(rasterState.origW + dw));
         rasterState.width = newW;

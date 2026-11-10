@@ -309,6 +309,14 @@ html, body {
   transform: translateY(-50%) translateX(0);
 }
 
+/* Tool Guidance Banner completely suppressed */
+#toolGuidanceBanner {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ==========================================================================
    6. Main Drawing Workspace (Dark CAD Grid & Viewport HUD)
    ========================================================================== */
