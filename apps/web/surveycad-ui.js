@@ -336,20 +336,37 @@
       updateDrawingOverlay();
     }
 
-    // Rescale plot corner handles live during zoom to keep them crisp and easily clickable
+    // Rescale plot corner handles & midpoint grips live during zoom to keep them crisp and easily clickable
     const s2wHandles = getScreenPixelToWorld();
-    const hSize = 8.0 * s2wHandles;
+    const hSize = 8.5 * s2wHandles;
+    const midW = 13.0 * s2wHandles;
+    const midH = 5.5 * s2wHandles;
     document.querySelectorAll('.mouza-node-handles-group').forEach(g => {
       const dag = g.getAttribute('data-dag-handles');
       const pData = state.plots[dag];
       if (pData && pData.vertices) {
-        const rects = g.querySelectorAll('rect');
-        for (let i = 0; i < pData.vertices.length && i < rects.length; i++) {
+        const numV = pData.vertices.length;
+        const vRects = g.querySelectorAll('.mouza-vertex-drag-handle');
+        for (let i = 0; i < numV && i < vRects.length; i++) {
           const p = pData.vertices[i];
-          rects[i].setAttribute('x', (p.x - hSize / 2).toFixed(1));
-          rects[i].setAttribute('y', (p.y - hSize / 2).toFixed(1));
-          rects[i].setAttribute('width', hSize.toFixed(1));
-          rects[i].setAttribute('height', hSize.toFixed(1));
+          vRects[i].setAttribute('x', (p.x - hSize / 2).toFixed(1));
+          vRects[i].setAttribute('y', (p.y - hSize / 2).toFixed(1));
+          vRects[i].setAttribute('width', hSize.toFixed(1));
+          vRects[i].setAttribute('height', hSize.toFixed(1));
+        }
+
+        const mRects = g.querySelectorAll('.mouza-midpoint-drag-handle');
+        for (let i = 0; i < numV && i < mRects.length; i++) {
+          const p1 = pData.vertices[i];
+          const p2 = pData.vertices[(i + 1) % numV];
+          const mx = (p1.x + p2.x) / 2;
+          const my = (p1.y + p2.y) / 2;
+          const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+          mRects[i].setAttribute('x', (mx - midW / 2).toFixed(1));
+          mRects[i].setAttribute('y', (my - midH / 2).toFixed(1));
+          mRects[i].setAttribute('width', midW.toFixed(1));
+          mRects[i].setAttribute('height', midH.toFixed(1));
+          mRects[i].setAttribute('transform', `rotate(${angleDeg.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})`);
         }
       }
     });
@@ -1938,18 +1955,31 @@
     drawingsGroup.appendChild(poly);
 
     // Ensure plot vertices are recorded in state for grip editing and undo
-    if (state.plots[String(dag)]) {
+    if (!state.plots[String(dag)]) {
+      state.plots[String(dag)] = {
+        dag: String(dag),
+        vertices: vertices.map(v => ({ x: v.x, y: v.y })),
+        areaSqFt: areaSqFt,
+        areaDecimal: areaDecimal,
+        perimeter: perimeter,
+        objectType: isPolyline ? 'Polyline (Closed Boundary)' : 'Polygon (Parcel)'
+      };
+    } else {
       state.plots[String(dag)].vertices = vertices.map(v => ({ x: v.x, y: v.y }));
     }
 
-    // 2. Corner Node Handles (Crisp, easily draggable CAD grip nodes)
+    // 2. Corner Node Handles & Midpoint Grips (AutoCAD Standard: Square corners + Midpoint oblong bars)
     const gHandles = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     gHandles.setAttribute('class', `mouza-node-handles-group${wandClass}`);
     gHandles.setAttribute('data-dag-handles', String(dag));
     gHandles.setAttribute('pointer-events', 'auto');
 
     const s2w = getScreenPixelToWorld();
-    const handleSize = 8.0 * s2w; // Clean, easily clickable CAD grip box (~8-10 screen px)
+    const handleSize = 8.5 * s2w; // Clean CAD corner square (~8-10 screen px)
+    const midW = 13.0 * s2w;      // Elongated rectangular midpoint bar
+    const midH = 5.5 * s2w;
+
+    // 2.1 Corner Vertex Grips (Square)
     for (let i = 0; i < numV; i++) {
       const p = vertices[i];
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -1957,32 +1987,45 @@
       rect.setAttribute('y', (p.y - handleSize / 2).toFixed(1));
       rect.setAttribute('width', handleSize.toFixed(1));
       rect.setAttribute('height', handleSize.toFixed(1));
-      rect.setAttribute('rx', (1.2 * s2w).toFixed(1));
-      rect.setAttribute('fill', '#ffffff');
-      rect.setAttribute('stroke', '#0284c7');
-      rect.setAttribute('stroke-width', '1.6');
+      rect.setAttribute('rx', (1.0 * s2w).toFixed(1));
+      rect.setAttribute('fill', '#0284c7');
+      rect.setAttribute('stroke', '#ffffff');
+      rect.setAttribute('stroke-width', '1.2');
       rect.setAttribute('vector-effect', 'non-scaling-stroke');
-      rect.setAttribute('class', 'mouza-vertex-drag-handle');
+      rect.setAttribute('class', 'mouza-vertex-drag-handle cad-grip-vertex');
       rect.setAttribute('style', 'cursor: grab; pointer-events: auto;');
       rect.setAttribute('data-vertex-index', String(i));
       rect.setAttribute('data-dag', String(dag));
-
-      rect.addEventListener('mouseenter', () => {
-        rect.setAttribute('fill', '#fef08a');
-        rect.setAttribute('stroke', '#f59e0b');
-        rect.style.cursor = 'grab';
-      });
-      rect.addEventListener('mouseleave', () => {
-        rect.setAttribute('fill', '#ffffff');
-        rect.setAttribute('stroke', '#0284c7');
-      });
-      rect.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        startVertexDrag(String(dag), i, e);
-      });
       gHandles.appendChild(rect);
     }
+
+    // 2.2 Midpoint Grips (মাঝের গ্রিপ পয়েন্ট - AutoCAD midpoint grips on every segment)
+    for (let i = 0; i < numV; i++) {
+      const p1 = vertices[i];
+      const p2 = vertices[(i + 1) % numV];
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+
+      const midRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      midRect.setAttribute('x', (mx - midW / 2).toFixed(1));
+      midRect.setAttribute('y', (my - midH / 2).toFixed(1));
+      midRect.setAttribute('width', midW.toFixed(1));
+      midRect.setAttribute('height', midH.toFixed(1));
+      midRect.setAttribute('rx', (1.0 * s2w).toFixed(1));
+      midRect.setAttribute('fill', '#0284c7');
+      midRect.setAttribute('stroke', '#ffffff');
+      midRect.setAttribute('stroke-width', '1.2');
+      midRect.setAttribute('vector-effect', 'non-scaling-stroke');
+      midRect.setAttribute('class', 'mouza-midpoint-drag-handle cad-grip-midpoint');
+      midRect.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+      midRect.setAttribute('data-edge-index', String(i));
+      midRect.setAttribute('data-dag', String(dag));
+      midRect.setAttribute('transform', `rotate(${angleDeg.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})`);
+      gHandles.appendChild(midRect);
+    }
+
+    bindAllGripHandles(gHandles);
     drawingsGroup.appendChild(gHandles);
 
     // 3. Side Dimension Badges (Clean, compact, no giant bracketed inches, strictly clamped)
@@ -2081,8 +2124,8 @@
   }
 
   // =========================================================================
-  // INTERACTIVE VERTEX / CORNER GRIP DRAGGING ENGINE
-  // Allows users to drag and adjust corners to reshape or scale the plot
+  // AUTOCAD MULTIFUNCTIONAL GRIP ENGINE & DRAG EDITING
+  // Midpoint grips (▬), Corner vertex grips (■), and AutoCAD Hover Menu
   // =========================================================================
   const moveDrawingsState = {
     isDragging: false,
@@ -2092,13 +2135,338 @@
     currentDy: 0
   };
 
+  const gripMenuState = {
+    visible: false,
+    dag: null,
+    type: null, // 'vertex' | 'midpoint'
+    index: -1,
+    hoverTimer: null,
+    closeTimer: null,
+    activeElement: null
+  };
+
   const vertexDragState = {
     isDragging: false,
+    isHoverPlacementMode: false,
     dag: null,
     vertexIndex: -1,
     vertices: [],
+    isNewMidpoint: false,
     lastDragEndTime: 0
   };
+
+  function showGripMenu(type, dag, index, screenX, screenY, gripEl) {
+    const menu = document.getElementById('cadGripMenu');
+    if (!menu || vertexDragState.isDragging) return;
+
+    if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
+    gripMenuState.visible = true;
+    gripMenuState.dag = String(dag);
+    gripMenuState.type = type;
+    gripMenuState.index = index;
+    gripMenuState.activeElement = gripEl;
+
+    if (type === 'vertex') {
+      menu.innerHTML = `
+        <div class="cad-grip-menu-item" data-action="stretch-vertex">
+          <svg class="w-3.5 h-3.5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span>Stretch Vertex</span>
+        </div>
+        <div class="cad-grip-menu-item" data-action="add-vertex">
+          <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Add Vertex</span>
+        </div>
+        <div class="cad-grip-menu-item danger" data-action="remove-vertex">
+          <svg class="w-3.5 h-3.5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          <span>Remove Vertex</span>
+        </div>
+      `;
+    } else {
+      menu.innerHTML = `
+        <div class="cad-grip-menu-item" data-action="stretch-midpoint">
+          <svg class="w-3.5 h-3.5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>
+          <span>Stretch</span>
+        </div>
+        <div class="cad-grip-menu-item" data-action="add-vertex-midpoint">
+          <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Add Vertex</span>
+        </div>
+        <div class="cad-grip-menu-item" data-action="convert-to-arc">
+          <svg class="w-3.5 h-3.5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17a9 9 0 0 1 18 0"/></svg>
+          <span>Convert to Arc</span>
+        </div>
+      `;
+    }
+
+    menu.classList.remove('hidden');
+
+    const menuW = 145;
+    const menuH = 105;
+    let posX = screenX + 12;
+    let posY = screenY - 8;
+    if (posX + menuW > window.innerWidth) posX = screenX - menuW - 10;
+    if (posY + menuH > window.innerHeight) posY = window.innerHeight - menuH - 10;
+    if (posY < 10) posY = 10;
+
+    menu.style.left = `${posX}px`;
+    menu.style.top = `${posY}px`;
+
+    menu.querySelectorAll('.cad-grip-menu-item').forEach(item => {
+      item.onclick = (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const action = item.getAttribute('data-action');
+        const targetDag = gripMenuState.dag;
+        const targetIdx = gripMenuState.index;
+        const targetType = gripMenuState.type;
+        hideGripMenu();
+        executeGripAction(action, targetDag, targetIdx, targetType);
+      };
+    });
+  }
+
+  function hideGripMenu() {
+    const menu = document.getElementById('cadGripMenu');
+    if (menu) menu.classList.add('hidden');
+    if (gripMenuState.hoverTimer) {
+      clearTimeout(gripMenuState.hoverTimer);
+      gripMenuState.hoverTimer = null;
+    }
+    if (gripMenuState.closeTimer) {
+      clearTimeout(gripMenuState.closeTimer);
+      gripMenuState.closeTimer = null;
+    }
+    if (gripMenuState.activeElement) {
+      gripMenuState.activeElement.classList.remove('active-hover');
+      gripMenuState.activeElement = null;
+    }
+    gripMenuState.visible = false;
+  }
+
+  // Ensure menu stays open when hovering into it
+  const initGripMenuHoverListeners = () => {
+    const menu = document.getElementById('cadGripMenu');
+    if (menu && !menu._hasHoverListeners) {
+      menu._hasHoverListeners = true;
+      menu.addEventListener('mouseenter', () => {
+        if (gripMenuState.closeTimer) {
+          clearTimeout(gripMenuState.closeTimer);
+          gripMenuState.closeTimer = null;
+        }
+      });
+      menu.addEventListener('mouseleave', () => {
+        hideGripMenu();
+      });
+    }
+  };
+  initGripMenuHoverListeners();
+
+  function executeGripAction(action, dag, idx, type) {
+    if (!state.plots[dag]) {
+      const poly = document.querySelector(`.user-plot-boundary[data-dag="${dag}"]`);
+      if (poly) {
+        const v = parseSvgPoints(poly.getAttribute('points') || '');
+        if (v.length >= 3) {
+          state.plots[dag] = {
+            dag: String(dag),
+            vertices: v,
+            ...recalculatePlotMetrics(v)
+          };
+        }
+      }
+    }
+    const plot = state.plots[dag];
+    if (!plot || !plot.vertices || plot.vertices.length < 3) return;
+    const verts = plot.vertices;
+    const numV = verts.length;
+
+    if (action === 'stretch-vertex') {
+      startVertexDrag(dag, idx, { button: 0, stopPropagation: () => {}, preventDefault: () => {} }, true);
+      logCommand(`GRIP EDIT: Stretch Vertex ${idx + 1} of Dag ${dag}. Move mouse and click to place.`);
+    } else if (action === 'add-vertex') {
+      const nextIdx = (idx + 1) % numV;
+      const p1 = verts[idx];
+      const p2 = verts[nextIdx];
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      verts.splice(idx + 1, 0, { x: mx, y: my });
+
+      const metrics = recalculatePlotMetrics(verts);
+      Object.assign(plot, metrics);
+      const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      selectPlot(dag);
+
+      startVertexDrag(dag, idx + 1, { button: 0, stopPropagation: () => {}, preventDefault: () => {} }, true);
+      vertexDragState.isNewMidpoint = true;
+      logCommand(`GRIP EDIT: New Vertex inserted next to Corner ${idx + 1}! Move mouse and click to place.`);
+    } else if (action === 'remove-vertex') {
+      if (verts.length <= 3) {
+        logCommand(`GRIP EDIT: Cannot remove vertex. Polygon boundary must have at least 3 vertices.`);
+        return;
+      }
+      verts.splice(idx, 1);
+      const metrics = recalculatePlotMetrics(verts);
+      Object.assign(plot, metrics);
+      const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      selectPlot(dag);
+      pushUndo(`Remove Vertex (Plot ${dag})`);
+      logCommand(`GRIP EDIT: Removed Vertex ${idx + 1} from Dag ${dag}. Remaining vertices: ${verts.length}.`);
+    } else if (action === 'stretch-midpoint' || action === 'add-vertex-midpoint') {
+      const nextIdx = (idx + 1) % numV;
+      const p1 = verts[idx];
+      const p2 = verts[nextIdx];
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      verts.splice(idx + 1, 0, { x: mx, y: my });
+
+      const metrics = recalculatePlotMetrics(verts);
+      Object.assign(plot, metrics);
+      const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      selectPlot(dag);
+
+      startVertexDrag(dag, idx + 1, { button: 0, stopPropagation: () => {}, preventDefault: () => {} }, true);
+      vertexDragState.isNewMidpoint = true;
+      logCommand(`GRIP EDIT: Midpoint pulled into new Vertex! Move mouse to shape boundary and click to place.`);
+    } else if (action === 'convert-to-arc') {
+      const nextIdx = (idx + 1) % numV;
+      const p1 = verts[idx];
+      const p2 = verts[nextIdx];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 10) return;
+
+      const nx = -dy / len;
+      const ny = dx / len;
+      const arcOffset = len * 0.22;
+
+      const arcPts = [];
+      const steps = 5;
+      for (let s = 1; s <= steps; s++) {
+        const t = s / (steps + 1);
+        const bx = p1.x + dx * t;
+        const by = p1.y + dy * t;
+        const bow = Math.sin(t * Math.PI) * arcOffset;
+        arcPts.push({ x: bx + nx * bow, y: by + ny * bow });
+      }
+
+      verts.splice(idx + 1, 0, ...arcPts);
+      const metrics = recalculatePlotMetrics(verts);
+      Object.assign(plot, metrics);
+      const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      selectPlot(dag);
+      pushUndo(`Convert to Arc (Plot ${dag})`);
+      logCommand(`GRIP EDIT: Segment between Vertex ${idx + 1} and ${nextIdx + 1} converted to smooth arc!`);
+    }
+  }
+
+  function bindAllGripHandles(container = document) {
+    container.querySelectorAll('.mouza-vertex-drag-handle').forEach(handle => {
+      const dag = handle.getAttribute('data-dag');
+      const vIdx = parseInt(handle.getAttribute('data-vertex-index'), 10);
+      handle.onmouseenter = (e) => {
+        if (vertexDragState.isDragging) return;
+        handle.classList.add('active-hover');
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+        if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
+        gripMenuState.hoverTimer = setTimeout(() => {
+          showGripMenu('vertex', dag, vIdx, e.clientX, e.clientY, handle);
+        }, 220);
+      };
+      handle.onmouseleave = () => {
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+        gripMenuState.closeTimer = setTimeout(() => {
+          const menu = document.getElementById('cadGripMenu');
+          if (!menu || !menu.matches(':hover')) {
+            hideGripMenu();
+          }
+        }, 260);
+        handle.classList.remove('active-hover');
+      };
+      handle.onmousedown = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        startVertexDrag(dag, vIdx, e, false);
+      };
+    });
+
+    container.querySelectorAll('.mouza-midpoint-drag-handle').forEach(handle => {
+      const dag = handle.getAttribute('data-dag');
+      const eIdx = parseInt(handle.getAttribute('data-edge-index'), 10);
+      handle.onmouseenter = (e) => {
+        if (vertexDragState.isDragging) return;
+        handle.classList.add('active-hover');
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+        if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
+        gripMenuState.hoverTimer = setTimeout(() => {
+          showGripMenu('midpoint', dag, eIdx, e.clientX, e.clientY, handle);
+        }, 220);
+      };
+      handle.onmouseleave = () => {
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+        gripMenuState.closeTimer = setTimeout(() => {
+          const menu = document.getElementById('cadGripMenu');
+          if (!menu || !menu.matches(':hover')) {
+            hideGripMenu();
+          }
+        }, 260);
+        handle.classList.remove('active-hover');
+      };
+      handle.onmousedown = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        startMidpointDrag(dag, eIdx, e);
+      };
+    });
+  }
+
+  function startMidpointDrag(dag, edgeIdx, e) {
+    if (e.button !== 0) return;
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+    hideGripMenu();
+
+    if (!state.plots[dag]) {
+      const poly = document.querySelector(`.user-plot-boundary[data-dag="${dag}"]`);
+      if (poly) {
+        const v = parseSvgPoints(poly.getAttribute('points') || '');
+        if (v.length >= 3) {
+          state.plots[dag] = {
+            dag: String(dag),
+            vertices: v,
+            ...recalculatePlotMetrics(v)
+          };
+        }
+      }
+    }
+    const plot = state.plots[dag];
+    let verts = (plot && plot.vertices && plot.vertices.length >= 3) ? plot.vertices : null;
+    if (!verts || verts.length < 3) return;
+
+    const numV = verts.length;
+    const p1 = verts[edgeIdx];
+    const p2 = verts[(edgeIdx + 1) % numV];
+    const mx = (p1.x + p2.x) / 2;
+    const my = (p1.y + p2.y) / 2;
+
+    verts.splice(edgeIdx + 1, 0, { x: mx, y: my });
+    plot.vertices = verts;
+
+    const metrics = recalculatePlotMetrics(verts);
+    Object.assign(plot, metrics);
+    const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+    renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+    selectPlot(dag);
+
+    // Directly start dragging this new vertex
+    startVertexDrag(dag, edgeIdx + 1, e, false);
+    vertexDragState.isNewMidpoint = true;
+    logCommand(`GRIP EDIT: Midpoint pulled to new corner! Move mouse to adjust boundary.`);
+  }
 
   function recalculatePlotMetrics(vertices) {
     const u = getUnitsPerPixel();
@@ -2128,10 +2496,11 @@
     };
   }
 
-  function startVertexDrag(dag, vertexIdx, e) {
+  function startVertexDrag(dag, vertexIdx, e, isHoverMode = false) {
     if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+    hideGripMenu();
 
     const plot = state.plots[dag];
     let verts = (plot && plot.vertices && plot.vertices.length >= 3) ? plot.vertices : null;
@@ -2144,13 +2513,16 @@
     if (!verts || verts.length < 3) return;
 
     vertexDragState.isDragging = true;
-    vertexDragState.dag = dag;
+    vertexDragState.isHoverPlacementMode = !!isHoverMode;
+    vertexDragState.dag = String(dag);
     vertexDragState.vertexIndex = vertexIdx;
     vertexDragState.vertices = verts.map(v => ({ x: v.x, y: v.y }));
 
     selectPlot(dag);
-    document.body.style.cursor = 'grabbing';
-    logCommand(`GRIP EDIT: Dragging corner ${vertexIdx + 1} of Dag ${dag}. Move mouse to adjust boundary.`);
+    document.body.style.cursor = isHoverMode ? 'crosshair' : 'grabbing';
+    if (!isHoverMode) {
+      logCommand(`GRIP EDIT: Dragging corner ${vertexIdx + 1} of Dag ${dag}. Move mouse to adjust boundary.`);
+    }
   }
 
   function handleVertexDragMove(e) {
@@ -2172,18 +2544,34 @@
       poly.setAttribute('points', verts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
     }
 
-    // Update corner handle boxes live
+    // Update corner handle boxes and midpoint handles live
     const s2w = getScreenPixelToWorld();
-    const handleSize = 8.0 * s2w;
+    const handleSize = 8.5 * s2w;
+    const midW = 13.0 * s2w;
+    const midH = 5.5 * s2w;
     const gHandles = drawingsGroup.querySelector(`[data-dag-handles="${dag}"]`);
     if (gHandles) {
-      const rects = gHandles.querySelectorAll('rect');
-      for (let i = 0; i < verts.length && i < rects.length; i++) {
+      const vRects = gHandles.querySelectorAll('.mouza-vertex-drag-handle');
+      for (let i = 0; i < verts.length && i < vRects.length; i++) {
         const p = verts[i];
-        rects[i].setAttribute('x', (p.x - handleSize / 2).toFixed(1));
-        rects[i].setAttribute('y', (p.y - handleSize / 2).toFixed(1));
-        rects[i].setAttribute('width', handleSize.toFixed(1));
-        rects[i].setAttribute('height', handleSize.toFixed(1));
+        vRects[i].setAttribute('x', (p.x - handleSize / 2).toFixed(1));
+        vRects[i].setAttribute('y', (p.y - handleSize / 2).toFixed(1));
+        vRects[i].setAttribute('width', handleSize.toFixed(1));
+        vRects[i].setAttribute('height', handleSize.toFixed(1));
+      }
+
+      const mRects = gHandles.querySelectorAll('.mouza-midpoint-drag-handle');
+      for (let i = 0; i < verts.length && i < mRects.length; i++) {
+        const p1 = verts[i];
+        const p2 = verts[(i + 1) % verts.length];
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+        mRects[i].setAttribute('x', (mx - midW / 2).toFixed(1));
+        mRects[i].setAttribute('y', (my - midH / 2).toFixed(1));
+        mRects[i].setAttribute('width', midW.toFixed(1));
+        mRects[i].setAttribute('height', midH.toFixed(1));
+        mRects[i].setAttribute('transform', `rotate(${angleDeg.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})`);
       }
     }
 
@@ -2217,9 +2605,12 @@
     if (!vertexDragState.isDragging) return;
     const dag = vertexDragState.dag;
     const verts = vertexDragState.vertices;
+    const isNewMidpoint = vertexDragState.isNewMidpoint;
     vertexDragState.isDragging = false;
+    vertexDragState.isHoverPlacementMode = false;
     vertexDragState.dag = null;
     vertexDragState.vertexIndex = -1;
+    vertexDragState.isNewMidpoint = false;
     vertexDragState.lastDragEndTime = Date.now();
     document.body.style.cursor = '';
 
@@ -2230,8 +2621,12 @@
       const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
       renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
       selectPlot(dag);
-      pushUndo(`Corner Grip Adjusted (Plot ${dag})`);
-      logCommand(`GRIP EDIT: Corner point updated. New Area = ${metrics.areaSqFt.toFixed(2)} sq.ft (${metrics.areaDecimal.toFixed(2)} Decimal), Perimeter = ${metrics.perimeter.toFixed(2)} ft.`);
+      if (isNewMidpoint) {
+        pushUndo(`Add Vertex / Split Edge (Plot ${dag})`);
+      } else {
+        pushUndo(`Corner Grip Adjusted (Plot ${dag})`);
+      }
+      logCommand(`GRIP EDIT: Vertex point updated. New Area = ${metrics.areaSqFt.toFixed(2)} sq.ft (${metrics.areaDecimal.toFixed(2)} Decimal), Perimeter = ${metrics.perimeter.toFixed(2)} ft.`);
     }
   }
 
@@ -3590,11 +3985,17 @@
   // CANVAS CLICK HANDLER & TOOL ACTIONS
   // =========================================================================
   function handleCanvasClick(e) {
-    // 0. Ignore canvas click if user was dragging a grip handle or clicked a handle
+    // 0. If in hover placement mode from AutoCAD grip menu, clicking places the vertex!
+    if (vertexDragState.isHoverPlacementMode && vertexDragState.isDragging) {
+      handleVertexDragEnd(e);
+      return;
+    }
+
+    // Ignore canvas click if user was dragging a grip handle or clicked a handle / menu
     if (Date.now() - (vertexDragState.lastDragEndTime || 0) < 400) {
       return;
     }
-    if (e.target && e.target.closest && e.target.closest('.mouza-vertex-drag-handle')) {
+    if (e.target && e.target.closest && e.target.closest('.mouza-vertex-drag-handle, .mouza-midpoint-drag-handle, #cadGripMenu')) {
       return;
     }
 
@@ -4966,24 +5367,8 @@ const ribbonTemplates = {
           if (dag) selectPlot(dag);
         });
       });
-      // Rebind vertex handles
-      drawingsGroup.querySelectorAll('.mouza-vertex-drag-handle').forEach(handle => {
-        const dag = handle.getAttribute('data-dag');
-        const vIdx = parseInt(handle.getAttribute('data-vertex-index'), 10);
-        handle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          startVertexDrag(dag, vIdx, e);
-        });
-        handle.addEventListener('mouseenter', () => {
-          handle.setAttribute('fill', '#fef08a');
-          handle.setAttribute('stroke', '#f59e0b');
-        });
-        handle.addEventListener('mouseleave', () => {
-          handle.setAttribute('fill', '#ffffff');
-          handle.setAttribute('stroke', '#0284c7');
-        });
-      });
+      // Rebind vertex and midpoint grip handles
+      bindAllGripHandles(drawingsGroup);
     }
 
     // 2. Restore Plots or Clear
@@ -7812,6 +8197,23 @@ const ribbonTemplates = {
       // ESCAPE KEY: In AutoCAD, if drawing a polyline/line, Esc removes the last point!
       if (e.key === 'Escape') {
         e.preventDefault();
+        hideGripMenu();
+
+        if (vertexDragState.isDragging) {
+          const dag = vertexDragState.dag;
+          vertexDragState.isDragging = false;
+          vertexDragState.isHoverPlacementMode = false;
+          vertexDragState.dag = null;
+          vertexDragState.vertexIndex = -1;
+          document.body.style.cursor = '';
+          if (dag && state.plots[dag]) {
+            const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
+            renderParcelPolygon(state.plots[dag].vertices, dag, state.plots[dag].areaSqFt, state.plots[dag].areaDecimal, state.plots[dag].perimeter, isMW);
+          }
+          logCommand('GRIP EDIT: Canceled grip edit.');
+          return;
+        }
+
         const openModalEl = document.querySelector('.cad-modal-backdrop.show');
         if (openModalEl) {
           openModalEl.classList.remove('show');
@@ -8356,6 +8758,10 @@ const ribbonTemplates = {
     updateDrawingOverlay,
     renderParcelPolygon,
     startVertexDrag,
+    startMidpointDrag,
+    showGripMenu,
+    hideGripMenu,
+    bindAllGripHandles,
     vertexDragState,
 
     undo,

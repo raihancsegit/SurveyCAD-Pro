@@ -631,20 +631,71 @@ polygon.user-polyline-boundary:hover {
   user-select: none;
 }
 
-/* Vertex Corner Drag Handles (CAD Square grip nodes, Image 2 standard) */
+/* Vertex Corner & Midpoint Drag Handles (AutoCAD Grips standard) */
 .mouza-vertex-drag-handle {
   cursor: grab !important;
   pointer-events: auto !important;
   vector-effect: non-scaling-stroke !important;
-  transition: fill 0.12s ease, stroke 0.12s ease;
+  transition: fill 0.1s ease, stroke 0.1s ease, stroke-width 0.1s ease;
 }
-.mouza-vertex-drag-handle:hover {
-  cursor: grab !important;
-  fill: #fef08a !important;
-  stroke: #f59e0b !important;
+.mouza-vertex-drag-handle:hover,
+.mouza-vertex-drag-handle.active-hover {
+  cursor: pointer !important;
+  fill: #ffffff !important;
+  stroke: #ef4444 !important;
+  stroke-width: 2px !important;
 }
+
+.mouza-midpoint-drag-handle {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  vector-effect: non-scaling-stroke !important;
+  transition: fill 0.1s ease, stroke 0.1s ease, stroke-width 0.1s ease;
+}
+.mouza-midpoint-drag-handle:hover,
+.mouza-midpoint-drag-handle.active-hover {
+  cursor: pointer !important;
+  fill: #ffffff !important;
+  stroke: #ef4444 !important;
+  stroke-width: 2px !important;
+}
+
 .mouza-node-handles-group {
   pointer-events: auto !important;
+}
+
+/* AutoCAD Multifunctional Grip Floating Menu */
+#cadGripMenu {
+  position: fixed;
+  z-index: 99999;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 4px 0;
+  min-width: 140px;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11.5px;
+}
+.cad-grip-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  color: #1e293b;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+.cad-grip-menu-item:hover {
+  background-color: #f3f4f6;
+  color: #0284c7;
+}
+.cad-grip-menu-item.danger:hover {
+  background-color: #fef2f2;
+  color: #ef4444;
 }
 
 .user-drawn-line {
