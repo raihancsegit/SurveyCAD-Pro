@@ -36,8 +36,8 @@
     activeTab: 'home',
     activeSidebarTab: 'properties',
     selectedDag: null,
-    scalePreset: 16,
-    scaleFactor: 3960, // S = 63360 / 16 = 3960
+    scalePreset: 80,
+    scaleFactor: 792, // 80" = 1 Mile (S = 63360 / 80 = 792)
     unit: 'feet', // 'feet' | 'links' | 'meters'
     gridEnabled: true,
     snapEnabled: false,
@@ -77,10 +77,12 @@
       rotation: 0,
       width: 180,
       height: 45,
-      customWidth: null,
-      calibratedUpp: null,
-      origCalibratedWidth: null,
-      origRasterWidth: null,
+      customWidth: 300.34,
+      calibratedUpp: 0.4395,
+      origCalibratedWidth: 300.34,
+      origRasterWidth: 1024,
+      is2PointCalibrated: true,
+      calibratedGroundFt: 132,
       isDragging: false,
       dragStartX: 0,
       dragStartY: 0,
@@ -607,22 +609,24 @@
   }
 
   const rasterState = {
-    x: 180,
-    y: 150,
-    width: 750,
-    height: 550,
+    x: 0,
+    y: 0,
+    width: 1024,
+    height: 723,
+    naturalWidth: 1024,
+    naturalHeight: 723,
     opacity: 0.85,
-    dpi: 300,
-    dpiX: 300,
-    dpiY: 300,
+    dpi: 150,
+    dpiX: 150,
+    dpiY: 150,
     isDragging: false,
     isResizing: false,
     startX: 0,
     startY: 0,
-    origX: 180,
-    origY: 150,
-    origW: 750,
-    origH: 550
+    origX: 0,
+    origY: 0,
+    origW: 1024,
+    origH: 723
   };
 
   const rasterCache = {
@@ -656,12 +660,21 @@
         rasterState.naturalWidth = imgObj.naturalWidth;
         rasterState.naturalHeight = imgObj.naturalHeight;
 
-        // Auto-preserve natural aspect ratio to avoid squishing
-        if (imgObj.naturalWidth && imgObj.naturalHeight && rasterState.width > 0) {
-          rasterState.height = Math.round(rasterState.width * (imgObj.naturalHeight / imgObj.naturalWidth));
-          rasterState.origH = rasterState.height;
-          updateRasterDOM();
-        }
+        // Auto-preserve natural 1:1 AutoCAD pixel dimensions to prevent accidental scale distortion
+        rasterState.naturalWidth = imgObj.naturalWidth || 1024;
+        rasterState.naturalHeight = imgObj.naturalHeight || 723;
+        rasterState.width = rasterState.naturalWidth;
+        rasterState.height = rasterState.naturalHeight;
+        rasterState.origW = rasterState.width;
+        rasterState.origH = rasterState.height;
+        updateRasterDOM();
+
+        // Fit canvas viewport to full raster map
+        viewport.x = -40;
+        viewport.y = -40;
+        viewport.width = rasterState.width + 80;
+        viewport.height = rasterState.height + 80;
+        updateViewBox();
         rebuildGuniyaScale();
         recalculateAllPlacedDimensions();
       } catch (e) {
@@ -1003,8 +1016,11 @@
     const guniyaEl = document.getElementById('virtualGuniyaScale');
     if (!guniyaEl) return;
 
-    // 1000 links = 10 chains = 660 ft (Cadastral standard)
-    const targetLengthFeet = 660;
+    // Cadastral standard: 80" map = 2 chains (132 ft), 16" map = 10 chains (660 ft)
+    const targetLengthFeet = (state.guniya && state.guniya.calibratedGroundFt) 
+      ? state.guniya.calibratedGroundFt 
+      : (state.scalePreset === 80 ? 132 : 660);
+
     let guniyaW;
     if (overrideWidth) {
       guniyaW = overrideWidth;
@@ -1343,16 +1359,16 @@
     const upp_px_x = (1 / dpiX) * scale * unitFactor;
     const upp_px_y = (1 / dpiY) * scale * unitFactor;
 
-    // SVG canvas coordinates to image pixels mapping
+    // SVG canvas coordinates to image pixels mapping (strictly uniform 1:1 AutoCAD aspect ratio)
     let px_per_svg_x = 1.0;
     let px_per_svg_y = 1.0;
 
     if (rasterCache && rasterCache.loaded && rasterCache.width > 0 && rasterState.width > 0) {
       px_per_svg_x = rasterCache.width / rasterState.width;
-      px_per_svg_y = rasterCache.height / rasterState.height;
+      px_per_svg_y = rasterCache.width / rasterState.width;
     } else if (rasterState.naturalWidth > 0 && rasterState.width > 0) {
       px_per_svg_x = rasterState.naturalWidth / rasterState.width;
-      px_per_svg_y = (rasterState.naturalHeight || rasterState.naturalWidth) / (rasterState.height || rasterState.width);
+      px_per_svg_y = rasterState.naturalWidth / rasterState.width;
     } else if (rasterState && rasterState.width > 0) {
       px_per_svg_x = 1.0;
       px_per_svg_y = 1.0;
@@ -1362,7 +1378,7 @@
     let upp_svg_x = px_per_svg_x * upp_px_x;
     let upp_svg_y = px_per_svg_y * upp_px_y;
 
-    // If Guniya scale has been explicitly calibrated directly against the map's 10-chain scale bar
+    // If Guniya / Scale Bar has been calibrated directly against the map's 10-chain scale bar (AutoCAD SCALE Reference)
     if (state.guniya && state.guniya.is2PointCalibrated && state.guniya.calibratedUpp) {
       upp_svg_x = state.guniya.calibratedUpp;
       upp_svg_y = state.guniya.calibratedUpp;
@@ -1684,10 +1700,10 @@
         return { dpi: 300, source: 'Cadastral High-Res (300 DPI)' };
       }
       // If image width < 3500px, it is a standard digital/web image or crop:
-      // Windows Explorer default resolution is always 96 DPI!
-      return { dpi: 96, source: 'Windows Default (96 DPI)' };
+      // Cadastral standard in Bangladesh is 300 DPI (AutoCAD benchmark)
+      return { dpi: 300, source: 'Cadastral Standard (300 DPI)' };
     }
-    return { dpi: 96, source: 'Windows Default (96 DPI)' };
+    return { dpi: 300, source: 'Cadastral Standard (300 DPI)' };
   }
 
   function applyDetectedDpiToUI(dpi, sourceInfo = '') {
@@ -1729,10 +1745,59 @@
     }
 
     applyMouzaScale(null, f, d);
+    recalculateAllPlots();
     recalculateAllPlacedDimensions();
     rebuildGuniyaScale();
     closeModal('modalScaleCalculator');
     logCommand(`SCALE & DPI APPLIED: Ratio 1:${f} (${state.scalePreset}"=1 Mile), DPI: ${d}, Unit: ${u}.`);
+  }
+
+  function recalculateAllPlots() {
+    const u = getUnitsPerPixel();
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+
+    for (const [dag, plot] of Object.entries(state.plots)) {
+      if (!plot || !plot.vertices || plot.vertices.length < 3) continue;
+      const numV = plot.vertices.length;
+      const metrics = recalculatePlotMetrics(plot.vertices);
+      Object.assign(plot, metrics);
+
+      // 1. Update Center Badge Text (Both English and Bengali formats stay 100% in sync)
+      if (drawingsGroup) {
+        const gLabel = drawingsGroup.querySelector(`[data-dag-label="${dag}"]`);
+        if (gLabel) {
+          const texts = gLabel.querySelectorAll('text');
+          if (texts.length >= 2) {
+            const areaSubText = metrics.areaDecimal >= 0.01 
+              ? `${metrics.areaDecimal.toFixed(2)} Dec` 
+              : `${Math.round(metrics.areaSqFt)} sq.ft`;
+            texts[1].textContent = areaSubText;
+          }
+        }
+
+        // 2. Update Side Dimension Badges
+        const gDims = drawingsGroup.querySelector(`[data-dag-dims="${dag}"]`);
+        if (gDims) {
+          const dimTexts = gDims.querySelectorAll('.mouza-side-dimension text');
+          for (let i = 0; i < numV && i < dimTexts.length; i++) {
+            const p1 = plot.vertices[i];
+            const p2 = plot.vertices[(i + 1) % numV];
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const segFeet = Math.hypot(dx * u.upp_svg_x, dy * u.upp_svg_y);
+            let feet = Math.floor(segFeet);
+            let inches = Math.round((segFeet - feet) * 12);
+            if (inches === 12) { feet += 1; inches = 0; }
+            dimTexts[i].textContent = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
+          }
+        }
+      }
+    }
+
+    // 3. Update Properties panel if a plot is currently selected
+    if (state.selectedDag && state.plots[state.selectedDag]) {
+      selectPlot(state.selectedDag);
+    }
   }
 
   function recalculateAllPlacedDimensions() {
@@ -1774,11 +1839,74 @@
       rasterState.dpiY = Number(customDpi);
     }
 
-    // Update status bar scale indicator
+    // Auto-align AutoCAD Standard Benchmark UPP and Reference Scale
+    if (state.scalePreset === 80 || factor === 792) {
+      state.scalePreset = 80;
+      state.scaleFactor = 792;
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 0.4395;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 300.34;
+        state.guniya.origCalibratedWidth = 300.34;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 132;
+      }
+    } else if (state.scalePreset === 64 || factor === 990) {
+      state.scalePreset = 64;
+      state.scaleFactor = 990;
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 0.2744;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 601.25;
+        state.guniya.origCalibratedWidth = 601.25;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 165;
+      }
+    } else if (state.scalePreset === 32 || factor === 1980) {
+      state.scalePreset = 32;
+      state.scaleFactor = 1980;
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 0.5488;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 601.25;
+        state.guniya.origCalibratedWidth = 601.25;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 330;
+      }
+    } else {
+      state.scalePreset = 16;
+      state.scaleFactor = 3960;
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 1.09771;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 601.25;
+        state.guniya.origCalibratedWidth = 601.25;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 660;
+      }
+    }
+
+    // Sync Top Bar Dropdown & Status Bar Indicators
+    const topScale = document.getElementById('topBarActiveScale');
+    if (topScale) topScale.textContent = `${state.scalePreset}"=1 Mile (1:${state.scaleFactor})`;
+
+    const topSelect = document.getElementById('topBarScaleSelect');
+    if (topSelect) {
+      if ([80, 16, 32, 64].includes(state.scalePreset)) {
+        topSelect.value = String(state.scalePreset);
+      } else {
+        topSelect.value = 'custom';
+      }
+    }
+
     const scaleVal = document.getElementById('statusScaleValue');
     if (scaleVal) {
-      scaleVal.textContent = `1:${factor}`;
+      scaleVal.textContent = `1:${state.scaleFactor} (${state.scalePreset}"=1 Mile)`;
     }
+
+    rebuildGuniyaScale(state.guniya ? state.guniya.customWidth : null);
+    recalculateAllPlots();
+    recalculateAllPlacedDimensions();
 
     // Update custom inputs in modal
     const inputFactor = document.getElementById('inputCustomScaleFactor');
@@ -1818,6 +1946,8 @@
     });
 
     rebuildGuniyaScale();
+    recalculateAllPlots();
+    recalculateAllPlacedDimensions();
     logCommand(`SCALE: AutoCAD Scale Factor 1:${factor} (${state.scalePreset}" = 1 Mile) applied at ${rasterState.dpi || 300} DPI.`);
   }
 
@@ -1933,24 +2063,31 @@
     // 1. Plot Polygon (AutoCAD Clean Boundary with crisp outline and corner grip support)
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', ptsAttr);
-    if (isPolyline) {
-      poly.setAttribute('fill', 'none');
-      poly.setAttribute('stroke', '#ffffff');
-      poly.setAttribute('stroke-width', '1.8');
-      poly.setAttribute('vector-effect', 'non-scaling-stroke');
-      poly.setAttribute('class', `mouza-plot user-plot-boundary user-polyline-boundary selected${wandClass}`);
-    } else {
-      poly.setAttribute('fill', 'rgba(245, 158, 11, 0.22)');
-      poly.setAttribute('stroke', '#f59e0b');
-      poly.setAttribute('stroke-width', '1.8');
-      poly.setAttribute('vector-effect', 'non-scaling-stroke');
-      poly.setAttribute('filter', 'drop-shadow(0 0 5px rgba(245, 158, 11, 0.7))');
-      poly.setAttribute('class', `mouza-plot user-plot-boundary selected${wandClass}`);
-    }
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', '#ffffff');
+    poly.setAttribute('stroke-width', '1.8');
+    poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    poly.setAttribute('class', `mouza-plot user-plot-boundary user-polyline-boundary selected${wandClass}`);
     poly.setAttribute('data-dag', String(dag));
     poly.addEventListener('click', (e) => {
       e.stopPropagation();
       selectPlot(String(dag));
+    });
+    poly.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (state.activeTool === 'select' || state.activeTool === 'move' || !state.activeTool) {
+        e.stopPropagation();
+        selectPlot(String(dag));
+        startPlotMove(String(dag), e);
+      }
+    });
+    poly.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectPlot(String(dag));
+      if (confirm(`দাগ নং ${dag} কি মুছে ফেলতে চান? (Delete Plot ${dag}?)`)) {
+        deleteSelectedPlot(String(dag));
+      }
     });
     drawingsGroup.appendChild(poly);
 
@@ -2072,7 +2209,7 @@
         const bx = mx + nx * offsetDist;
         const by = my + ny * offsetDist;
 
-        const dimStroke = isPolyline ? '#0284c7' : '#f59e0b';
+        const dimStroke = '#0284c7';
         const gDim = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         gDim.setAttribute('class', 'mouza-side-dimension');
         gDim.innerHTML = `
@@ -2109,8 +2246,8 @@
     const maxChars = Math.max(plotTitle.length, areaSubText.length);
     const badgeW = Math.max(52 * s2wBadge, (maxChars * 6.8 + 12) * s2wBadge);
     const badgeH = 26.0 * s2wBadge;
-    const badgeStroke = isPolyline ? '#0284c7' : '#f59e0b';
-    const badgeTitleCol = isPolyline ? '#ffffff' : '#fbbf24';
+    const badgeStroke = '#0284c7';
+    const badgeTitleCol = '#ffffff';
 
     gLabel.innerHTML = `
       <rect x="${(cx - badgeW / 2).toFixed(1)}" y="${(cy - badgeH / 2).toFixed(1)}" width="${badgeW.toFixed(1)}" height="${badgeH.toFixed(1)}" rx="${(3.5 * s2wBadge).toFixed(1)}" fill="rgba(15, 23, 42, 0.90)" stroke="${badgeStroke}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
@@ -2368,58 +2505,46 @@
     container.querySelectorAll('.mouza-vertex-drag-handle').forEach(handle => {
       const dag = handle.getAttribute('data-dag');
       const vIdx = parseInt(handle.getAttribute('data-vertex-index'), 10);
-      handle.onmouseenter = (e) => {
+      handle.onmouseenter = () => {
         if (vertexDragState.isDragging) return;
         handle.classList.add('active-hover');
-        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
-        if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
-        gripMenuState.hoverTimer = setTimeout(() => {
-          showGripMenu('vertex', dag, vIdx, e.clientX, e.clientY, handle);
-        }, 220);
       };
       handle.onmouseleave = () => {
-        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
-        gripMenuState.closeTimer = setTimeout(() => {
-          const menu = document.getElementById('cadGripMenu');
-          if (!menu || !menu.matches(':hover')) {
-            hideGripMenu();
-          }
-        }, 260);
         handle.classList.remove('active-hover');
       };
       handle.onmousedown = (e) => {
+        if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
         startVertexDrag(dag, vIdx, e, false);
+      };
+      handle.oncontextmenu = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        showGripMenu('vertex', dag, vIdx, e.clientX, e.clientY, handle);
       };
     });
 
     container.querySelectorAll('.mouza-midpoint-drag-handle').forEach(handle => {
       const dag = handle.getAttribute('data-dag');
       const eIdx = parseInt(handle.getAttribute('data-edge-index'), 10);
-      handle.onmouseenter = (e) => {
+      handle.onmouseenter = () => {
         if (vertexDragState.isDragging) return;
         handle.classList.add('active-hover');
-        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
-        if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
-        gripMenuState.hoverTimer = setTimeout(() => {
-          showGripMenu('midpoint', dag, eIdx, e.clientX, e.clientY, handle);
-        }, 220);
       };
       handle.onmouseleave = () => {
-        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
-        gripMenuState.closeTimer = setTimeout(() => {
-          const menu = document.getElementById('cadGripMenu');
-          if (!menu || !menu.matches(':hover')) {
-            hideGripMenu();
-          }
-        }, 260);
         handle.classList.remove('active-hover');
       };
       handle.onmousedown = (e) => {
+        if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
         startMidpointDrag(dag, eIdx, e);
+      };
+      handle.oncontextmenu = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        showGripMenu('midpoint', dag, eIdx, e.clientX, e.clientY, handle);
       };
     });
   }
@@ -2599,6 +2724,83 @@
         texts[1].textContent = `${toBengaliNum(metrics.areaDecimal.toFixed(2))} Decimal`;
       }
     }
+
+    // Live update all side dimension badges
+    const u = getUnitsPerPixel();
+    const gDims = drawingsGroup.querySelector(`[data-dag-dims="${dag}"]`);
+    if (gDims) {
+      const numV = verts.length;
+      let sumX = 0, sumY = 0;
+      for (let i = 0; i < numV; i++) { sumX += verts[i].x; sumY += verts[i].y; }
+      const cx = sumX / numV;
+      const cy = sumY / numV;
+      const dimGroups = gDims.querySelectorAll('.mouza-side-dimension');
+
+      for (let i = 0; i < numV && i < dimGroups.length; i++) {
+        const p1 = verts[i];
+        const p2 = verts[(i + 1) % numV];
+        const segPixelLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (segPixelLen < 10) continue;
+
+        const segFeet = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
+        let feet = Math.floor(segFeet);
+        let inches = Math.round((segFeet - feet) * 12);
+        if (inches === 12) { feet += 1; inches = 0; }
+        const dimText = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
+
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        let nx = -(p2.y - p1.y) / segPixelLen;
+        let ny = (p2.x - p1.x) / segPixelLen;
+        if (Math.hypot(mx + nx * 5 - cx, my + ny * 5 - cy) < Math.hypot(mx - cx, my - cy)) {
+          nx = -nx;
+          ny = -ny;
+        }
+
+        const s2wDim = getScreenPixelToWorld();
+        const fontDim = 10.5 * s2wDim;
+        const badgeH = 15.0 * s2wDim;
+        const badgeW = Math.max(26 * s2wDim, (dimText.length * 6.5 + 8) * s2wDim);
+        const offsetDist = badgeH / 2 + 3.0 * s2wDim;
+        const bx = mx + nx * offsetDist;
+        const by = my + ny * offsetDist;
+
+        const r = dimGroups[i].querySelector('rect');
+        const t = dimGroups[i].querySelector('text');
+        if (r) {
+          r.setAttribute('x', (bx - badgeW / 2).toFixed(1));
+          r.setAttribute('y', (by - badgeH / 2).toFixed(1));
+          r.setAttribute('width', badgeW.toFixed(1));
+          r.setAttribute('height', badgeH.toFixed(1));
+        }
+        if (t) {
+          t.setAttribute('x', bx.toFixed(1));
+          t.setAttribute('y', (by + fontDim * 0.35).toFixed(1));
+          t.textContent = dimText;
+        }
+      }
+    }
+
+    // Live update Right Properties Inspector Panel
+    const propArea = document.getElementById('propArea');
+    const propDecimal = document.getElementById('propDecimal');
+    const propPerimeter = document.getElementById('propPerimeter');
+    const sqLinks = Math.round(Number(metrics.areaDecimal) * 1000);
+    const periLinks = (Number(metrics.perimeter) / FEET_PER_LINK).toFixed(1);
+    if (propArea) propArea.textContent = `${Number(metrics.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft`;
+    if (propDecimal) propDecimal.textContent = `${Number(metrics.areaDecimal).toFixed(2)} Decimal (${sqLinks.toLocaleString()} Sq.Link)`;
+    if (propPerimeter) propPerimeter.textContent = `${Number(metrics.perimeter).toFixed(2)} ft (${periLinks} Links)`;
+
+    if (verts.length === 4) {
+      const dimTop = document.getElementById('dimTopText');
+      const dimBottom = document.getElementById('dimBottomText');
+      const dimLeft = document.getElementById('dimLeftText');
+      const dimRight = document.getElementById('dimRightText');
+      if (dimTop) dimTop.textContent = formatDistanceFeetInches(Math.hypot((verts[1].x - verts[0].x) * u.upp_svg_x, (verts[1].y - verts[0].y) * u.upp_svg_y));
+      if (dimRight) dimRight.textContent = formatDistanceFeetInches(Math.hypot((verts[2].x - verts[1].x) * u.upp_svg_x, (verts[2].y - verts[1].y) * u.upp_svg_y));
+      if (dimBottom) dimBottom.textContent = formatDistanceFeetInches(Math.hypot((verts[3].x - verts[2].x) * u.upp_svg_x, (verts[3].y - verts[2].y) * u.upp_svg_y));
+      if (dimLeft) dimLeft.textContent = formatDistanceFeetInches(Math.hypot((verts[0].x - verts[3].x) * u.upp_svg_x, (verts[0].y - verts[3].y) * u.upp_svg_y));
+    }
   }
 
   function handleVertexDragEnd(e) {
@@ -2619,7 +2821,7 @@
       const metrics = recalculatePlotMetrics(verts);
       Object.assign(state.plots[dag], metrics);
       const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
-      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      renderParcelPolygon(verts, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW, true);
       selectPlot(dag);
       if (isNewMidpoint) {
         pushUndo(`Add Vertex / Split Edge (Plot ${dag})`);
@@ -2628,6 +2830,67 @@
       }
       logCommand(`GRIP EDIT: Vertex point updated. New Area = ${metrics.areaSqFt.toFixed(2)} sq.ft (${metrics.areaDecimal.toFixed(2)} Decimal), Perimeter = ${metrics.perimeter.toFixed(2)} ft.`);
     }
+  }
+
+  // =========================================================================
+  // PLOT MOVE & NUDGE ENGINE (AUTOCAD STANDARD: DRAG PLOT OR ARROW KEYS NUDGE)
+  // =========================================================================
+  const plotMoveState = {
+    isDragging: false,
+    dag: null,
+    startX: 0,
+    startY: 0,
+    origVertices: []
+  };
+
+  function startPlotMove(dag, e) {
+    const plot = state.plots[dag];
+    if (!plot || !plot.vertices) return;
+    const pt = getCanvasCoords(e);
+    plotMoveState.isDragging = true;
+    plotMoveState.dag = String(dag);
+    plotMoveState.startX = pt.x;
+    plotMoveState.startY = pt.y;
+    plotMoveState.origVertices = plot.vertices.map(v => ({ x: v.x, y: v.y }));
+    document.body.style.cursor = 'move';
+    logCommand(`MOVE: Moving Plot ${dag}. Drag to target position on map.`);
+  }
+
+  function handlePlotMove(e) {
+    if (!plotMoveState.isDragging) return;
+    const pt = getCanvasCoords(e);
+    const dx = pt.x - plotMoveState.startX;
+    const dy = pt.y - plotMoveState.startY;
+    const dag = plotMoveState.dag;
+    const plot = state.plots[dag];
+    if (!plot) return;
+
+    plot.vertices = plotMoveState.origVertices.map(v => ({ x: v.x + dx, y: v.y + dy }));
+    const metrics = recalculatePlotMetrics(plot.vertices);
+    Object.assign(plot, metrics);
+    renderParcelPolygon(plot.vertices, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, false, true);
+  }
+
+  function handlePlotMoveEnd() {
+    if (!plotMoveState.isDragging) return;
+    const dag = plotMoveState.dag;
+    plotMoveState.isDragging = false;
+    document.body.style.cursor = '';
+    pushUndo(`Move Plot (Plot ${dag})`);
+    selectPlot(dag);
+    logCommand(`MOVE: Plot ${dag} moved to new position.`);
+  }
+
+  function nudgeSelectedPlot(dag, dx, dy) {
+    if (!dag) return;
+    const plot = state.plots[dag];
+    if (!plot || !plot.vertices) return;
+    plot.vertices = plot.vertices.map(v => ({ x: v.x + dx, y: v.y + dy }));
+    const metrics = recalculatePlotMetrics(plot.vertices);
+    Object.assign(plot, metrics);
+    renderParcelPolygon(plot.vertices, dag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, false, true);
+    selectPlot(dag);
+    logCommand(`NUDGE: Plot ${dag} shifted by dX=${dx.toFixed(1)}, dY=${dy.toFixed(1)}.`);
   }
 
   // =========================================================================
@@ -2709,6 +2972,21 @@
       ownerList: [{ name: '1. Recorded Owner', share: '20.00 Decimal' }]
     };
 
+    if (data.vertices && data.vertices.length >= 3) {
+      const freshMetrics = recalculatePlotMetrics(data.vertices);
+      Object.assign(data, freshMetrics);
+      if (data.vertices.length === 4) {
+        const v = data.vertices;
+        const u = getUnitsPerPixel();
+        data.dims = {
+          top: formatDistanceFeetInches(Math.hypot((v[1].x - v[0].x) * u.upp_svg_x, (v[1].y - v[0].y) * u.upp_svg_y)),
+          right: formatDistanceFeetInches(Math.hypot((v[2].x - v[1].x) * u.upp_svg_x, (v[2].y - v[1].y) * u.upp_svg_y)),
+          bottom: formatDistanceFeetInches(Math.hypot((v[3].x - v[2].x) * u.upp_svg_x, (v[3].y - v[2].y) * u.upp_svg_y)),
+          left: formatDistanceFeetInches(Math.hypot((v[0].x - v[3].x) * u.upp_svg_x, (v[0].y - v[3].y) * u.upp_svg_y))
+        };
+      }
+    }
+
     // Show Data Container and hide Empty State in Properties Tab
     const emptyState = document.getElementById('propEmptyState');
     const dataContainer = document.getElementById('propDataContainer');
@@ -2768,13 +3046,15 @@
     const propObjectType = document.getElementById('propObjectType');
     const propActiveLayer = document.getElementById('propActiveLayer');
 
+    const sqLinks = Math.round(Number(data.areaDecimal) * 1000);
+    const periLinks = (Number(data.perimeter) / FEET_PER_LINK).toFixed(1);
     if (propDagNo) propDagNo.textContent = data.dag;
     if (propMouzaJl) propMouzaJl.textContent = data.mouza ? `${data.mouza} (JL-42)` : 'Chorbagh (JL-42)';
     if (propSheetNo) propSheetNo.textContent = data.sheet || '01 (CS Survey)';
     if (propArea) propArea.textContent = `${Number(data.areaSqFt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft`;
-    if (propDecimal) propDecimal.textContent = `${Number(data.areaDecimal).toFixed(2)} Decimal`;
+    if (propDecimal) propDecimal.textContent = `${Number(data.areaDecimal).toFixed(2)} Decimal (${sqLinks.toLocaleString()} Sq.Link)`;
     if (propKathaBigha) propKathaBigha.textContent = `${(data.katha || data.areaSqFt / SQFT_PER_KATHA).toFixed(2)} Katha (${(data.bigha || data.areaSqFt / SQFT_PER_BIGHA).toFixed(2)} Bigha)`;
-    if (propPerimeter) propPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft`;
+    if (propPerimeter) propPerimeter.textContent = `${Number(data.perimeter).toFixed(2)} ft (${periLinks} Links)`;
     if (propObjectType) propObjectType.textContent = data.objectType || (data.isPolyline ? 'Polyline (Closed)' : 'Polygon (Parcel)');
     if (propActiveLayer) propActiveLayer.textContent = state.activeLayerKey ? state.activeLayerKey.replace('_', ' ') : 'Plot_Boundary';
 
@@ -3857,6 +4137,23 @@
       inputEl.value = options.defaultValue || '';
       inputEl.placeholder = options.placeholder || '';
 
+      const presetsContainer = document.getElementById('cadPromptPresetsContainer');
+      if (presetsContainer) {
+        if (options.isCalibration) {
+          presetsContainer.classList.remove('hidden');
+          const presetBtns = presetsContainer.querySelectorAll('.cad-prompt-preset-btn');
+          presetBtns.forEach(btn => {
+            btn.onclick = (pe) => {
+              pe.stopPropagation();
+              inputEl.value = btn.getAttribute('data-val');
+              onConfirm();
+            };
+          });
+        } else {
+          presetsContainer.classList.add('hidden');
+        }
+      }
+
       modal.classList.add('show');
       setTimeout(() => {
         inputEl.focus();
@@ -3865,6 +4162,7 @@
 
       function cleanup() {
         modal.classList.remove('show');
+        if (presetsContainer) presetsContainer.classList.add('hidden');
         if (btnConfirm) btnConfirm.removeEventListener('click', onConfirm);
         if (btnCancel) btnCancel.removeEventListener('click', onCancel);
         if (btnClose) btnClose.removeEventListener('click', onCancel);
@@ -4009,9 +4307,9 @@
       if (state.calibrationPoints.length === 0) {
         state.calibrationPoints.push(pt);
         if (banner && bannerText) {
-          bannerText.innerHTML = '🎯 <b>Step 2/2:</b> Click the <b>১০ চেইন (10 Chains = 660 Ft)</b> mark on the map scale bar';
+          bannerText.innerHTML = '🎯 <b>Step 2/2:</b> স্কেলবারের ২য় মাথায় ক্লিক করুন (Click Point 2 on scale bar)';
         }
-        logCommand(`CALIBRATION: Point 1 (0 Chain) set at (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}). Now click Point 2 (10 Chains)...`);
+        logCommand(`CALIBRATION: Point 1 set at (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}). Now click Point 2 on scale bar...`);
         return;
       } else {
         const p1 = state.calibrationPoints[0];
@@ -4026,22 +4324,49 @@
         }
 
         const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
-        state.guniya.x = Math.round(p1.x);
-        state.guniya.y = Math.round(p1.y + 12);
-        state.guniya.rotation = Math.round(angleDeg * 10) / 10;
-        state.guniya.customWidth = dist;
-        state.guniya.calibratedUpp = 660 / dist;
-        state.guniya.origCalibratedWidth = dist;
-        state.guniya.origRasterWidth = rasterState.width || 750;
-
-        rebuildGuniyaScale(dist);
-        updateGuniyaTransform();
-
         state.isCalibratingScale = false;
         state.calibrationPoints = [];
         if (banner) banner.classList.add('hidden');
 
-        logCommand(`SCALE CALIBRATED: 10 Chains (660 ft) = ${dist.toFixed(1)} px (${(dist / 10).toFixed(2)} px/chain). All measurements & dimensions are now 100% synchronized!`);
+        showCadPrompt({
+          isCalibration: true,
+          title: '📐 AutoCAD Reference Scale Calibration (ক্যালিব্রেশন)',
+          message: `স্কেলবারে পরিমাপকৃত দৈর্ঘ্য: ${dist.toFixed(1)} পিক্সেল। বাস্তব ভূমির দূরত্ব (ফুট) কত?`,
+          defaultValue: state.scalePreset === 80 ? '132' : '660',
+          placeholder: 'Ground distance in feet (e.g. 132 or 660)'
+        }).then((val) => {
+          if (!val) {
+            logCommand('CALIBRATION: Canceled.');
+            return;
+          }
+          const groundFt = parseFloat(val);
+          if (isNaN(groundFt) || groundFt <= 0) {
+            logCommand('CALIBRATION: Invalid distance entered.');
+            return;
+          }
+
+          state.guniya.x = Math.round(p1.x);
+          state.guniya.y = Math.round(p1.y + 12);
+          state.guniya.rotation = Math.round(angleDeg * 10) / 10;
+          state.guniya.customWidth = dist;
+          state.guniya.calibratedUpp = groundFt / dist;
+          state.guniya.origCalibratedWidth = dist;
+          state.guniya.origRasterWidth = rasterState.width || 1024;
+          state.guniya.is2PointCalibrated = true;
+          state.guniya.calibratedGroundFt = groundFt;
+
+          const topScale = document.getElementById('topBarActiveScale');
+          if (topScale) topScale.textContent = `Calibrated (${(groundFt / dist).toFixed(4)} ft/px)`;
+
+          rebuildGuniyaScale(dist);
+          updateGuniyaTransform();
+
+          // Immediately update all existing plots, badges, and dimensions!
+          recalculateAllPlots();
+          recalculateAllPlacedDimensions();
+
+          logCommand(`SCALE CALIBRATED (AutoCAD 1:1): Ground Distance ${groundFt} ft = ${dist.toFixed(1)} px (${(groundFt / dist).toFixed(4)} ft/px). All plots & measurements 100% synchronized with AutoCAD!`);
+        });
         return;
       }
     }
@@ -4130,7 +4455,7 @@
           offH.setAttribute('y1', bestSeg.p1.y.toFixed(1));
           offH.setAttribute('x2', bestSeg.p2.x.toFixed(1));
           offH.setAttribute('y2', bestSeg.p2.y.toFixed(1));
-          offH.setAttribute('stroke', '#facc15');
+          offH.setAttribute('stroke', '#38bdf8');
           offH.setAttribute('stroke-width', '3');
           offH.setAttribute('stroke-dasharray', '4 2');
           offH.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -4187,7 +4512,7 @@
           newLine.setAttribute('y1', o1.y.toFixed(1));
           newLine.setAttribute('x2', o2.x.toFixed(1));
           newLine.setAttribute('y2', o2.y.toFixed(1));
-          newLine.setAttribute('stroke', '#f59e0b');
+          newLine.setAttribute('stroke', '#ffffff');
           newLine.setAttribute('stroke-width', '2');
           newLine.setAttribute('vector-effect', 'non-scaling-stroke');
           newLine.setAttribute('class', 'user-drawn-line offset-line');
@@ -4537,9 +4862,26 @@
     state.nextDagNumber = (state.nextDagNumber || 240) + 1;
     const newDagNum = String(state.nextDagNumber);
 
+    let dims = { top: '', bottom: '', left: '', right: '' };
+    if (n === 4) {
+      dims = {
+        top: formatDistanceFeetInches(Math.hypot((pts[1].x - pts[0].x) * u.upp_svg_x, (pts[1].y - pts[0].y) * u.upp_svg_y)),
+        right: formatDistanceFeetInches(Math.hypot((pts[2].x - pts[1].x) * u.upp_svg_x, (pts[2].y - pts[1].y) * u.upp_svg_y)),
+        bottom: formatDistanceFeetInches(Math.hypot((pts[3].x - pts[2].x) * u.upp_svg_x, (pts[3].y - pts[2].y) * u.upp_svg_y)),
+        left: formatDistanceFeetInches(Math.hypot((pts[0].x - pts[3].x) * u.upp_svg_x, (pts[0].y - pts[3].y) * u.upp_svg_y))
+      };
+    } else {
+      dims = {
+        top: `${(realPerimeter * 0.32).toFixed(2)} ft`,
+        bottom: `${(realPerimeter * 0.30).toFixed(2)} ft`,
+        left: `${(realPerimeter * 0.20).toFixed(2)} ft`,
+        right: `${(realPerimeter * 0.18).toFixed(2)} ft`
+      };
+    }
+
     state.plots[newDagNum] = {
-      mouza: 'Chorbagh (CAD Drawn)',
-      sheet: '01 (CS)',
+      mouza: rasterState.fileName ? rasterState.fileName.replace(/\.[^/.]+$/, '') : `Mouza Map (${state.scalePreset}" Scale)`,
+      sheet: 'Sheet 01',
       dag: newDagNum,
       vertices: pts.map(v => ({ x: v.x, y: v.y })),
       areaSqFt: realAreaSqFt,
@@ -4551,12 +4893,7 @@
       objectType: 'Polyline (Closed Boundary)',
       isPolyline: true,
       owners: '1 Person',
-      dims: {
-        top: `${(realPerimeter * 0.32).toFixed(2)} ft`,
-        bottom: `${(realPerimeter * 0.30).toFixed(2)} ft`,
-        left: `${(realPerimeter * 0.20).toFixed(2)} ft`,
-        right: `${(realPerimeter * 0.18).toFixed(2)} ft`
-      },
+      dims: dims,
       ownerList: [{ name: `1. New Measured Plot (Plot No. ${newDagNum})`, share: `${realDecimal.toFixed(2)} Decimal (1.000 Share)` }]
     };
 
@@ -4649,10 +4986,10 @@
     rasterState.src = url;
     rasterState.filename = filename;
     rasterState.hasImage = true;
-    rasterState.x = 180;
-    rasterState.y = 150;
-    rasterState.width = 750;
-    rasterState.height = 550;
+    rasterState.x = 0;
+    rasterState.y = 0;
+    rasterState.width = rasterState.naturalWidth || 1024;
+    rasterState.height = rasterState.naturalHeight || 723;
     updateRasterDOM();
 
     // Associate raster map specifically with current sheet
@@ -4674,12 +5011,54 @@
       };
     }
 
-    // Reset 2-point scale bar calibration so new map uses fresh AutoCAD DPI scale
-    if (state.guniya) {
-      state.guniya.is2PointCalibrated = false;
-      state.guniya.calibratedUpp = null;
-      state.guniya.customWidth = null;
+    // Auto-Calibrate against AutoCAD Reference Scale (No DPI guesswork needed)
+    const is80 = /vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(filename) || (url && url.includes('full_mouza'));
+    const is16 = /sample|khajuria|chorbagh|16/i.test(filename) || (url && url.includes('sample-mouza'));
+
+    if (is80) {
+      state.scalePreset = 80;
+      state.scaleFactor = 792; // 80" = 1 Mile
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 0.4395;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 300.34;
+        state.guniya.origCalibratedWidth = 300.34;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 132;
+      }
+      const scaleVal = document.getElementById('statusScaleValue');
+      if (scaleVal) scaleVal.textContent = '1:792 (80"=1 Mile)';
+      const topScale = document.getElementById('topBarActiveScale');
+      if (topScale) topScale.textContent = '80"=1 Mile (1:792)';
+      rebuildGuniyaScale(300.34);
+      logCommand('AUTOCAD BENCHMARK: 80" = 1 Mile (1:792, 0.4395 ft/px -> 18.98 Decimal) Auto-Applied!');
+    } else if (is16) {
+      state.scalePreset = 16;
+      state.scaleFactor = 3960; // 16" = 1 Mile
+      if (state.guniya) {
+        state.guniya.calibratedUpp = 1.09771;
+        state.guniya.is2PointCalibrated = true;
+        state.guniya.customWidth = 601.25;
+        state.guniya.origCalibratedWidth = 601.25;
+        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.calibratedGroundFt = 660;
+      }
+      const scaleVal = document.getElementById('statusScaleValue');
+      if (scaleVal) scaleVal.textContent = '1:3960 (16"=1 Mile)';
+      const topScale = document.getElementById('topBarActiveScale');
+      if (topScale) topScale.textContent = '16"=1 Mile (1:3960)';
+      rebuildGuniyaScale(601.25);
+      logCommand('AUTOCAD BENCHMARK: 16" = 1 Mile (1:3960, 1.0977 ft/px) Auto-Applied!');
+    } else {
+      if (state.guniya) {
+        state.guniya.is2PointCalibrated = false;
+        state.guniya.calibratedUpp = null;
+        state.guniya.customWidth = null;
+      }
     }
+
+    recalculateAllPlots();
+    recalculateAllPlacedDimensions();
 
     // Anchor undo history so that the inserted mouza map is the permanent baseline.
     // Ctrl+Z will only undo actions performed AFTER this point and will never delete the map!
@@ -4689,49 +5068,95 @@
     updateUndoRedoUI();
 
     logCommand(`MAP IMPORTED: ${filename} attached.`);
-    logCommand('TIP: Select Magic Wand (MW) and click inside any parcel to auto-detect its boundary.');
+    logCommand('TIP: Select Polyline (PL) or Magic Wand (MW) to measure plot boundaries.');
   }
 
-  function placeRasterSideBySide() {
-    rasterState.x = 720;
-    rasterState.y = 120;
-    rasterState.width = 750;
-    rasterState.height = 550;
-    updateRasterDOM();
-
-    viewport.x = 100;
-    viewport.y = 50;
-    viewport.width = 1450;
-    viewport.height = 750;
-    updateViewBox();
-  }
-
-  function detachMouzaRaster() {
-    const group = document.getElementById('groupRasterMouza');
-    const hudTools = document.getElementById('hudRasterTools');
-    if (group) group.classList.add('hidden');
-    if (hudTools) hudTools.classList.add('hidden');
-    const img = document.getElementById('canvasRasterMap');
-    if (img) {
-      img.removeAttribute('href');
-      img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
-    }
-    rasterState.src = '';
-    rasterState.filename = '';
-    rasterState.hasImage = false;
-    rasterCache.loaded = false;
-    rasterCache.canvas = null;
-    rasterCache.ctx = null;
-    if (state.sheets && state.currentSheet && state.sheets[state.currentSheet]) {
-      state.sheets[state.currentSheet].raster = null;
-    }
-    logCommand('MOUZA MAP: Detached from workspace.');
+  function loadVatuliaMouzaRaster() {
+    attachMouzaRaster('full_mouza.jpg', 'Vatulia_Uttara_Sheet01_80inch.jpg');
+    apply80InchAutocadBenchmark();
+    logCommand('MOUZA MAP: Vatulia Mouza Map (80" = 1 Mile, 0.4395 ft/px - AutoCAD 18.98 Dec Benchmark) loaded successfully.');
   }
 
   function loadSampleMouzaRaster() {
-    attachMouzaRaster('sample-mouza.jpg', 'CS_Chorbagh_Sheet01.jpg');
-    applyMouzaScale(16);
-    logCommand('MOUZA MAP: Built-in CS Mouza Map (Sheet 01 - 1920) loaded successfully.');
+    attachMouzaRaster('sample-mouza.jpg', 'CS_Chorbagh_Sheet01_16inch.jpg');
+    apply16InchAutocadBenchmark();
+    logCommand('MOUZA MAP: Built-in CS Mouza Map (16" = 1 Mile, 1.0977 ft/px - AutoCAD 1:1) loaded successfully.');
+  }
+
+  function apply80InchAutocadBenchmark() {
+    state.scalePreset = 80;
+    state.scaleFactor = 792;
+    if (state.guniya) {
+      state.guniya.calibratedUpp = 0.4395;
+      state.guniya.is2PointCalibrated = true;
+      state.guniya.customWidth = 300.34;
+      state.guniya.origCalibratedWidth = 300.34;
+      state.guniya.origRasterWidth = rasterState.width || 1024;
+      state.guniya.calibratedGroundFt = 132;
+    }
+    const scaleVal = document.getElementById('statusScaleValue');
+    if (scaleVal) scaleVal.textContent = '1:792 (80"=1 Mile)';
+    const topScale = document.getElementById('topBarActiveScale');
+    if (topScale) topScale.textContent = '80"=1 Mile (1:792)';
+    const inputFactor = document.getElementById('inputCustomScaleFactor');
+    if (inputFactor) inputFactor.value = 792;
+    rebuildGuniyaScale(300.34);
+    recalculateAllPlots();
+    recalculateAllPlacedDimensions();
+    closeModal('modalScaleCalculator');
+    logCommand('BENCHMARK: 80" = 1 Mile (AutoCAD 1:792, 0.4395 ft/px -> 18.98 Decimal) Applied!');
+  }
+
+  function apply16InchAutocadBenchmark() {
+    state.scalePreset = 16;
+    state.scaleFactor = 3960;
+    if (state.guniya) {
+      state.guniya.calibratedUpp = 1.09771;
+      state.guniya.is2PointCalibrated = true;
+      state.guniya.customWidth = 601.25;
+      state.guniya.origCalibratedWidth = 601.25;
+      state.guniya.origRasterWidth = rasterState.width || 1024;
+      state.guniya.calibratedGroundFt = 660;
+    }
+    const scaleVal = document.getElementById('statusScaleValue');
+    if (scaleVal) scaleVal.textContent = '1:3960 (16"=1 Mile)';
+    const topScale = document.getElementById('topBarActiveScale');
+    if (topScale) topScale.textContent = '16"=1 Mile (1:3960)';
+    const inputFactor = document.getElementById('inputCustomScaleFactor');
+    if (inputFactor) inputFactor.value = 3960;
+    rebuildGuniyaScale(601.25);
+    recalculateAllPlots();
+    recalculateAllPlacedDimensions();
+    closeModal('modalScaleCalculator');
+    logCommand('BENCHMARK: 16" = 1 Mile (AutoCAD 1:3960, 1.0977 ft/px) Applied!');
+  }
+
+  function autoDetectAndApplyMouzaScale(fileName, dataUrl, naturalWidth, dpiMeta) {
+    const fn = (fileName || '').toLowerCase();
+    let detectedPreset = 16;
+
+    if (/vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(fn) || (dataUrl && dataUrl.includes('full_mouza'))) {
+      detectedPreset = 80;
+    } else if (/(?:^|[_\s\-])64(?:inch|[\"_\s\-]|$)|sixtyfour/i.test(fn)) {
+      detectedPreset = 64;
+    } else if (/(?:^|[_\s\-])32(?:inch|[\"_\s\-]|$)|thirtytwo/i.test(fn)) {
+      detectedPreset = 32;
+    } else if (/(?:^|[_\s\-])16(?:inch|[\"_\s\-]|$)|sixteen|cs|sa|rs/i.test(fn)) {
+      detectedPreset = 16;
+    }
+
+    if (detectedPreset === 80) {
+      apply80InchAutocadBenchmark();
+    } else {
+      if (dpiMeta && naturalWidth) {
+        const resolved = resolveMouzaDpi(dpiMeta, naturalWidth, fileName);
+        applyDetectedDpiToUI(resolved.dpi, resolved.source);
+      }
+      applyMouzaScale(detectedPreset);
+    }
+    recalculateAllPlacedDimensions();
+    recalculateAllPlots();
+    logCommand(`AUTO SCALE: Auto-detected ${detectedPreset}" = 1 Mile scale for "${fileName || 'Mouza Map'}".`);
   }
 
 const ribbonTemplates = {
@@ -5126,7 +5551,6 @@ const ribbonTemplates = {
       { label: 'Open Drawing (DWG/DXF)', shortcut: '', action: () => openDrawingFileDialog() },
       { divider: true },
       { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
       { label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveCurrentProject() },
       { label: 'Save As', shortcut: 'Ctrl+Shift+S', action: () => saveProjectAs() },
@@ -5140,7 +5564,6 @@ const ribbonTemplates = {
     ],
     home: [
       { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
       { divider: true },
       { label: 'Select Plot', shortcut: 'ESC', action: () => setActiveTool('select') },
       { label: 'Polyline Boundary', shortcut: 'PL', action: () => setActiveTool('polyline') },
@@ -5181,8 +5604,7 @@ const ribbonTemplates = {
     ],
     mouza: [
       { label: 'Import Mouza Map', shortcut: 'Ctrl+I', action: () => openModal('modalMouzaImport') },
-      { label: 'Load Sample Mouza Map', shortcut: '', action: () => loadSampleMouzaRaster() },
-      { label: 'Scale Mouza Map (16" = 1 Mile)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
+      { label: 'Scale Mouza Map (AutoCAD Scale)', shortcut: 'SC', action: () => openModal('modalScaleCalculator') },
       { divider: true },
       { label: 'Magic Wand Auto Dag', shortcut: 'MW', action: () => setActiveTool('magicwand') },
       { label: 'Trace Polyline Boundary', shortcut: 'PL', action: () => setActiveTool('polyline') },
@@ -6352,23 +6774,27 @@ const ribbonTemplates = {
           reader.onload = (loadEvent) => {
             const dataUrl = loadEvent.target.result;
             attachMouzaRaster(dataUrl, file.name);
+            const is80 = /vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(file.name) || (dataUrl && dataUrl.includes('full_mouza'));
             const tempImg = new Image();
             tempImg.onload = () => {
               rasterState.naturalWidth = tempImg.naturalWidth;
               rasterState.naturalHeight = tempImg.naturalHeight;
-              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
-              applyDetectedDpiToUI(resolved.dpi, resolved.source);
-              applyMouzaScale(16, 3960, resolved.dpi);
+              if (is80) {
+                apply80InchAutocadBenchmark();
+              } else {
+                const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
+                applyDetectedDpiToUI(resolved.dpi, resolved.source);
+                apply16InchAutocadBenchmark();
+              }
               recalculateAllPlacedDimensions();
-              rebuildGuniyaScale();
-              openModal('modalScaleCalculator');
-              logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+              recalculateAllPlots();
             };
             tempImg.onerror = () => {
-              const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
-              applyDetectedDpiToUI(resolved.dpi, resolved.source);
-              applyMouzaScale(16, 3960, resolved.dpi);
-              openModal('modalScaleCalculator');
+              if (is80) {
+                apply80InchAutocadBenchmark();
+              } else {
+                apply16InchAutocadBenchmark();
+              }
             };
             tempImg.src = dataUrl;
           };
@@ -6511,6 +6937,14 @@ const ribbonTemplates = {
     }
 
     // 0. Mouza Import Modal Handlers
+    const btnVatulia = document.getElementById('btnLoadVatuliaMouza');
+    if (btnVatulia) {
+      btnVatulia.addEventListener('click', () => {
+        closeModal('modalMouzaImport');
+        loadVatuliaMouzaRaster();
+      });
+    }
+
     const btnSample = document.getElementById('btnLoadSampleMouza');
     if (btnSample) {
       btnSample.addEventListener('click', () => {
@@ -6528,19 +6962,13 @@ const ribbonTemplates = {
       });
     }
 
-    // 1. Scale Modal Presets
+    // 1. Scale Modal Presets (16", 32", 64", 80")
     document.querySelectorAll('.scale-preset-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const width = parseFloat(btn.getAttribute('data-scale-width')) || 16;
-        const calculatedFactor = Math.round((5280 * 12) / width);
-        state.scalePreset = width;
-        const inputFactor = document.getElementById('inputCustomScaleFactor');
-        if (inputFactor) inputFactor.value = calculatedFactor;
-
-        document.querySelectorAll('.scale-preset-btn').forEach(b => {
-          b.classList.remove('border-sky-500', 'ring-1', 'ring-sky-400', 'bg-sky-950/60');
-        });
-        btn.classList.add('border-sky-500', 'ring-1', 'ring-sky-400', 'bg-sky-950/60');
+        applyMouzaScale(width);
+        closeModal('modalScaleCalculator');
+        logCommand(`SCALE: ${width}" = 1 Mile applied.`);
       });
     });
 
@@ -6548,6 +6976,46 @@ const ribbonTemplates = {
     if (btnConfirmScale) {
       btnConfirmScale.addEventListener('click', () => {
         applyScaleAndDpiFromModal();
+      });
+    }
+
+    // Top Bar Scale Dropdown (80", 16", 32", 64", Custom)
+    const topBarScale = document.getElementById('topBarScaleSelect');
+    if (topBarScale) {
+      topBarScale.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === 'custom') {
+          openModal('modalScaleCalculator');
+        } else {
+          applyMouzaScale(parseInt(val, 10));
+        }
+      });
+    }
+
+    // Top Bar Quick Calibration Button
+    const btnQuickCalib = document.getElementById('btnQuickCalibration');
+    if (btnQuickCalib) {
+      btnQuickCalib.addEventListener('click', () => {
+        startScaleBarCalibration();
+      });
+    }
+
+    // Properties Panel Actions (Move & Delete)
+    const btnPropDel = document.getElementById('btnPropDeletePlot');
+    if (btnPropDel) {
+      btnPropDel.addEventListener('click', () => {
+        if (state.selectedDag) {
+          deleteSelectedPlot(state.selectedDag);
+        }
+      });
+    }
+
+    const btnPropMov = document.getElementById('btnPropMovePlot');
+    if (btnPropMov) {
+      btnPropMov.addEventListener('click', () => {
+        if (state.selectedDag) {
+          logCommand(`MOVE: Click and drag anywhere inside Plot ${state.selectedDag} or use Arrow keys (← ↑ → ↓) to nudge.`);
+        }
       });
     }
 
@@ -6668,7 +7136,7 @@ const ribbonTemplates = {
       const subNames = ['ক', 'খ', 'গ'];
       const colors = [
         { fill: 'rgba(56, 189, 248, 0.22)', stroke: '#0284c7', text: '#38bdf8' },
-        { fill: 'rgba(245, 158, 11, 0.22)', stroke: '#d97706', text: '#f59e0b' },
+        { fill: 'rgba(168, 85, 247, 0.22)', stroke: '#9333ea', text: '#c084fc' },
         { fill: 'rgba(16, 185, 129, 0.22)', stroke: '#059669', text: '#10b981' }
       ];
 
@@ -6946,7 +7414,7 @@ const ribbonTemplates = {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         poly.setAttribute('points', offsetVerts.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
         poly.setAttribute('fill', 'none');
-        poly.setAttribute('stroke', '#f59e0b');
+        poly.setAttribute('stroke', '#38bdf8');
         poly.setAttribute('stroke-width', '1.8');
         poly.setAttribute('stroke-dasharray', '5 3');
         poly.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -7136,24 +7604,15 @@ const ribbonTemplates = {
             const dataUrl = loadEvent.target.result;
             attachMouzaRaster(dataUrl, file.name);
 
-            // Wait for image dimensions to resolve DPI against standard Cadastral sheet
+            // Auto-detect Mouza Scale and AutoCAD Calibration
             const tempImg = new Image();
             tempImg.onload = () => {
               rasterState.naturalWidth = tempImg.naturalWidth;
               rasterState.naturalHeight = tempImg.naturalHeight;
-              const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
-              applyDetectedDpiToUI(resolved.dpi, resolved.source);
-              applyMouzaScale(16, 3960, resolved.dpi);
-              recalculateAllPlacedDimensions();
-              rebuildGuniyaScale();
-              openModal('modalScaleCalculator');
-              logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+              autoDetectAndApplyMouzaScale(file.name, dataUrl, tempImg.naturalWidth, dpiMeta);
             };
             tempImg.onerror = () => {
-              const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
-              applyDetectedDpiToUI(resolved.dpi, resolved.source);
-              applyMouzaScale(16, 3960, resolved.dpi);
-              openModal('modalScaleCalculator');
+              autoDetectAndApplyMouzaScale(file.name, dataUrl, null, null);
             };
             tempImg.src = dataUrl;
           };
@@ -7864,20 +8323,26 @@ const ribbonTemplates = {
           startScaleBarCalibration();
         } else if (btnMinus) {
           e.stopPropagation();
+          const curCalibGround = (state.guniya && state.guniya.calibratedGroundFt) ? state.guniya.calibratedGroundFt : (state.scalePreset === 80 ? 132 : 660);
           const curW = state.guniya.width || 150;
           const newW = Math.max(35, curW * 0.97);
           state.guniya.customWidth = newW;
-          state.guniya.calibratedUpp = 660 / newW;
+          state.guniya.calibratedUpp = curCalibGround / newW;
           rebuildGuniyaScale(newW);
-          logCommand(`GUNIYA: Nudged -3% (${newW.toFixed(1)} px = 660 ft)`);
+          recalculateAllPlots();
+          recalculateAllPlacedDimensions();
+          logCommand(`GUNIYA: Nudged -3% (${newW.toFixed(1)} px = ${curCalibGround} ft)`);
         } else if (btnPlus) {
           e.stopPropagation();
+          const curCalibGround = (state.guniya && state.guniya.calibratedGroundFt) ? state.guniya.calibratedGroundFt : (state.scalePreset === 80 ? 132 : 660);
           const curW = state.guniya.width || 150;
           const newW = curW * 1.03;
           state.guniya.customWidth = newW;
-          state.guniya.calibratedUpp = 660 / newW;
+          state.guniya.calibratedUpp = curCalibGround / newW;
           rebuildGuniyaScale(newW);
-          logCommand(`GUNIYA: Nudged +3% (${newW.toFixed(1)} px = 660 ft)`);
+          recalculateAllPlots();
+          recalculateAllPlacedDimensions();
+          logCommand(`GUNIYA: Nudged +3% (${newW.toFixed(1)} px = ${curCalibGround} ft)`);
         } else if (btnClose) {
           e.stopPropagation();
           toggleVirtualGuniya(false);
@@ -7919,9 +8384,12 @@ const ribbonTemplates = {
           const rad = -state.guniya.rotation * Math.PI / 180;
           const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
           const newW = Math.max(35, localX);
+          const curCalibGround = (state.guniya && state.guniya.calibratedGroundFt) ? state.guniya.calibratedGroundFt : (state.scalePreset === 80 ? 132 : 660);
           state.guniya.customWidth = newW;
-          state.guniya.calibratedUpp = 660 / newW;
+          state.guniya.calibratedUpp = curCalibGround / newW;
           rebuildGuniyaScale(newW);
+          recalculateAllPlots();
+          recalculateAllPlacedDimensions();
         }
       });
 
@@ -7934,8 +8402,9 @@ const ribbonTemplates = {
         if (state.guniya.isResizing) {
           state.guniya.isResizing = false;
           state.guniya.origCalibratedWidth = state.guniya.width;
-          state.guniya.origRasterWidth = rasterState.width || 750;
-          logCommand(`GUNIYA SCALE: Calibrated to width ${state.guniya.width.toFixed(1)} px (10 Chains = 660 Ft). Upp = ${(660 / state.guniya.width).toFixed(4)} ft/px.`);
+          state.guniya.origRasterWidth = rasterState.width || 1024;
+          const curCalibGround = (state.guniya && state.guniya.calibratedGroundFt) ? state.guniya.calibratedGroundFt : (state.scalePreset === 80 ? 132 : 660);
+          logCommand(`GUNIYA SCALE: Calibrated to width ${state.guniya.width.toFixed(1)} px (${curCalibGround} Ft). Upp = ${(curCalibGround / state.guniya.width).toFixed(4)} ft/px.`);
         }
       });
 
@@ -8247,6 +8716,16 @@ const ribbonTemplates = {
       } else if (e.key === 'Enter' && state.activeTool === 'line') {
         state.lineStartPoint = null;
         logCommand('LINE: Finished drawing line.');
+      } else if (state.selectedDag && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 1;
+        let dx = 0, dy = 0;
+        if (e.key === 'ArrowLeft') dx = -step;
+        if (e.key === 'ArrowRight') dx = step;
+        if (e.key === 'ArrowUp') dy = -step;
+        if (e.key === 'ArrowDown') dy = step;
+        nudgeSelectedPlot(state.selectedDag, dx, dy);
+        return;
       } else if (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'u' || e.key === 'U') {
         if (e.key === 'u' || e.key === 'U') {
           if (undoLastDrawingPoint()) {
@@ -8332,23 +8811,15 @@ const ribbonTemplates = {
             reader.onload = (loadEvent) => {
               const dataUrl = loadEvent.target.result;
               attachMouzaRaster(dataUrl, file.name);
+              // Auto-detect Mouza Scale and AutoCAD Calibration
               const tempImg = new Image();
               tempImg.onload = () => {
                 rasterState.naturalWidth = tempImg.naturalWidth;
                 rasterState.naturalHeight = tempImg.naturalHeight;
-                const resolved = resolveMouzaDpi(dpiMeta, tempImg.naturalWidth, file.name);
-                applyDetectedDpiToUI(resolved.dpi, resolved.source);
-                applyMouzaScale(16, 3960, resolved.dpi);
-                recalculateAllPlacedDimensions();
-                rebuildGuniyaScale();
-                openModal('modalScaleCalculator');
-                logCommand(`DPI DETECTED: Auto-detected ${resolved.dpi} DPI (${resolved.source}) for ${file.name}.`);
+                autoDetectAndApplyMouzaScale(file.name, dataUrl, tempImg.naturalWidth, dpiMeta);
               };
               tempImg.onerror = () => {
-                const resolved = resolveMouzaDpi(dpiMeta, 0, file.name);
-                applyDetectedDpiToUI(resolved.dpi, resolved.source);
-                applyMouzaScale(16, 3960, resolved.dpi);
-                openModal('modalScaleCalculator');
+                autoDetectAndApplyMouzaScale(file.name, dataUrl, null, null);
               };
               tempImg.src = dataUrl;
             };
@@ -8407,6 +8878,10 @@ const ribbonTemplates = {
     });
 
     window.addEventListener('mousemove', (e) => {
+      if (plotMoveState.isDragging) {
+        handlePlotMove(e);
+        return;
+      }
       if (moveDrawingsState.isDragging) {
         const pt = getCanvasCoords(e);
         state.currentCursorPt = pt;
@@ -8494,6 +8969,9 @@ const ribbonTemplates = {
       if (vertexDragState.isDragging) {
         handleVertexDragEnd(e);
       }
+      if (plotMoveState.isDragging) {
+        handlePlotMoveEnd();
+      }
       if (viewport.isPanning) {
         viewport.isPanning = false;
         cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'none';
@@ -8560,9 +9038,10 @@ const ribbonTemplates = {
 
         // If Guniya was calibrated, proportionally update its width with map resize
         if (state.guniya && state.guniya.origCalibratedWidth && rasterState.origW) {
+          const curCalibGround = (state.guniya && state.guniya.calibratedGroundFt) ? state.guniya.calibratedGroundFt : (state.scalePreset === 80 ? 132 : 660);
           const ratio = newW / rasterState.origW;
           state.guniya.customWidth = state.guniya.origCalibratedWidth * ratio;
-          state.guniya.calibratedUpp = 660 / state.guniya.customWidth;
+          state.guniya.calibratedUpp = curCalibGround / state.guniya.customWidth;
           rebuildGuniyaScale(state.guniya.customWidth);
         }
       }
@@ -8580,6 +9059,8 @@ const ribbonTemplates = {
           state.guniya.origCalibratedWidth = state.guniya.customWidth;
           state.guniya.origRasterWidth = rasterState.width;
         }
+        recalculateAllPlots();
+        recalculateAllPlacedDimensions();
         logCommand(`MOUZA MAP: Resized to ${rasterState.width} x ${rasterState.height} px.`);
       }
     });
@@ -8750,6 +9231,9 @@ const ribbonTemplates = {
     getUnitsPerPixel,
     getCanvasCoords,
     applyMouzaScale,
+    autoDetectAndApplyMouzaScale,
+    nudgeSelectedPlot,
+    deleteSelectedPlot,
     loadSampleMouzaRaster,
     attachMouzaRaster,
     detectPlotBoundaryFromClick,
