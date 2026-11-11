@@ -1005,7 +1005,7 @@ polygon.user-polyline-boundary:hover {
   transition: opacity 0.15s ease;
 }
 .cad-dim-elem line {
-  stroke: #ea580c;
+  stroke: #38bdf8;
   stroke-width: 1.2px;
 }
 .cad-dim-elem text {
@@ -1016,18 +1016,18 @@ polygon.user-polyline-boundary:hover {
 }
 .cad-dim-elem rect {
   fill: #0f172a !important;
-  stroke: #ea580c;
+  stroke: #0284c7;
   stroke-width: 1.2px;
   vector-effect: non-scaling-stroke !important;
 }
 .cad-dim-elem:hover line {
-  stroke: #38bdf8 !important;
+  stroke: #00e5ff !important;
 }
 .cad-dim-elem:hover rect {
-  stroke: #38bdf8 !important;
+  stroke: #00e5ff !important;
 }
 .cad-dim-elem:hover text {
-  fill: #e0f2fe !important;
+  fill: #ffffff !important;
 }
 .cad-dim-elem.selected line {
   stroke: #38bdf8 !important;

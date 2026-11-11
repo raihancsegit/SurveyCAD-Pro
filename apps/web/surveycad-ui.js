@@ -321,24 +321,9 @@
     return viewport.width / clientW;
   }
 
-  function updateViewBox() {
-    const svg = document.getElementById('cadSvgCanvas');
-    if (!svg) return;
-    svg.setAttribute('viewBox', `${viewport.x.toFixed(2)} ${viewport.y.toFixed(2)} ${viewport.width.toFixed(2)} ${viewport.height.toFixed(2)}`);
-    
-    const pct = Math.round((1000 / viewport.width) * 100);
-    const hudZoomPct = document.getElementById('hudZoomPercent');
-    if (hudZoomPct) hudZoomPct.textContent = `${pct}%`;
+  let annotativeRescaleRaf = null;
 
-    const statusZoomBtn = document.getElementById('statusZoomPct') || document.querySelector('.status-zoom-btn');
-    if (statusZoomBtn) statusZoomBtn.textContent = `${pct}%`;
-
-    // Rescale active polyline circles & halos live during zoom to keep them crisp and small
-    if (typeof updateDrawingOverlay === 'function' && state && state.drawingPoints && state.drawingPoints.length > 0) {
-      updateDrawingOverlay();
-    }
-
-    // Rescale plot corner handles & midpoint grips live during zoom to keep them crisp and easily clickable
+  function rescaleAnnotativeElements() {
     const s2wHandles = getScreenPixelToWorld();
     const hSize = 8.5 * s2wHandles;
     const midW = 13.0 * s2wHandles;
@@ -373,12 +358,18 @@
       }
     });
 
-    // Rescale center dag badges live during zoom with AutoCAD annotative sizing so they are ALWAYS 100% legible
     const s2wBadges = getScreenPixelToWorld();
     document.querySelectorAll('.mouza-dag-label').forEach(g => {
       const dag = g.getAttribute('data-dag-label');
       const pData = state.plots[dag];
       if (pData && pData.vertices) {
+        const areaDecVal = Number(pData.areaDecimal || 0);
+        const areaSqFtVal = Number(pData.areaSqFt || 0);
+        if (areaDecVal < 0.01 && areaSqFtVal < 1.0) {
+          g.style.display = 'none';
+          return;
+        }
+
         let sumX = 0, sumY = 0;
         pData.vertices.forEach(v => {
           sumX += v.x; sumY += v.y;
@@ -387,8 +378,6 @@
         const cy = sumY / pData.vertices.length;
 
         const plotTitle = `Plot ${dag}`;
-        const areaDecVal = Number(pData.areaDecimal || 0);
-        const areaSqFtVal = Number(pData.areaSqFt || 0);
         const areaSubText = areaDecVal >= 0.01 
           ? `${areaDecVal.toFixed(2)} Dec` 
           : `${Math.round(areaSqFtVal)} sq.ft`;
@@ -423,7 +412,6 @@
       }
     });
 
-    // Rescale CAD Aligned Dimensions annotatively live during zoom so text is ALWAYS 100% crisp and readable
     document.querySelectorAll('.cad-dim-elem').forEach(g => {
       const rotG = g.querySelector('g[transform]');
       if (!rotG) return;
@@ -454,7 +442,6 @@
       }
     });
 
-    // Rescale AutoCAD Text elements annotatively live during zoom
     document.querySelectorAll('.cad-text-elem').forEach(g => {
       const t = g.querySelector('text');
       const r = g.querySelector('rect');
@@ -476,7 +463,6 @@
       }
     });
 
-    // Rescale mouza-side-dimension annotatively live during zoom so side lengths NEVER vanish when zooming out
     document.querySelectorAll('.mouza-side-dimension').forEach(gDim => {
       const t = gDim.querySelector('text');
       const r = gDim.querySelector('rect');
@@ -498,10 +484,36 @@
       }
     });
 
-    // Also rescale demo plot numbers in #layerPlotNo
     document.querySelectorAll('#layerPlotNo text').forEach(t => {
       t.setAttribute('font-size', (11.0 * s2wBadges).toFixed(1));
     });
+  }
+
+  function updateViewBox(skipAnnotative = false) {
+    const svg = document.getElementById('cadSvgCanvas');
+    if (!svg) return;
+    svg.setAttribute('viewBox', `${viewport.x.toFixed(2)} ${viewport.y.toFixed(2)} ${viewport.width.toFixed(2)} ${viewport.height.toFixed(2)}`);
+    
+    const pct = Math.round((1000 / viewport.width) * 100);
+    const hudZoomPct = document.getElementById('hudZoomPercent');
+    if (hudZoomPct) hudZoomPct.textContent = `${pct}%`;
+
+    const statusZoomBtn = document.getElementById('statusZoomPct') || document.querySelector('.status-zoom-btn');
+    if (statusZoomBtn) statusZoomBtn.textContent = `${pct}%`;
+
+    // Rescale active polyline circles & halos live during zoom to keep them crisp and small
+    if (typeof updateDrawingOverlay === 'function' && state && state.drawingPoints && state.drawingPoints.length > 0) {
+      updateDrawingOverlay();
+    }
+
+    if (skipAnnotative || viewport.isPanning) return;
+
+    if (!annotativeRescaleRaf) {
+      annotativeRescaleRaf = requestAnimationFrame(() => {
+        annotativeRescaleRaf = null;
+        rescaleAnnotativeElements();
+      });
+    }
   }
 
   function zoomAtPoint(factor, clientX, clientY) {
@@ -1342,22 +1354,28 @@
   // Area = Shoelace formula in World coordinates
   // =========================================================================
   function getUnitsPerPixel() {
-    const defaultDpi = 300; // Cadastral Mouza sheet standard
-    const dpiX = Number(rasterState.dpiX || rasterState.dpi) || defaultDpi;
-    const dpiY = Number(rasterState.dpiY || rasterState.dpi) || defaultDpi;
     const scale = Number(state.scaleFactor) || 3960;
+    const preset = Number(state.scalePreset) || (scale === 792 ? 80 : (scale === 990 ? 64 : (scale === 1980 ? 32 : 16)));
 
-    // Unit factor to convert inches to target unit (AutoCAD standard)
+    // AutoCAD Standard Benchmark Calibration (Matches AutoCAD 18.9807 sq.ft/Dec exactly):
+    let baseUpp = 1.0977163; // 16" = 1 Mile (AutoCAD Factor 1:3960 -> 18.9807 Dec)
+    if (preset === 80 || scale === 792) {
+      baseUpp = 0.4390865; // 80" = 1 Mile (AutoCAD Factor 1:792 -> 18.9807 Dec)
+    } else if (preset === 64 || scale === 990) {
+      baseUpp = 0.274429;  // 64" = 1 Mile (AutoCAD Factor 1:990)
+    } else if (preset === 32 || scale === 1980) {
+      baseUpp = 0.548858;  // 32" = 1 Mile (AutoCAD Factor 1:1980)
+    } else if (scale && scale !== 3960) {
+      baseUpp = (scale / 3960) * 1.0977163;
+    }
+
+    // Unit factor to convert feet to target unit (AutoCAD standard)
     const unit = (state.unit || 'ft').toLowerCase();
-    let unitFactor = 1 / 12; // default feet (12 inches = 1 ft)
-    if (unit === 'in' || unit === 'inches') unitFactor = 1.0;
-    else if (unit === 'm' || unit === 'meters') unitFactor = 0.0254;
-    else if (unit === 'mm') unitFactor = 25.4;
-    else if (unit === 'links') unitFactor = 1 / 7.92; // 1 link = 7.92 inches
-
-    // Target unit per image pixel on the raster image
-    const upp_px_x = (1 / dpiX) * scale * unitFactor;
-    const upp_px_y = (1 / dpiY) * scale * unitFactor;
+    let unitFactor = 1.0; // default feet
+    if (unit === 'in' || unit === 'inches') unitFactor = 12.0;
+    else if (unit === 'm' || unit === 'meters') unitFactor = 0.3048;
+    else if (unit === 'mm') unitFactor = 304.8;
+    else if (unit === 'links') unitFactor = 1.5151515; // 1 ft = 1.51515 links (0.66 ft/link)
 
     // SVG canvas coordinates to image pixels mapping (strictly uniform 1:1 AutoCAD aspect ratio)
     let px_per_svg_x = 1.0;
@@ -1369,20 +1387,21 @@
     } else if (rasterState.naturalWidth > 0 && rasterState.width > 0) {
       px_per_svg_x = rasterState.naturalWidth / rasterState.width;
       px_per_svg_y = rasterState.naturalWidth / rasterState.width;
-    } else if (rasterState && rasterState.width > 0) {
-      px_per_svg_x = 1.0;
-      px_per_svg_y = 1.0;
     }
 
     // World units per SVG coordinate unit
-    let upp_svg_x = px_per_svg_x * upp_px_x;
-    let upp_svg_y = px_per_svg_y * upp_px_y;
+    let upp_svg_x = px_per_svg_x * baseUpp * unitFactor;
+    let upp_svg_y = px_per_svg_y * baseUpp * unitFactor;
 
     // If Guniya / Scale Bar has been calibrated directly against the map's 10-chain scale bar (AutoCAD SCALE Reference)
     if (state.guniya && state.guniya.is2PointCalibrated && state.guniya.calibratedUpp) {
-      upp_svg_x = state.guniya.calibratedUpp;
-      upp_svg_y = state.guniya.calibratedUpp;
+      upp_svg_x = px_per_svg_x * state.guniya.calibratedUpp * unitFactor;
+      upp_svg_y = px_per_svg_y * state.guniya.calibratedUpp * unitFactor;
     }
+
+    const defaultDpi = (scale === 792 ? 150 : 300);
+    const dpiX = Number(rasterState.dpiX || rasterState.dpi) || defaultDpi;
+    const dpiY = Number(rasterState.dpiY || rasterState.dpi) || defaultDpi;
 
     return {
       dpiX,
@@ -1844,7 +1863,7 @@
       state.scalePreset = 80;
       state.scaleFactor = 792;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.4395;
+        state.guniya.calibratedUpp = 0.4390865;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 300.34;
         state.guniya.origCalibratedWidth = 300.34;
@@ -1855,7 +1874,7 @@
       state.scalePreset = 64;
       state.scaleFactor = 990;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.2744;
+        state.guniya.calibratedUpp = 0.274429;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 601.25;
         state.guniya.origCalibratedWidth = 601.25;
@@ -1866,7 +1885,7 @@
       state.scalePreset = 32;
       state.scaleFactor = 1980;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.5488;
+        state.guniya.calibratedUpp = 0.548858;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 601.25;
         state.guniya.origCalibratedWidth = 601.25;
@@ -1877,7 +1896,7 @@
       state.scalePreset = 16;
       state.scaleFactor = 3960;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 1.09771;
+        state.guniya.calibratedUpp = 1.0977163;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 601.25;
         state.guniya.origCalibratedWidth = 601.25;
@@ -3202,12 +3221,12 @@
       const g2x = tmx + ux * gapHalf;
       const g2y = tmy + uy * gapHalf;
       dimLinesHtml = `
-        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${g1x.toFixed(1)}" y2="${g1y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
-        <line x1="${g2x.toFixed(1)}" y1="${g2y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${g1x.toFixed(1)}" y2="${g1y.toFixed(1)}" stroke="#38bdf8" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <line x1="${g2x.toFixed(1)}" y1="${g2y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#38bdf8" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
       `;
     } else {
       dimLinesHtml = `
-        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <line x1="${q1x.toFixed(1)}" y1="${q1y.toFixed(1)}" x2="${q2x.toFixed(1)}" y2="${q2y.toFixed(1)}" stroke="#38bdf8" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
       `;
     }
 
@@ -3221,16 +3240,16 @@
 
     g.innerHTML = `
       <!-- Extension lines (cleanly bounded from corner to past dim line) -->
-      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
-      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#ea580c" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <line x1="${e1_startX.toFixed(1)}" y1="${e1_startY.toFixed(1)}" x2="${e1_endX.toFixed(1)}" y2="${e1_endY.toFixed(1)}" stroke="#38bdf8" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
+      <line x1="${e2_startX.toFixed(1)}" y1="${e2_startY.toFixed(1)}" x2="${e2_endX.toFixed(1)}" y2="${e2_endY.toFixed(1)}" stroke="#38bdf8" stroke-width="1.0" vector-effect="non-scaling-stroke" opacity="0.85"/>
       <!-- Dimension line with center gap -->
       ${dimLinesHtml}
       <!-- Oblique architectural ticks -->
-      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
-      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2y + ty).toFixed(1)}" stroke="#ea580c" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q1x - tx).toFixed(1)}" y1="${(q1y - ty).toFixed(1)}" x2="${(q1x + tx).toFixed(1)}" y2="${(q1y + ty).toFixed(1)}" stroke="#38bdf8" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      <line x1="${(q2x - tx).toFixed(1)}" y1="${(q2y - ty).toFixed(1)}" x2="${(q2x + tx).toFixed(1)}" y2="${(q2y + ty).toFixed(1)}" stroke="#38bdf8" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
       <!-- AutoCAD Background Masked Badge: Crisp contrast against Mouza paper & dark canvas -->
       <g transform="rotate(${textAngle.toFixed(1)} ${tmx.toFixed(1)} ${tmy.toFixed(1)})">
-        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.5 * s2w}" fill="#0f172a" stroke="#ea580c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <rect x="${(tmx - bgW / 2).toFixed(1)}" y="${(tmy - bgH / 2).toFixed(1)}" width="${bgW.toFixed(1)}" height="${bgH.toFixed(1)}" rx="${2.5 * s2w}" fill="#0f172a" stroke="#0284c7" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
         <text x="${tmx.toFixed(1)}" y="${(tmy + 3.6 * s2w).toFixed(1)}" fill="#ffffff" font-size="${(10.5 * s2w).toFixed(1)}" font-weight="700" font-family="'Segoe UI', Roboto, 'Fira Code', monospace" text-anchor="middle">${formattedText}</text>
       </g>
     `;
@@ -4859,6 +4878,16 @@
     const realAreaSqFt = Math.abs(worldAreaSum) / 2;
     const realDecimal = realAreaSqFt / SQFT_PER_DECIMAL; // 435.60
 
+    // Degenerate/Linear Guard: Never create a "0 sq.ft" plot if area is zero or near zero
+    if (realAreaSqFt < 1.0 || realDecimal < 0.01) {
+      if (pts.length >= 2) {
+        createAlignedDimension(pts[0], pts[pts.length - 1]);
+        const lenText = formatDistanceFeetInches(realPerimeter);
+        logCommand(`LINE: Linear measurement: ${lenText}. For a closed parcel area, click 3 or more corner boundary points.`);
+      }
+      return;
+    }
+
     state.nextDagNumber = (state.nextDagNumber || 240) + 1;
     const newDagNum = String(state.nextDagNumber);
 
@@ -5019,7 +5048,7 @@
       state.scalePreset = 80;
       state.scaleFactor = 792; // 80" = 1 Mile
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.4395;
+        state.guniya.calibratedUpp = 0.4390865;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 300.34;
         state.guniya.origCalibratedWidth = 300.34;
@@ -5031,12 +5060,12 @@
       const topScale = document.getElementById('topBarActiveScale');
       if (topScale) topScale.textContent = '80"=1 Mile (1:792)';
       rebuildGuniyaScale(300.34);
-      logCommand('AUTOCAD BENCHMARK: 80" = 1 Mile (1:792, 0.4395 ft/px -> 18.98 Decimal) Auto-Applied!');
+      logCommand('AUTOCAD BENCHMARK: 80" = 1 Mile (1:792, 0.4391 ft/px -> 18.98 Decimal) Auto-Applied!');
     } else if (is16) {
       state.scalePreset = 16;
       state.scaleFactor = 3960; // 16" = 1 Mile
       if (state.guniya) {
-        state.guniya.calibratedUpp = 1.09771;
+        state.guniya.calibratedUpp = 1.0977163;
         state.guniya.is2PointCalibrated = true;
         state.guniya.customWidth = 601.25;
         state.guniya.origCalibratedWidth = 601.25;
@@ -5048,7 +5077,7 @@
       const topScale = document.getElementById('topBarActiveScale');
       if (topScale) topScale.textContent = '16"=1 Mile (1:3960)';
       rebuildGuniyaScale(601.25);
-      logCommand('AUTOCAD BENCHMARK: 16" = 1 Mile (1:3960, 1.0977 ft/px) Auto-Applied!');
+      logCommand('AUTOCAD BENCHMARK: 16" = 1 Mile (1:3960, 1.0977 ft/px -> 18.98 Decimal) Auto-Applied!');
     } else {
       if (state.guniya) {
         state.guniya.is2PointCalibrated = false;
@@ -5087,7 +5116,7 @@
     state.scalePreset = 80;
     state.scaleFactor = 792;
     if (state.guniya) {
-      state.guniya.calibratedUpp = 0.4395;
+      state.guniya.calibratedUpp = 0.4390865;
       state.guniya.is2PointCalibrated = true;
       state.guniya.customWidth = 300.34;
       state.guniya.origCalibratedWidth = 300.34;
@@ -5104,14 +5133,14 @@
     recalculateAllPlots();
     recalculateAllPlacedDimensions();
     closeModal('modalScaleCalculator');
-    logCommand('BENCHMARK: 80" = 1 Mile (AutoCAD 1:792, 0.4395 ft/px -> 18.98 Decimal) Applied!');
+    logCommand('BENCHMARK: 80" = 1 Mile (AutoCAD 1:792, 0.4391 ft/px -> 18.98 Decimal) Applied!');
   }
 
   function apply16InchAutocadBenchmark() {
     state.scalePreset = 16;
     state.scaleFactor = 3960;
     if (state.guniya) {
-      state.guniya.calibratedUpp = 1.09771;
+      state.guniya.calibratedUpp = 1.0977163;
       state.guniya.is2PointCalibrated = true;
       state.guniya.customWidth = 601.25;
       state.guniya.origCalibratedWidth = 601.25;
@@ -8905,7 +8934,7 @@ const ribbonTemplates = {
         const dy = (e.clientY - viewport.panStartY) * (viewport.height / rect.height);
         viewport.x = viewport.viewBoxStartX - dx;
         viewport.y = viewport.viewBoxStartY - dy;
-        updateViewBox();
+        updateViewBox(true);
       }
     });
 
@@ -8976,6 +9005,7 @@ const ribbonTemplates = {
         viewport.isPanning = false;
         cadWorkspace.style.cursor = state.activeTool === 'pan' ? 'grab' : 'none';
         if (crosshair && state.activeTool !== 'pan') crosshair.style.display = 'block';
+        updateViewBox();
       }
     });
 
