@@ -399,10 +399,10 @@
       <div class="flex items-center gap-1 bg-[#10131a] border border-[#2d3748] rounded px-2 py-0.5 text-[11px] font-mono">
         <span class="text-slate-400 text-[10px] font-sans font-semibold">Scale:</span>
         <select id="topBarScaleSelect" class="bg-transparent text-sky-300 font-bold focus:outline-none cursor-pointer text-[11px]">
-          <option value="80" selected>80" = 1 Mile (1:792)</option>
-          <option value="16">16" = 1 Mile (1:3960)</option>
-          <option value="32">32" = 1 Mile (1:1980)</option>
-          <option value="64">64" = 1 Mile (1:990)</option>
+          <option value="16" selected>16" = 1 Mile (1:3960) — সাধারণ মৌজা নকশা</option>
+          <option value="32">32" = 1 Mile (1:1980) — আধা-শহরাঞ্চল নকশা</option>
+          <option value="64">64" = 1 Mile (1:990) — পৌরসভা / শহর নকশা</option>
+          <option value="80">80" = 1 Mile (1:792) — ঘনবসতিপূর্ণ নকশা</option>
           <option value="custom">Custom Scale...</option>
         </select>
       </div>
@@ -410,7 +410,7 @@
       <div class="text-[10px] text-slate-400 font-mono hidden xl:flex items-center gap-1.5 ml-1">
         <span>AutoCAD WCS</span>
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-        <span id="topBarActiveScale" class="text-slate-300 font-bold">80"=1 Mile (1:792)</span>
+        <span id="topBarActiveScale" class="text-slate-300 font-bold">16"=1 Mile (1:3960)</span>
       </div>
     </div>
   </div>

@@ -36,8 +36,8 @@
     activeTab: 'home',
     activeSidebarTab: 'properties',
     selectedDag: null,
-    scalePreset: 80,
-    scaleFactor: 792, // 80" = 1 Mile (S = 63360 / 80 = 792)
+    scalePreset: 16,
+    scaleFactor: 3960, // 16" = 1 Mile (S = 63360 / 16 = 3960, Bangladesh Cadastral Standard)
     unit: 'feet', // 'feet' | 'links' | 'meters'
     gridEnabled: true,
     snapEnabled: false,
@@ -77,12 +77,12 @@
       rotation: 0,
       width: 180,
       height: 45,
-      customWidth: 300.34,
-      calibratedUpp: 0.4395,
-      origCalibratedWidth: 300.34,
+      customWidth: 601.25,
+      calibratedUpp: 1.0977163,
+      origCalibratedWidth: 601.25,
       origRasterWidth: 1024,
       is2PointCalibrated: true,
-      calibratedGroundFt: 132,
+      calibratedGroundFt: 660,
       isDragging: false,
       dragStartX: 0,
       dragStartY: 0,
@@ -379,7 +379,7 @@
 
         const plotTitle = `Plot ${dag}`;
         const areaSubText = areaDecVal >= 0.01 
-          ? `${areaDecVal.toFixed(2)} Dec` 
+          ? `${areaDecVal.toFixed(2)} sotok` 
           : `${Math.round(areaSqFtVal)} sq.ft`;
 
         const fontPlot = 11.5 * s2wBadges;
@@ -1357,16 +1357,23 @@
     const scale = Number(state.scaleFactor) || 3960;
     const preset = Number(state.scalePreset) || (scale === 792 ? 80 : (scale === 990 ? 64 : (scale === 1980 ? 32 : 16)));
 
-    // AutoCAD Standard Benchmark Calibration (Matches AutoCAD 18.9807 sq.ft/Dec exactly):
-    let baseUpp = 1.0977163; // 16" = 1 Mile (AutoCAD Factor 1:3960 -> 18.9807 Dec)
+    // Resolution scaling factor:
+    // Benchmark reference is 1024px. If an uploaded image is 2048px or 4096px,
+    // the resolution ratio scales baseUpp so that physical ground measurements stay identical.
+    const naturalWidth = rasterState.naturalWidth || rasterState.width || 1024;
+    const refWidth = (state.guniya && state.guniya.origRasterWidth) ? state.guniya.origRasterWidth : 1024;
+    const resolutionRatio = (naturalWidth > 0 && refWidth > 0) ? (refWidth / naturalWidth) : 1.0;
+
+    // AutoCAD Standard Benchmark Calibration (Matches AutoCAD 18.9807 sq.ft/Dec exactly at 1024px reference):
+    let baseUpp = 1.0977163 * resolutionRatio; // 16" = 1 Mile (AutoCAD Factor 1:3960 -> 18.9807 Dec)
     if (preset === 80 || scale === 792) {
-      baseUpp = 0.4390865; // 80" = 1 Mile (AutoCAD Factor 1:792 -> 18.9807 Dec)
+      baseUpp = 0.4390865 * resolutionRatio; // 80" = 1 Mile (AutoCAD Factor 1:792 -> 18.9807 Dec)
     } else if (preset === 64 || scale === 990) {
-      baseUpp = 0.274429;  // 64" = 1 Mile (AutoCAD Factor 1:990)
+      baseUpp = 0.274429 * resolutionRatio;  // 64" = 1 Mile (AutoCAD Factor 1:990)
     } else if (preset === 32 || scale === 1980) {
-      baseUpp = 0.548858;  // 32" = 1 Mile (AutoCAD Factor 1:1980)
+      baseUpp = 0.548858 * resolutionRatio;  // 32" = 1 Mile (AutoCAD Factor 1:1980)
     } else if (scale && scale !== 3960) {
-      baseUpp = (scale / 3960) * 1.0977163;
+      baseUpp = ((scale / 3960) * 1.0977163) * resolutionRatio;
     }
 
     // Unit factor to convert feet to target unit (AutoCAD standard)
@@ -1395,8 +1402,12 @@
 
     // If Guniya / Scale Bar has been calibrated directly against the map's 10-chain scale bar (AutoCAD SCALE Reference)
     if (state.guniya && state.guniya.is2PointCalibrated && state.guniya.calibratedUpp) {
-      upp_svg_x = px_per_svg_x * state.guniya.calibratedUpp * unitFactor;
-      upp_svg_y = px_per_svg_y * state.guniya.calibratedUpp * unitFactor;
+      let calibUpp = state.guniya.calibratedUpp;
+      if (state.guniya.origRasterWidth && naturalWidth && state.guniya.origRasterWidth !== naturalWidth) {
+        calibUpp = calibUpp * (state.guniya.origRasterWidth / naturalWidth);
+      }
+      upp_svg_x = px_per_svg_x * calibUpp * unitFactor;
+      upp_svg_y = px_per_svg_y * calibUpp * unitFactor;
     }
 
     const defaultDpi = (scale === 792 ? 150 : 300);
@@ -1788,7 +1799,7 @@
           const texts = gLabel.querySelectorAll('text');
           if (texts.length >= 2) {
             const areaSubText = metrics.areaDecimal >= 0.01 
-              ? `${metrics.areaDecimal.toFixed(2)} Dec` 
+              ? `${metrics.areaDecimal.toFixed(2)} sotok` 
               : `${Math.round(metrics.areaSqFt)} sq.ft`;
             texts[1].textContent = areaSubText;
           }
@@ -1807,7 +1818,7 @@
             let feet = Math.floor(segFeet);
             let inches = Math.round((segFeet - feet) * 12);
             if (inches === 12) { feet += 1; inches = 0; }
-            dimTexts[i].textContent = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
+            dimTexts[i].textContent = (inches === 0) ? `${toBengaliNum(feet)}'` : `${toBengaliNum(feet)}'-${toBengaliNum(inches)}"`;
           }
         }
       }
@@ -1858,49 +1869,52 @@
       rasterState.dpiY = Number(customDpi);
     }
 
+    const curWidth = rasterState.naturalWidth || rasterState.width || 1024;
+    const resRatio = 1024 / curWidth;
+
     // Auto-align AutoCAD Standard Benchmark UPP and Reference Scale
     if (state.scalePreset === 80 || factor === 792) {
       state.scalePreset = 80;
       state.scaleFactor = 792;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.4390865;
+        state.guniya.calibratedUpp = 0.4390865 * resRatio;
         state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 300.34;
-        state.guniya.origCalibratedWidth = 300.34;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.customWidth = 300.34 / resRatio;
+        state.guniya.origCalibratedWidth = 300.34 / resRatio;
+        state.guniya.origRasterWidth = curWidth;
         state.guniya.calibratedGroundFt = 132;
       }
     } else if (state.scalePreset === 64 || factor === 990) {
       state.scalePreset = 64;
       state.scaleFactor = 990;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.274429;
+        state.guniya.calibratedUpp = 0.274429 * resRatio;
         state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 601.25;
-        state.guniya.origCalibratedWidth = 601.25;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.customWidth = 601.25 / resRatio;
+        state.guniya.origCalibratedWidth = 601.25 / resRatio;
+        state.guniya.origRasterWidth = curWidth;
         state.guniya.calibratedGroundFt = 165;
       }
     } else if (state.scalePreset === 32 || factor === 1980) {
       state.scalePreset = 32;
       state.scaleFactor = 1980;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 0.548858;
+        state.guniya.calibratedUpp = 0.548858 * resRatio;
         state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 601.25;
-        state.guniya.origCalibratedWidth = 601.25;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.customWidth = 601.25 / resRatio;
+        state.guniya.origCalibratedWidth = 601.25 / resRatio;
+        state.guniya.origRasterWidth = curWidth;
         state.guniya.calibratedGroundFt = 330;
       }
     } else {
       state.scalePreset = 16;
       state.scaleFactor = 3960;
       if (state.guniya) {
-        state.guniya.calibratedUpp = 1.0977163;
+        state.guniya.calibratedUpp = 1.0977163 * resRatio;
         state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 601.25;
-        state.guniya.origCalibratedWidth = 601.25;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
+        state.guniya.customWidth = 601.25 / resRatio;
+        state.guniya.origCalibratedWidth = 601.25 / resRatio;
+        state.guniya.origRasterWidth = curWidth;
         state.guniya.calibratedGroundFt = 660;
       }
     }
@@ -2206,8 +2220,8 @@
         let inches = Math.round((segFeet - feet) * 12);
         if (inches === 12) { feet += 1; inches = 0; }
 
-        // Sleek compact text: e.g. 29' - 8" (NO [8439"] bracket!)
-        const dimText = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
+        // Sleek compact text matching AutoCAD: e.g. 60' or 61'-1"
+        const dimText = (inches === 0) ? `${toBengaliNum(feet)}'` : `${toBengaliNum(feet)}'-${toBengaliNum(inches)}"`;
 
         const mx = (p1.x + p2.x) / 2;
         const my = (p1.y + p2.y) / 2;
@@ -2256,7 +2270,7 @@
     const areaDecVal = Number(areaDecimal);
     const areaSqFtVal = Number(areaSqFt);
     const areaSubText = areaDecVal >= 0.01 
-      ? `${areaDecVal.toFixed(2)} Dec` 
+      ? `${areaDecVal.toFixed(2)} sotok` 
       : `${Math.round(areaSqFtVal)} sq.ft`;
 
     // AutoCAD Annotative Sizing: clear, sharp text that never smudges or becomes microscopic
@@ -2765,7 +2779,7 @@
         let feet = Math.floor(segFeet);
         let inches = Math.round((segFeet - feet) * 12);
         if (inches === 12) { feet += 1; inches = 0; }
-        const dimText = `${toBengaliNum(feet)}' - ${toBengaliNum(inches)}"`;
+        const dimText = (inches === 0) ? `${toBengaliNum(feet)}'` : `${toBengaliNum(feet)}'-${toBengaliNum(inches)}"`;
 
         const mx = (p1.x + p2.x) / 2;
         const my = (p1.y + p2.y) / 2;
@@ -4351,7 +4365,7 @@
           isCalibration: true,
           title: '📐 AutoCAD Reference Scale Calibration (ক্যালিব্রেশন)',
           message: `স্কেলবারে পরিমাপকৃত দৈর্ঘ্য: ${dist.toFixed(1)} পিক্সেল। বাস্তব ভূমির দূরত্ব (ফুট) কত?`,
-          defaultValue: state.scalePreset === 80 ? '132' : '660',
+          defaultValue: state.scalePreset === 80 ? '132' : (state.scalePreset === 32 ? '330' : (state.scalePreset === 64 ? '165' : '660')),
           placeholder: 'Ground distance in feet (e.g. 132 or 660)'
         }).then((val) => {
           if (!val) {
@@ -4370,7 +4384,7 @@
           state.guniya.customWidth = dist;
           state.guniya.calibratedUpp = groundFt / dist;
           state.guniya.origCalibratedWidth = dist;
-          state.guniya.origRasterWidth = rasterState.width || 1024;
+          state.guniya.origRasterWidth = rasterState.naturalWidth || rasterState.width || 1024;
           state.guniya.is2PointCalibrated = true;
           state.guniya.calibratedGroundFt = groundFt;
 
@@ -5040,50 +5054,20 @@
       };
     }
 
-    // Auto-Calibrate against AutoCAD Reference Scale (No DPI guesswork needed)
-    const is80 = /vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(filename) || (url && url.includes('full_mouza'));
-    const is16 = /sample|khajuria|chorbagh|16/i.test(filename) || (url && url.includes('sample-mouza'));
+    // Auto-Calibrate against AutoCAD Reference Scale (Bangladesh Cadastral Standard: 16" = 1 Mile)
+    const is80 = /(?:^|[_s-])80(?:inch|["_s-]|$)|eighty|vatu|batu/i.test(filename);
+    const is64 = /(?:^|[_s-])64(?:inch|["_s-]|$)|sixtyfour/i.test(filename);
+    const is32 = /(?:^|[_s-])32(?:inch|["_s-]|$)|thirtytwo/i.test(filename);
 
     if (is80) {
-      state.scalePreset = 80;
-      state.scaleFactor = 792; // 80" = 1 Mile
-      if (state.guniya) {
-        state.guniya.calibratedUpp = 0.4390865;
-        state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 300.34;
-        state.guniya.origCalibratedWidth = 300.34;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
-        state.guniya.calibratedGroundFt = 132;
-      }
-      const scaleVal = document.getElementById('statusScaleValue');
-      if (scaleVal) scaleVal.textContent = '1:792 (80"=1 Mile)';
-      const topScale = document.getElementById('topBarActiveScale');
-      if (topScale) topScale.textContent = '80"=1 Mile (1:792)';
-      rebuildGuniyaScale(300.34);
-      logCommand('AUTOCAD BENCHMARK: 80" = 1 Mile (1:792, 0.4391 ft/px -> 18.98 Decimal) Auto-Applied!');
-    } else if (is16) {
-      state.scalePreset = 16;
-      state.scaleFactor = 3960; // 16" = 1 Mile
-      if (state.guniya) {
-        state.guniya.calibratedUpp = 1.0977163;
-        state.guniya.is2PointCalibrated = true;
-        state.guniya.customWidth = 601.25;
-        state.guniya.origCalibratedWidth = 601.25;
-        state.guniya.origRasterWidth = rasterState.width || 1024;
-        state.guniya.calibratedGroundFt = 660;
-      }
-      const scaleVal = document.getElementById('statusScaleValue');
-      if (scaleVal) scaleVal.textContent = '1:3960 (16"=1 Mile)';
-      const topScale = document.getElementById('topBarActiveScale');
-      if (topScale) topScale.textContent = '16"=1 Mile (1:3960)';
-      rebuildGuniyaScale(601.25);
-      logCommand('AUTOCAD BENCHMARK: 16" = 1 Mile (1:3960, 1.0977 ft/px -> 18.98 Decimal) Auto-Applied!');
+      apply80InchAutocadBenchmark();
+    } else if (is64) {
+      applyMouzaScale(64);
+    } else if (is32) {
+      applyMouzaScale(32);
     } else {
-      if (state.guniya) {
-        state.guniya.is2PointCalibrated = false;
-        state.guniya.calibratedUpp = null;
-        state.guniya.customWidth = null;
-      }
+      // 16" = 1 Mile is the Bangladesh Cadastral Standard (CS/RS/SA)
+      apply16InchAutocadBenchmark();
     }
 
     recalculateAllPlots();
@@ -5101,9 +5085,9 @@
   }
 
   function loadVatuliaMouzaRaster() {
-    attachMouzaRaster('full_mouza.jpg', 'Vatulia_Uttara_Sheet01_80inch.jpg');
-    apply80InchAutocadBenchmark();
-    logCommand('MOUZA MAP: Vatulia Mouza Map (80" = 1 Mile, 0.4395 ft/px - AutoCAD 18.98 Dec Benchmark) loaded successfully.');
+    attachMouzaRaster('full_mouza.jpg', 'Paschim_Doulatpara_Nangalkot_16inch.jpg');
+    apply16InchAutocadBenchmark();
+    logCommand('MOUZA MAP: Mouza Map (16" = 1 Mile, AutoCAD 1:1 Benchmark) loaded successfully.');
   }
 
   function loadSampleMouzaRaster() {
@@ -5115,21 +5099,25 @@
   function apply80InchAutocadBenchmark() {
     state.scalePreset = 80;
     state.scaleFactor = 792;
+    const curWidth = rasterState.naturalWidth || rasterState.width || 1024;
+    const resRatio = 1024 / curWidth;
     if (state.guniya) {
-      state.guniya.calibratedUpp = 0.4390865;
+      state.guniya.calibratedUpp = 0.4390865 * resRatio;
       state.guniya.is2PointCalibrated = true;
-      state.guniya.customWidth = 300.34;
-      state.guniya.origCalibratedWidth = 300.34;
-      state.guniya.origRasterWidth = rasterState.width || 1024;
+      state.guniya.customWidth = 300.34 / resRatio;
+      state.guniya.origCalibratedWidth = 300.34 / resRatio;
+      state.guniya.origRasterWidth = curWidth;
       state.guniya.calibratedGroundFt = 132;
     }
     const scaleVal = document.getElementById('statusScaleValue');
     if (scaleVal) scaleVal.textContent = '1:792 (80"=1 Mile)';
     const topScale = document.getElementById('topBarActiveScale');
     if (topScale) topScale.textContent = '80"=1 Mile (1:792)';
+    const topSelect = document.getElementById('topBarScaleSelect');
+    if (topSelect) topSelect.value = '80';
     const inputFactor = document.getElementById('inputCustomScaleFactor');
     if (inputFactor) inputFactor.value = 792;
-    rebuildGuniyaScale(300.34);
+    rebuildGuniyaScale(300.34 / resRatio);
     recalculateAllPlots();
     recalculateAllPlacedDimensions();
     closeModal('modalScaleCalculator');
@@ -5139,21 +5127,25 @@
   function apply16InchAutocadBenchmark() {
     state.scalePreset = 16;
     state.scaleFactor = 3960;
+    const curWidth = rasterState.naturalWidth || rasterState.width || 1024;
+    const resRatio = 1024 / curWidth;
     if (state.guniya) {
-      state.guniya.calibratedUpp = 1.0977163;
+      state.guniya.calibratedUpp = 1.0977163 * resRatio;
       state.guniya.is2PointCalibrated = true;
-      state.guniya.customWidth = 601.25;
-      state.guniya.origCalibratedWidth = 601.25;
-      state.guniya.origRasterWidth = rasterState.width || 1024;
+      state.guniya.customWidth = 601.25 / resRatio;
+      state.guniya.origCalibratedWidth = 601.25 / resRatio;
+      state.guniya.origRasterWidth = curWidth;
       state.guniya.calibratedGroundFt = 660;
     }
     const scaleVal = document.getElementById('statusScaleValue');
     if (scaleVal) scaleVal.textContent = '1:3960 (16"=1 Mile)';
     const topScale = document.getElementById('topBarActiveScale');
     if (topScale) topScale.textContent = '16"=1 Mile (1:3960)';
+    const topSelect = document.getElementById('topBarScaleSelect');
+    if (topSelect) topSelect.value = '16';
     const inputFactor = document.getElementById('inputCustomScaleFactor');
     if (inputFactor) inputFactor.value = 3960;
-    rebuildGuniyaScale(601.25);
+    rebuildGuniyaScale(601.25 / resRatio);
     recalculateAllPlots();
     recalculateAllPlacedDimensions();
     closeModal('modalScaleCalculator');
@@ -5164,28 +5156,26 @@
     const fn = (fileName || '').toLowerCase();
     let detectedPreset = 16;
 
-    if (/vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(fn) || (dataUrl && dataUrl.includes('full_mouza'))) {
+    if (/(?:^|[_s-])80(?:inch|["_s-]|$)|eighty|vatu|batu/i.test(fn)) {
       detectedPreset = 80;
-    } else if (/(?:^|[_\s\-])64(?:inch|[\"_\s\-]|$)|sixtyfour/i.test(fn)) {
+    } else if (/(?:^|[_s-])64(?:inch|["_s-]|$)|sixtyfour/i.test(fn)) {
       detectedPreset = 64;
-    } else if (/(?:^|[_\s\-])32(?:inch|[\"_\s\-]|$)|thirtytwo/i.test(fn)) {
+    } else if (/(?:^|[_s-])32(?:inch|["_s-]|$)|thirtytwo/i.test(fn)) {
       detectedPreset = 32;
-    } else if (/(?:^|[_\s\-])16(?:inch|[\"_\s\-]|$)|sixteen|cs|sa|rs/i.test(fn)) {
+    } else {
       detectedPreset = 16;
     }
 
     if (detectedPreset === 80) {
       apply80InchAutocadBenchmark();
+    } else if (detectedPreset === 16) {
+      apply16InchAutocadBenchmark();
     } else {
-      if (dpiMeta && naturalWidth) {
-        const resolved = resolveMouzaDpi(dpiMeta, naturalWidth, fileName);
-        applyDetectedDpiToUI(resolved.dpi, resolved.source);
-      }
       applyMouzaScale(detectedPreset);
     }
     recalculateAllPlacedDimensions();
     recalculateAllPlots();
-    logCommand(`AUTO SCALE: Auto-detected ${detectedPreset}" = 1 Mile scale for "${fileName || 'Mouza Map'}".`);
+    logCommand("AUTO SCALE: Applied " + detectedPreset + "\" = 1 Mile scale for \"" + (fileName || 'Mouza Map') + "\".");
   }
 
 const ribbonTemplates = {
@@ -5732,10 +5722,10 @@ const ribbonTemplates = {
     } else if (projectKey === 'dakshinpara') {
       if (topName) topName.textContent = 'Dakshinpara_Survey.prj';
       state.projectName = 'Dakshinpara_Survey';
-      applyMouzaScale(32);
+      applyMouzaScale(16);
       showSheet('sheet01');
       selectPlot('148');
-      logCommand('PROJECT: Loaded Dakshinpara_Survey.prj (RS 1985, Scale 1:1980).');
+      logCommand('PROJECT: Loaded Dakshinpara_Survey.prj (RS 1985, Scale 1:3960).');
     } else if (projectKey === 'rupganj') {
       if (topName) topName.textContent = 'Rupganj_CityCadastral.prj';
       state.projectName = 'Rupganj_CityCadastral';
@@ -6803,7 +6793,7 @@ const ribbonTemplates = {
           reader.onload = (loadEvent) => {
             const dataUrl = loadEvent.target.result;
             attachMouzaRaster(dataUrl, file.name);
-            const is80 = /vatu|batu|80|badam|uttara|dhaka|full_mouza/i.test(file.name) || (dataUrl && dataUrl.includes('full_mouza'));
+            const is80 = /(?:^|[_s-])80(?:inch|["_s-]|$)|eighty|vatu|batu/i.test(file.name);
             const tempImg = new Image();
             tempImg.onload = () => {
               rasterState.naturalWidth = tempImg.naturalWidth;
