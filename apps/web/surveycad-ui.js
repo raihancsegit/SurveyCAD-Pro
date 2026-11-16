@@ -67,6 +67,29 @@
     drawingPoints: [],
     dimensionPoints: [],
     lineStartPoint: null,
+    rectStartPoint: null,
+    circleCenterPoint: null,
+    copyState: {
+      active: false,
+      targetDag: null,
+      basePoint: null
+    },
+    rotateState: {
+      active: false,
+      targetDag: null,
+      basePoint: null,
+      currentAngle: 0
+    },
+    mirrorState: {
+      active: false,
+      targetDag: null,
+      p1: null
+    },
+    selectionWindowState: {
+      isSelecting: false,
+      startX: 0,
+      startY: 0
+    },
     offsetDistFt: 10,
     offsetSelectedEdge: null,
     orthoTargetPt: null,
@@ -912,6 +935,22 @@
   function resetDrawingOverlay() {
     state.drawingPoints = [];
     state.snappedPoint = null;
+    state.rectStartPoint = null;
+    state.circleCenterPoint = null;
+    state.copyState = { active: false, targetDag: null, basePoint: null };
+    state.rotateState = { active: false, targetDag: null, basePoint: null, currentAngle: 0 };
+    state.mirrorState = { active: false, targetDag: null, p1: null };
+    state.selectionWindowState = { isSelecting: false, startX: 0, startY: 0 };
+
+    const pRect = document.getElementById('drawingPreviewRect');
+    if (pRect) pRect.classList.add('hidden');
+    const pCirc = document.getElementById('drawingPreviewCircle');
+    if (pCirc) pCirc.classList.add('hidden');
+    const ghost = document.getElementById('drawingGhostGroup');
+    if (ghost) { ghost.classList.add('hidden'); ghost.innerHTML = ''; }
+    const selBox = document.getElementById('cadSelectionBox');
+    if (selBox) selBox.classList.add('hidden');
+
     const solid = document.getElementById('drawingSolidTrack');
     if (solid) solid.setAttribute('points', '');
     const guide = document.getElementById('drawingGuideLine');
@@ -2103,11 +2142,16 @@
     poly.setAttribute('class', `mouza-plot user-plot-boundary user-polyline-boundary selected${wandClass}`);
     poly.setAttribute('data-dag', String(dag));
     poly.addEventListener('click', (e) => {
+      if (Date.now() - (vertexDragState.lastDragEndTime || 0) < 400) {
+        e.stopPropagation();
+        return;
+      }
       e.stopPropagation();
       selectPlot(String(dag));
     });
     poly.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
+      if (vertexDragState.isDragging || vertexDragState.isHoverPlacementMode) return;
       if (state.activeTool === 'select' || state.activeTool === 'move' || !state.activeTool) {
         e.stopPropagation();
         selectPlot(String(dag));
@@ -2321,6 +2365,7 @@
     dag: null,
     vertexIndex: -1,
     vertices: [],
+    origVertices: [],
     isNewMidpoint: false,
     lastDragEndTime: 0
   };
@@ -2329,52 +2374,40 @@
     const menu = document.getElementById('cadGripMenu');
     if (!menu || vertexDragState.isDragging) return;
 
-    if (gripMenuState.closeTimer) clearTimeout(gripMenuState.closeTimer);
+    if (gripMenuState.closeTimer) {
+      clearTimeout(gripMenuState.closeTimer);
+      gripMenuState.closeTimer = null;
+    }
     gripMenuState.visible = true;
     gripMenuState.dag = String(dag);
     gripMenuState.type = type;
     gripMenuState.index = index;
     gripMenuState.activeElement = gripEl;
 
+    if (gripEl) gripEl.classList.add('active-hover');
+
+    // AutoCAD Standard Clean Typography - strictly matching Autodesk AutoCAD grip menus
     if (type === 'vertex') {
       menu.innerHTML = `
-        <div class="cad-grip-menu-item" data-action="stretch-vertex">
-          <svg class="w-3.5 h-3.5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <span>Stretch Vertex</span>
-        </div>
-        <div class="cad-grip-menu-item" data-action="add-vertex">
-          <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          <span>Add Vertex</span>
-        </div>
-        <div class="cad-grip-menu-item danger" data-action="remove-vertex">
-          <svg class="w-3.5 h-3.5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          <span>Remove Vertex</span>
-        </div>
+        <div class="cad-grip-menu-item" data-action="stretch-vertex">Stretch Vertex</div>
+        <div class="cad-grip-menu-item" data-action="add-vertex">Add Vertex</div>
+        <div class="cad-grip-menu-item" data-action="remove-vertex">Remove Vertex</div>
       `;
     } else {
       menu.innerHTML = `
-        <div class="cad-grip-menu-item" data-action="stretch-midpoint">
-          <svg class="w-3.5 h-3.5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>
-          <span>Stretch</span>
-        </div>
-        <div class="cad-grip-menu-item" data-action="add-vertex-midpoint">
-          <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          <span>Add Vertex</span>
-        </div>
-        <div class="cad-grip-menu-item" data-action="convert-to-arc">
-          <svg class="w-3.5 h-3.5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17a9 9 0 0 1 18 0"/></svg>
-          <span>Convert to Arc</span>
-        </div>
+        <div class="cad-grip-menu-item" data-action="stretch-midpoint">Stretch</div>
+        <div class="cad-grip-menu-item" data-action="add-vertex-midpoint">Add Vertex</div>
+        <div class="cad-grip-menu-item" data-action="convert-to-arc">Convert to Arc</div>
       `;
     }
 
     menu.classList.remove('hidden');
 
-    const menuW = 145;
-    const menuH = 105;
-    let posX = screenX + 12;
-    let posY = screenY - 8;
-    if (posX + menuW > window.innerWidth) posX = screenX - menuW - 10;
+    const menuW = 135;
+    const menuH = 85;
+    let posX = screenX + 4;
+    let posY = screenY - 2;
+    if (posX + menuW > window.innerWidth) posX = screenX - menuW - 8;
     if (posY + menuH > window.innerHeight) posY = window.innerHeight - menuH - 10;
     if (posY < 10) posY = 10;
 
@@ -2382,6 +2415,9 @@
     menu.style.top = `${posY}px`;
 
     menu.querySelectorAll('.cad-grip-menu-item').forEach(item => {
+      item.onmousedown = (ev) => {
+        ev.stopPropagation();
+      };
       item.onclick = (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
@@ -2538,46 +2574,103 @@
     container.querySelectorAll('.mouza-vertex-drag-handle').forEach(handle => {
       const dag = handle.getAttribute('data-dag');
       const vIdx = parseInt(handle.getAttribute('data-vertex-index'), 10);
+
       handle.onmouseenter = () => {
         if (vertexDragState.isDragging) return;
         handle.classList.add('active-hover');
+        if (gripMenuState.closeTimer) {
+          clearTimeout(gripMenuState.closeTimer);
+          gripMenuState.closeTimer = null;
+        }
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+
+        // AutoCAD Standard: Hover for ~220ms triggers the Multifunctional Grip Menu automatically
+        gripMenuState.hoverTimer = setTimeout(() => {
+          if (vertexDragState.isDragging) return;
+          const rect = handle.getBoundingClientRect();
+          showGripMenu('vertex', dag, vIdx, rect.right + 4, rect.top - 2, handle);
+        }, 220);
       };
+
       handle.onmouseleave = () => {
-        handle.classList.remove('active-hover');
+        if (gripMenuState.hoverTimer) {
+          clearTimeout(gripMenuState.hoverTimer);
+          gripMenuState.hoverTimer = null;
+        }
+        // Grace period so cursor can enter #cadGripMenu without premature dismissal
+        if (gripMenuState.visible && gripMenuState.activeElement === handle) {
+          gripMenuState.closeTimer = setTimeout(() => {
+            hideGripMenu();
+          }, 350);
+        } else {
+          handle.classList.remove('active-hover');
+        }
       };
+
       handle.onmousedown = (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
+        hideGripMenu();
         startVertexDrag(dag, vIdx, e, false);
       };
+
       handle.oncontextmenu = (e) => {
         e.stopPropagation();
         e.preventDefault();
-        showGripMenu('vertex', dag, vIdx, e.clientX, e.clientY, handle);
+        const rect = handle.getBoundingClientRect();
+        showGripMenu('vertex', dag, vIdx, rect.right + 4, rect.top - 2, handle);
       };
     });
 
     container.querySelectorAll('.mouza-midpoint-drag-handle').forEach(handle => {
       const dag = handle.getAttribute('data-dag');
       const eIdx = parseInt(handle.getAttribute('data-edge-index'), 10);
+
       handle.onmouseenter = () => {
         if (vertexDragState.isDragging) return;
         handle.classList.add('active-hover');
+        if (gripMenuState.closeTimer) {
+          clearTimeout(gripMenuState.closeTimer);
+          gripMenuState.closeTimer = null;
+        }
+        if (gripMenuState.hoverTimer) clearTimeout(gripMenuState.hoverTimer);
+
+        // AutoCAD Standard: Hover for ~220ms triggers the Midpoint Grip Menu automatically
+        gripMenuState.hoverTimer = setTimeout(() => {
+          if (vertexDragState.isDragging) return;
+          const rect = handle.getBoundingClientRect();
+          showGripMenu('midpoint', dag, eIdx, rect.right + 4, rect.top - 2, handle);
+        }, 220);
       };
+
       handle.onmouseleave = () => {
-        handle.classList.remove('active-hover');
+        if (gripMenuState.hoverTimer) {
+          clearTimeout(gripMenuState.hoverTimer);
+          gripMenuState.hoverTimer = null;
+        }
+        if (gripMenuState.visible && gripMenuState.activeElement === handle) {
+          gripMenuState.closeTimer = setTimeout(() => {
+            hideGripMenu();
+          }, 350);
+        } else {
+          handle.classList.remove('active-hover');
+        }
       };
+
       handle.onmousedown = (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
+        hideGripMenu();
         startMidpointDrag(dag, eIdx, e);
       };
+
       handle.oncontextmenu = (e) => {
         e.stopPropagation();
         e.preventDefault();
-        showGripMenu('midpoint', dag, eIdx, e.clientX, e.clientY, handle);
+        const rect = handle.getBoundingClientRect();
+        showGripMenu('midpoint', dag, eIdx, rect.right + 4, rect.top - 2, handle);
       };
     });
   }
@@ -2675,6 +2768,7 @@
     vertexDragState.dag = String(dag);
     vertexDragState.vertexIndex = vertexIdx;
     vertexDragState.vertices = verts.map(v => ({ x: v.x, y: v.y }));
+    vertexDragState.origVertices = (plot && plot.vertices) ? plot.vertices.map(v => ({ x: v.x, y: v.y })) : verts.map(v => ({ x: v.x, y: v.y }));
 
     selectPlot(dag);
     document.body.style.cursor = isHoverMode ? 'crosshair' : 'grabbing';
@@ -4812,42 +4906,264 @@
       return;
     }
 
-    // 5. Circle Tool (C)
+    // 5. Circle Tool (C / CIRCLE - Center-Radius Interactive AutoCAD standard)
     if (state.activeTool === 'circle') {
-      const drawingsGroup = document.getElementById('userDrawingsGroup');
-      if (drawingsGroup) {
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', pt.x);
-        circle.setAttribute('cy', pt.y);
-        circle.setAttribute('r', '35');
-        circle.setAttribute('fill', 'rgba(56, 189, 248, 0.25)');
-        circle.setAttribute('stroke', '#38bdf8');
-        circle.setAttribute('stroke-width', '2');
-        circle.setAttribute('vector-effect', 'non-scaling-stroke');
-        drawingsGroup.appendChild(circle);
-        pushUndo('Draw Circle');
-        logCommand(`CIRCLE: Center X=${pt.x}, Y=${pt.y}, Radius=35px`);
+      if (!state.circleCenterPoint) {
+        state.circleCenterPoint = { x: clickPt.x, y: clickPt.y };
+        const banner = document.getElementById('toolGuidanceBanner');
+        const bannerText = document.getElementById('toolGuidanceText');
+        if (banner && bannerText) {
+          bannerText.innerHTML = `⭕ <b>Circle:</b> কেন্দ্র নির্ধারণ হয়েছে (${clickPt.x.toFixed(0)}, ${clickPt.y.toFixed(0)})। মাউস ঘুরিয়ে রেডিয়াসে ক্লিক করুন • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+          banner.classList.remove('hidden');
+        }
+        logCommand(`CIRCLE: Center point specified at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Move mouse to specify radius:`);
+      } else {
+        const center = state.circleCenterPoint;
+        state.circleCenterPoint = null;
+        document.getElementById('drawingPreviewCircle')?.classList.add('hidden');
+        document.getElementById('drawingGuideLine')?.classList.add('hidden');
+        const banner = document.getElementById('toolGuidanceBanner');
+        if (banner) banner.classList.add('hidden');
+
+        const radiusSvg = Math.hypot(clickPt.x - center.x, clickPt.y - center.y);
+        if (radiusSvg >= 3) {
+          const u = getUnitsPerPixel();
+          const radiusFt = radiusSvg * u.upp_svg_x;
+          const diameterFt = radiusFt * 2;
+          const circAreaSqFt = Math.PI * radiusFt * radiusFt;
+          const circDecimal = circAreaSqFt / SQFT_PER_DECIMAL;
+          const circumferenceFt = 2 * Math.PI * radiusFt;
+
+          const drawingsGroup = document.getElementById('userDrawingsGroup');
+          if (drawingsGroup) {
+            const gCircle = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            gCircle.setAttribute('class', 'user-drawn-circle-group');
+            gCircle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', center.x.toFixed(1));
+            circle.setAttribute('cy', center.y.toFixed(1));
+            circle.setAttribute('r', radiusSvg.toFixed(1));
+            circle.setAttribute('fill', 'rgba(56, 189, 248, 0.15)');
+            circle.setAttribute('stroke', '#38bdf8');
+            circle.setAttribute('stroke-width', '1.8');
+            circle.setAttribute('vector-effect', 'non-scaling-stroke');
+            circle.setAttribute('class', 'user-drawn-circle');
+            gCircle.appendChild(circle);
+
+            // Center cross mark
+            const s2w = getScreenPixelToWorld();
+            const cmLen = 4.5 * s2w;
+            const cMark = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            cMark.setAttribute('d', `M${(center.x - cmLen).toFixed(1)},${center.y.toFixed(1)} h${(cmLen * 2).toFixed(1)} M${center.x.toFixed(1)},${(center.y - cmLen).toFixed(1)} v${(cmLen * 2).toFixed(1)}`);
+            cMark.setAttribute('stroke', '#38bdf8');
+            cMark.setAttribute('stroke-width', '1.2');
+            cMark.setAttribute('vector-effect', 'non-scaling-stroke');
+            gCircle.appendChild(cMark);
+
+            const circleInfo = {
+              id: `Circle (${center.x.toFixed(0)},${center.y.toFixed(0)})`,
+              mouza: 'Chorbagh (CAD Circle)',
+              sheet: '01 (CS)',
+              area: `${circAreaSqFt.toFixed(2)} sq.ft (${circDecimal.toFixed(2)} Decimal)`,
+              decimal: `${circDecimal.toFixed(2)} sotok`,
+              kathaBigha: `${(circAreaSqFt / SQFT_PER_KATHA).toFixed(2)} Katha`,
+              length: `Circumference = ${circumferenceFt.toFixed(2)} ft, Dia = ${formatDistanceFeetInches(diameterFt)}`,
+              type: `Circle (R = ${formatDistanceFeetInches(radiusFt)})`,
+              layer: 'Dimension'
+            };
+
+            gCircle.addEventListener('click', (e) => {
+              e.stopPropagation();
+              document.querySelectorAll('.cad-dim-elem.selected, .cad-text-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected, .user-drawn-line.selected, .user-drawn-circle.selected').forEach(el => el.classList.remove('selected'));
+              circle.classList.add('selected');
+              inspectGeometricObject(circleInfo);
+            });
+
+            drawingsGroup.appendChild(gCircle);
+            inspectGeometricObject(circleInfo);
+            pushUndo(`Draw Circle (R = ${formatDistanceFeetInches(radiusFt)})`);
+            logCommand(`CIRCLE: Created Circle Radius = ${formatDistanceFeetInches(radiusFt)} (${radiusFt.toFixed(2)} ft), Area = ${circAreaSqFt.toFixed(2)} sq.ft (${circDecimal.toFixed(2)} Decimal).`);
+          }
+        } else {
+          logCommand('CIRCLE: Radius too small. Circle canceled.');
+        }
       }
       return;
     }
 
-    // 6. Rectangle Tool (REC)
+    // 6. Rectangle Tool (REC / RECTANG - 2-Point Interactive Closed Boundary standard)
     if (state.activeTool === 'rectangle') {
-      const drawingsGroup = document.getElementById('userDrawingsGroup');
-      if (drawingsGroup) {
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', pt.x);
-        rect.setAttribute('y', pt.y);
-        rect.setAttribute('width', '80');
-        rect.setAttribute('height', '50');
-        rect.setAttribute('rx', '2');
-        rect.setAttribute('fill', 'rgba(34, 197, 94, 0.25)');
-        rect.setAttribute('stroke', '#22c55e');
-        rect.setAttribute('stroke-width', '2');
-        rect.setAttribute('vector-effect', 'non-scaling-stroke');
-        drawingsGroup.appendChild(rect);
-        pushUndo('Draw Rectangle');
-        logCommand(`RECTANG: Created at X=${pt.x}, Y=${pt.y}`);
+      if (!state.rectStartPoint) {
+        state.rectStartPoint = { x: clickPt.x, y: clickPt.y };
+        const banner = document.getElementById('toolGuidanceBanner');
+        const bannerText = document.getElementById('toolGuidanceText');
+        if (banner && bannerText) {
+          bannerText.innerHTML = `📐 <b>Rectangle:</b> ১ম কর্নার নির্ধারণ হয়েছে (${clickPt.x.toFixed(0)}, ${clickPt.y.toFixed(0)})। বিপরীতে ২য় কর্নারে ক্লিক করুন • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+          banner.classList.remove('hidden');
+        }
+        logCommand(`RECTANG: First corner specified at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify other corner point:`);
+      } else {
+        const p1 = state.rectStartPoint;
+        const p2 = clickPt;
+        state.rectStartPoint = null;
+        document.getElementById('drawingPreviewRect')?.classList.add('hidden');
+        const banner = document.getElementById('toolGuidanceBanner');
+        if (banner) banner.classList.add('hidden');
+
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        const w = maxX - minX;
+        const h = maxY - minY;
+
+        if (w >= 3 && h >= 3) {
+          const u = getUnitsPerPixel();
+          const wFt = w * u.upp_svg_x;
+          const hFt = h * u.upp_svg_y;
+          const realAreaSqFt = wFt * hFt;
+          const realDecimal = realAreaSqFt / SQFT_PER_DECIMAL;
+          const realPerimeter = (wFt + hFt) * 2;
+
+          state.nextDagNumber = (state.nextDagNumber || 250) + 1;
+          const newDagNum = String(state.nextDagNumber);
+
+          const pts = [
+            { x: minX, y: minY },
+            { x: maxX, y: minY },
+            { x: maxX, y: maxY },
+            { x: minX, y: maxY }
+          ];
+
+          renderParcelPolygon(pts, newDagNum, realAreaSqFt, realDecimal, realPerimeter, false, true);
+          selectPlot(newDagNum);
+          pushUndo(`Draw Rectangle (Plot ${newDagNum})`);
+          logCommand(`RECTANG: Created Plot ${newDagNum}! Size = ${formatDistanceFeetInches(wFt)} × ${formatDistanceFeetInches(hFt)}, Area = ${realAreaSqFt.toFixed(2)} sq.ft (${realDecimal.toFixed(2)} Decimal).`);
+        } else {
+          logCommand('RECTANG: Dimensions too small. Rectangle canceled.');
+        }
+      }
+      return;
+    }
+
+    // 6.1 AutoCAD Interactive Copy Tool (CO / COPY)
+    if (state.activeTool === 'copy' || (state.copyState && state.copyState.active)) {
+      if (!state.copyState.basePoint) {
+        state.copyState.basePoint = { x: clickPt.x, y: clickPt.y };
+        const banner = document.getElementById('toolGuidanceBanner');
+        const bannerText = document.getElementById('toolGuidanceText');
+        if (banner && bannerText) {
+          bannerText.innerHTML = `📋 <b>Copy:</b> যেখানে কপি বসাতে চান ক্লিক করুন (Click to drop copy) • <span class="text-amber-400 font-bold">[Enter/Esc]</span> finish`;
+          banner.classList.remove('hidden');
+        }
+        logCommand(`COPY: Base point specified at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Click destination point:`);
+      } else {
+        const base = state.copyState.basePoint;
+        const dx = clickPt.x - base.x;
+        const dy = clickPt.y - base.y;
+        const origDag = state.copyState.targetDag;
+        const orig = state.plots[origDag];
+        if (orig && orig.vertices) {
+          state.nextDagNumber = (state.nextDagNumber || 250) + 1;
+          const newDag = String(state.nextDagNumber);
+          const newVerts = orig.vertices.map(v => ({ x: v.x + dx, y: v.y + dy }));
+          const metrics = recalculatePlotMetrics(newVerts);
+
+          renderParcelPolygon(newVerts, newDag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, false, true);
+          selectPlot(newDag);
+          pushUndo(`Copy Plot ${origDag} -> ${newDag}`);
+          logCommand(`COPY: Placed copy as Plot ${newDag}. Click again to drop another copy or [Esc] to finish.`);
+        }
+      }
+      return;
+    }
+
+    // 6.2 AutoCAD Interactive Rotate Tool (RO / ROTATE)
+    if (state.activeTool === 'rotate' || (state.rotateState && state.rotateState.active)) {
+      const rot = state.rotateState;
+      const targetDag = rot.targetDag;
+      const pData = state.plots[targetDag];
+      if (pData && pData.vertices) {
+        const angleDeg = rot.currentAngle || 45;
+        const rad = (angleDeg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const cx = rot.basePoint ? rot.basePoint.x : clickPt.x;
+        const cy = rot.basePoint ? rot.basePoint.y : clickPt.y;
+
+        pData.vertices = pData.vertices.map(v => {
+          const vx = v.x - cx;
+          const vy = v.y - cy;
+          return {
+            x: cx + vx * cos - vy * sin,
+            y: cy + vx * sin + vy * cos
+          };
+        });
+
+        const metrics = recalculatePlotMetrics(pData.vertices);
+        Object.assign(pData, metrics);
+        const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"].magic-wand-detected`);
+        renderParcelPolygon(pData.vertices, targetDag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+        selectPlot(targetDag);
+        pushUndo(`Rotate Plot ${targetDag} (${angleDeg.toFixed(1)}°)`);
+        logCommand(`ROTATE: Plot ${targetDag} rotated by ${angleDeg.toFixed(1)}°.`);
+      }
+      rot.active = false;
+      setActiveTool('select');
+      document.getElementById('drawingGhostGroup')?.classList.add('hidden');
+      return;
+    }
+
+    // 6.3 AutoCAD Interactive Mirror Tool (MI / MIRROR)
+    if (state.activeTool === 'mirror' || (state.mirrorState && state.mirrorState.active)) {
+      if (!state.mirrorState.p1) {
+        state.mirrorState.p1 = { x: clickPt.x, y: clickPt.y };
+        const banner = document.getElementById('toolGuidanceBanner');
+        const bannerText = document.getElementById('toolGuidanceText');
+        if (banner && bannerText) {
+          bannerText.innerHTML = `🪞 <b>Mirror:</b> মিরর অক্ষের ২য় পয়েন্টে ক্লিক করুন • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+          banner.classList.remove('hidden');
+        }
+        logCommand(`MIRROR: First point of mirror line at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify second point:`);
+      } else {
+        const p1 = state.mirrorState.p1;
+        const p2 = clickPt;
+        const targetDag = state.mirrorState.targetDag;
+        const pData = state.plots[targetDag];
+        if (pData && pData.vertices) {
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const len = Math.hypot(dx, dy);
+          if (len > 1) {
+            const ux = dx / len;
+            const uy = dy / len;
+
+            pData.vertices = pData.vertices.map(v => {
+              const vx = v.x - p1.x;
+              const vy = v.y - p1.y;
+              const dot = vx * ux + vy * uy;
+              const projX = p1.x + dot * ux;
+              const projY = p1.y + dot * uy;
+              return {
+                x: 2 * projX - v.x,
+                y: 2 * projY - v.y
+              };
+            });
+
+            const metrics = recalculatePlotMetrics(pData.vertices);
+            Object.assign(pData, metrics);
+            const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"].magic-wand-detected`);
+            renderParcelPolygon(pData.vertices, targetDag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+            selectPlot(targetDag);
+            pushUndo(`Mirror Plot ${targetDag}`);
+            logCommand(`MIRROR: Plot ${targetDag} mirrored across specified 2-point axis.`);
+          }
+        }
+        state.mirrorState.active = false;
+        state.mirrorState.p1 = null;
+        setActiveTool('select');
+        document.getElementById('drawingGhostGroup')?.classList.add('hidden');
       }
       return;
     }
@@ -7280,38 +7596,22 @@ const ribbonTemplates = {
         logCommand('COPY: Please select an object or plot first.');
         return;
       }
-      const orig = state.plots[targetDag];
-      state.nextDagNumber = (state.nextDagNumber || 250) + 1;
-      const newDag = String(state.nextDagNumber);
-      
-      const shift = 35;
-      const newVerts = orig.vertices.map(v => ({ x: v.x + shift, y: v.y + shift }));
-
-      const drawingsGroup = document.getElementById('userDrawingsGroup');
-      if (drawingsGroup) {
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        poly.setAttribute('points', newVerts.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
-        poly.setAttribute('fill', 'rgba(56, 189, 248, 0.25)');
-        poly.setAttribute('stroke', '#38bdf8');
-        poly.setAttribute('stroke-width', '2');
-        poly.setAttribute('vector-effect', 'non-scaling-stroke');
-        poly.setAttribute('class', 'user-plot-boundary');
-        poly.setAttribute('data-dag', newDag);
-        drawingsGroup.appendChild(poly);
-      }
-
-      state.plots[newDag] = {
-        ...orig,
-        dag: newDag,
-        vertices: newVerts
+      state.copyState = {
+        active: true,
+        targetDag: String(targetDag),
+        basePoint: null
       };
-
-      selectPlot(newDag);
-      pushUndo(`Copy Plot ${orig.dag} -> ${newDag}`);
-      logCommand(`COPY: Plot ${orig.dag} copied to Plot ${newDag} (shifted +35px).`);
+      setActiveTool('copy');
+      const banner = document.getElementById('toolGuidanceBanner');
+      const bannerText = document.getElementById('toolGuidanceText');
+      if (banner && bannerText) {
+        bannerText.innerHTML = `📋 <b>Copy (Plot ${targetDag}):</b> বেস পয়েন্ট নির্বাচন করুন (Click base point) • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+        banner.classList.remove('hidden');
+      }
+      logCommand(`COPY: Plot ${targetDag} selected. Specify base point:`);
     }
 
-    function applyRotateToSelectedPlot(angleDeg = 45) {
+    function applyRotateToSelectedPlot(angleDeg = null) {
       const targetDag = state.selectedDag || (state.plots ? Object.keys(state.plots)[0] : null);
       if (!targetDag || !state.plots[targetDag]) {
         logCommand('ROTATE: Please select an object or plot first.');
@@ -7326,27 +7626,42 @@ const ribbonTemplates = {
       cx /= verts.length;
       cy /= verts.length;
 
-      const rad = (angleDeg * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
+      if (typeof angleDeg === 'number' && !isNaN(angleDeg) && angleDeg !== 0) {
+        const rad = (angleDeg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
 
-      pData.vertices = verts.map(v => {
-        const dx = v.x - cx;
-        const dy = v.y - cy;
-        return {
-          x: cx + dx * cos - dy * sin,
-          y: cy + dx * sin + dy * cos
-        };
-      });
+        pData.vertices = verts.map(v => {
+          const dx = v.x - cx;
+          const dy = v.y - cy;
+          return {
+            x: cx + dx * cos - dy * sin,
+            y: cy + dx * sin + dy * cos
+          };
+        });
 
-      const el = document.querySelector(`[data-dag="${targetDag}"]`);
-      if (el) {
-        el.setAttribute('points', pData.vertices.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+        const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"].magic-wand-detected`);
+        renderParcelPolygon(pData.vertices, targetDag, pData.areaSqFt, pData.areaDecimal, pData.perimeter, isMW);
+        recalculateAllPlacedDimensions();
+        pushUndo(`Rotate Plot ${targetDag} (${angleDeg}°)`);
+        logCommand(`ROTATE: Plot ${targetDag} rotated by ${angleDeg}°.`);
+        return;
       }
 
-      recalculateAllPlacedDimensions();
-      pushUndo(`Rotate Plot ${targetDag} (${angleDeg}°)`);
-      logCommand(`ROTATE: Plot ${targetDag} rotated by ${angleDeg}°.`);
+      state.rotateState = {
+        active: true,
+        targetDag: String(targetDag),
+        basePoint: { x: cx, y: cy },
+        currentAngle: 0
+      };
+      setActiveTool('rotate');
+      const banner = document.getElementById('toolGuidanceBanner');
+      const bannerText = document.getElementById('toolGuidanceText');
+      if (banner && bannerText) {
+        bannerText.innerHTML = `🔄 <b>Rotate (Plot ${targetDag}):</b> মাউস ঘুরিয়ে রোটেশন কোণ নির্ধারণ করুন বা ক্লিক করুন • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+        banner.classList.remove('hidden');
+      }
+      logCommand(`ROTATE: Specify rotation angle or click on canvas to set angle:`);
     }
 
     function applyMirrorToSelectedPlot() {
@@ -7355,27 +7670,19 @@ const ribbonTemplates = {
         logCommand('MIRROR: Please select an object or plot first.');
         return;
       }
-      const pData = state.plots[targetDag];
-      const verts = pData.vertices;
-      if (!verts || verts.length < 2) return;
-
-      let cx = 0;
-      verts.forEach(v => { cx += v.x; });
-      cx /= verts.length;
-
-      pData.vertices = verts.map(v => ({
-        x: cx - (v.x - cx),
-        y: v.y
-      }));
-
-      const el = document.querySelector(`[data-dag="${targetDag}"]`);
-      if (el) {
-        el.setAttribute('points', pData.vertices.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+      state.mirrorState = {
+        active: true,
+        targetDag: String(targetDag),
+        p1: null
+      };
+      setActiveTool('mirror');
+      const banner = document.getElementById('toolGuidanceBanner');
+      const bannerText = document.getElementById('toolGuidanceText');
+      if (banner && bannerText) {
+        bannerText.innerHTML = `🪞 <b>Mirror (Plot ${targetDag}):</b> মিরর অক্ষের ১ম পয়েন্টে ক্লিক করুন • <span class="text-amber-400 font-bold">[Esc]</span> cancel`;
+        banner.classList.remove('hidden');
       }
-
-      recalculateAllPlacedDimensions();
-      pushUndo(`Mirror Plot ${targetDag}`);
-      logCommand(`MIRROR: Plot ${targetDag} mirrored across center vertical axis.`);
+      logCommand(`MIRROR: Specify first point of mirror line:`);
     }
 
     function applyMoveToSelectedPlot(dx = 30, dy = 30) {
@@ -8304,6 +8611,229 @@ const ribbonTemplates = {
           if (guide) guide.classList.add('hidden');
           if (polarTrack) polarTrack.classList.add('hidden');
           if (angleArc) angleArc.classList.add('hidden');
+        } else if (state.activeTool === 'rectangle') {
+          if (!state.rectStartPoint) {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify first corner point:';
+          } else {
+            const p1 = state.rectStartPoint;
+            const rx = Math.min(p1.x, targetPt.x);
+            const ry = Math.min(p1.y, targetPt.y);
+            const rw = Math.abs(targetPt.x - p1.x);
+            const rh = Math.abs(targetPt.y - p1.y);
+            const previewRect = document.getElementById('drawingPreviewRect');
+            if (previewRect) {
+              previewRect.setAttribute('x', rx.toFixed(1));
+              previewRect.setAttribute('y', ry.toFixed(1));
+              previewRect.setAttribute('width', rw.toFixed(1));
+              previewRect.setAttribute('height', rh.toFixed(1));
+              previewRect.classList.remove('hidden');
+            }
+            const u = getUnitsPerPixel();
+            const wFt = rw * u.upp_svg_x;
+            const hFt = rh * u.upp_svg_y;
+            const areaSqFt = wFt * hFt;
+            const areaDec = areaSqFt / SQFT_PER_DECIMAL;
+            if (dynDistBadge) {
+              dynDistBadge.textContent = `${formatDistanceFeetInches(wFt)} × ${formatDistanceFeetInches(hFt)}`;
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) {
+              dynAngBadge.textContent = `Area: ${areaDec.toFixed(2)} dec (${areaSqFt.toFixed(1)} sq ft)`;
+              dynAngBadge.style.display = 'block';
+            }
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify other corner point:';
+          }
+          if (dynHud) {
+            dynHud.style.left = `${hudPosX}px`;
+            dynHud.style.top = `${hudPosY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (guide) guide.classList.add('hidden');
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+        } else if (state.activeTool === 'circle') {
+          if (!state.circleCenterPoint) {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify center point for circle:';
+          } else {
+            const cp = state.circleCenterPoint;
+            const rPx = Math.hypot(targetPt.x - cp.x, targetPt.y - cp.y);
+            const u = getUnitsPerPixel();
+            const rFt = rPx * u.upp_svg_x;
+            const previewCircle = document.getElementById('drawingPreviewCircle');
+            if (previewCircle) {
+              previewCircle.setAttribute('cx', cp.x.toFixed(1));
+              previewCircle.setAttribute('cy', cp.y.toFixed(1));
+              previewCircle.setAttribute('r', rPx.toFixed(1));
+              previewCircle.classList.remove('hidden');
+            }
+            if (guide) {
+              guide.setAttribute('x1', cp.x.toFixed(1));
+              guide.setAttribute('y1', cp.y.toFixed(1));
+              guide.setAttribute('x2', targetPt.x.toFixed(1));
+              guide.setAttribute('y2', targetPt.y.toFixed(1));
+              guide.classList.remove('hidden');
+            }
+            if (dynDistBadge) {
+              dynDistBadge.textContent = `R: ${formatDistanceFeetInches(rFt)}`;
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) {
+              dynAngBadge.textContent = `Ø: ${formatDistanceFeetInches(rFt * 2)}`;
+              dynAngBadge.style.display = 'block';
+            }
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify radius of circle:';
+          }
+          if (dynHud) {
+            dynHud.style.left = `${hudPosX}px`;
+            dynHud.style.top = `${hudPosY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+        } else if (state.activeTool === 'copy' || (state.copyState && state.copyState.active)) {
+          if (!state.copyState.basePoint) {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify base point:';
+          } else {
+            const bp = state.copyState.basePoint;
+            const dx = targetPt.x - bp.x;
+            const dy = targetPt.y - bp.y;
+            const u = getUnitsPerPixel();
+            const distFt = Math.hypot(dx * u.upp_svg_x, dy * u.upp_svg_y);
+            const angleDeg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+
+            const ghost = document.getElementById('drawingGhostGroup');
+            const targetDag = state.copyState.targetDag;
+            const orig = targetDag ? state.plots[targetDag] : null;
+            if (ghost && orig && orig.vertices) {
+              const ghostPts = orig.vertices.map(v => `${(v.x + dx).toFixed(1)},${(v.y + dy).toFixed(1)}`).join(' ');
+              ghost.innerHTML = `<polygon points="${ghostPts}" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8" stroke-width="1.8" stroke-dasharray="4 2" vector-effect="non-scaling-stroke"/>`;
+              ghost.classList.remove('hidden');
+            }
+
+            if (guide) {
+              guide.setAttribute('x1', bp.x.toFixed(1));
+              guide.setAttribute('y1', bp.y.toFixed(1));
+              guide.setAttribute('x2', targetPt.x.toFixed(1));
+              guide.setAttribute('y2', targetPt.y.toFixed(1));
+              guide.classList.remove('hidden');
+            }
+
+            if (dynDistBadge) {
+              dynDistBadge.textContent = formatDistanceFeetInches(distFt);
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) {
+              dynAngBadge.textContent = `${angleDeg.toFixed(1)}°`;
+              dynAngBadge.style.display = 'block';
+            }
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify second point to place copy:';
+          }
+          if (dynHud) {
+            dynHud.style.left = `${hudPosX}px`;
+            dynHud.style.top = `${hudPosY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+        } else if (state.activeTool === 'rotate' || (state.rotateState && state.rotateState.active)) {
+          const bp = state.rotateState.basePoint || targetPt;
+          const dx = targetPt.x - bp.x;
+          const dy = targetPt.y - bp.y;
+          const angleDeg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+          state.rotateState.currentAngle = angleDeg;
+
+          const ghost = document.getElementById('drawingGhostGroup');
+          const targetDag = state.rotateState.targetDag;
+          const orig = targetDag ? state.plots[targetDag] : null;
+          if (ghost && orig && orig.vertices) {
+            const rad = (angleDeg * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const ghostPts = orig.vertices.map(v => {
+              const vx = v.x - bp.x;
+              const vy = v.y - bp.y;
+              return `${(bp.x + vx * cos - vy * sin).toFixed(1)},${(bp.y + vx * sin + vy * cos).toFixed(1)}`;
+            }).join(' ');
+            ghost.innerHTML = `<polygon points="${ghostPts}" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 2" vector-effect="non-scaling-stroke"/>`;
+            ghost.classList.remove('hidden');
+          }
+
+          if (guide) {
+            guide.setAttribute('x1', bp.x.toFixed(1));
+            guide.setAttribute('y1', bp.y.toFixed(1));
+            guide.setAttribute('x2', targetPt.x.toFixed(1));
+            guide.setAttribute('y2', targetPt.y.toFixed(1));
+            guide.classList.remove('hidden');
+          }
+
+          if (dynDistBadge) dynDistBadge.style.display = 'none';
+          if (dynAngBadge) {
+            dynAngBadge.textContent = `${angleDeg.toFixed(1)}°`;
+            dynAngBadge.style.display = 'block';
+          }
+          if (dynPromptBadge) dynPromptBadge.textContent = 'Specify rotation angle or click:';
+          if (dynHud) {
+            dynHud.style.left = `${hudPosX}px`;
+            dynHud.style.top = `${hudPosY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (polarTrack) polarTrack.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
+        } else if (state.activeTool === 'mirror' || (state.mirrorState && state.mirrorState.active)) {
+          if (!state.mirrorState.p1) {
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify first point of mirror line:';
+          } else {
+            const p1 = state.mirrorState.p1;
+            const p2 = targetPt;
+            const mdx = p2.x - p1.x;
+            const mdy = p2.y - p1.y;
+            const mlen = Math.hypot(mdx, mdy);
+
+            if (polarTrack) {
+              polarTrack.setAttribute('x1', p1.x.toFixed(1));
+              polarTrack.setAttribute('y1', p1.y.toFixed(1));
+              polarTrack.setAttribute('x2', p2.x.toFixed(1));
+              polarTrack.setAttribute('y2', p2.y.toFixed(1));
+              polarTrack.classList.remove('hidden');
+            }
+
+            const ghost = document.getElementById('drawingGhostGroup');
+            const targetDag = state.mirrorState.targetDag;
+            const orig = targetDag ? state.plots[targetDag] : null;
+            if (ghost && orig && orig.vertices && mlen > 1) {
+              const ux = mdx / mlen;
+              const uy = mdy / mlen;
+              const ghostPts = orig.vertices.map(v => {
+                const vx = v.x - p1.x;
+                const vy = v.y - p1.y;
+                const dot = vx * ux + vy * uy;
+                const projX = p1.x + dot * ux;
+                const projY = p1.y + dot * uy;
+                return `${(2 * projX - v.x).toFixed(1)},${(2 * projY - v.y).toFixed(1)}`;
+              }).join(' ');
+              ghost.innerHTML = `<polygon points="${ghostPts}" fill="rgba(168, 85, 247, 0.2)" stroke="#a855f7" stroke-width="1.8" stroke-dasharray="4 2" vector-effect="non-scaling-stroke"/>`;
+              ghost.classList.remove('hidden');
+            }
+
+            if (dynDistBadge) dynDistBadge.style.display = 'none';
+            if (dynAngBadge) dynAngBadge.style.display = 'none';
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify second point of mirror line:';
+          }
+          if (dynHud) {
+            dynHud.style.left = `${hudPosX}px`;
+            dynHud.style.top = `${hudPosY}px`;
+            dynHud.classList.remove('hidden');
+          }
+          if (guide) guide.classList.add('hidden');
+          if (angleArc) angleArc.classList.add('hidden');
         } else {
           if (dynHud) dynHud.classList.add('hidden');
           if (guide) guide.classList.add('hidden');
@@ -8689,12 +9219,19 @@ const ribbonTemplates = {
 
         if (vertexDragState.isDragging) {
           const dag = vertexDragState.dag;
+          const orig = vertexDragState.origVertices;
           vertexDragState.isDragging = false;
           vertexDragState.isHoverPlacementMode = false;
           vertexDragState.dag = null;
           vertexDragState.vertexIndex = -1;
+          vertexDragState.origVertices = [];
           document.body.style.cursor = '';
           if (dag && state.plots[dag]) {
+            if (orig && orig.length >= 3) {
+              state.plots[dag].vertices = orig;
+              const m = recalculatePlotMetrics(orig);
+              Object.assign(state.plots[dag], m);
+            }
             const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${dag}"].magic-wand-detected`);
             renderParcelPolygon(state.plots[dag].vertices, dag, state.plots[dag].areaSqFt, state.plots[dag].areaDecimal, state.plots[dag].perimeter, isMW);
           }
@@ -8882,11 +9419,22 @@ const ribbonTemplates = {
       const isSpaceDown = (state.isSpacePressed === true);
       const isBgClick = (e.target === cadSvgCanvas || e.target.id === 'cadGridBackgroundRect' || (e.target.tagName === 'rect' && (e.target.getAttribute('fill') || '').includes('cadGrid')));
 
-      if (isBgClick && e.button === 0 && (state.activeTool === 'select' || !state.activeTool || state.activeTool === 'cursor')) {
+      // AutoCAD Standard: Left-Click Drag on empty canvas starts Window / Crossing Selection Box
+      if (isBgClick && e.button === 0 && !isSpaceDown && !isPanTool && (state.activeTool === 'select' || !state.activeTool || state.activeTool === 'cursor')) {
+        const pt = getCanvasCoords(e);
+        state.selectionWindowState = {
+          isSelecting: true,
+          startX: pt.x,
+          startY: pt.y,
+          currentX: pt.x,
+          currentY: pt.y
+        };
         selectPlot(null);
+        return;
       }
 
-      if (isMiddleClick || isPanTool || isSpaceDown || isBgClick) {
+      // AutoCAD Pan: Middle-click, Pan Tool, Space+LeftDrag, or Background Drag when not selecting
+      if (isMiddleClick || isPanTool || isSpaceDown || (isBgClick && !state.selectionWindowState?.isSelecting)) {
         viewport.isPanning = true;
         viewport.panStartX = e.clientX;
         viewport.panStartY = e.clientY;
@@ -8897,6 +9445,42 @@ const ribbonTemplates = {
     });
 
     window.addEventListener('mousemove', (e) => {
+      // AutoCAD Selection Window live tracking
+      if (state.selectionWindowState && state.selectionWindowState.isSelecting) {
+        const pt = getCanvasCoords(e);
+        state.selectionWindowState.currentX = pt.x;
+        state.selectionWindowState.currentY = pt.y;
+
+        const selBox = document.getElementById('cadSelectionBox');
+        if (selBox) {
+          const x1 = state.selectionWindowState.startX;
+          const y1 = state.selectionWindowState.startY;
+          const x2 = pt.x;
+          const y2 = pt.y;
+
+          const boxX = Math.min(x1, x2);
+          const boxY = Math.min(y1, y2);
+          const boxW = Math.abs(x2 - x1);
+          const boxH = Math.abs(y2 - y1);
+
+          selBox.setAttribute('x', boxX.toFixed(1));
+          selBox.setAttribute('y', boxY.toFixed(1));
+          selBox.setAttribute('width', boxW.toFixed(1));
+          selBox.setAttribute('height', boxH.toFixed(1));
+
+          // AutoCAD Behavior:
+          // Left-to-Right (x2 >= x1): Blue solid Window selection
+          // Right-to-Left (x2 < x1): Green dashed Crossing selection
+          if (x2 >= x1) {
+            selBox.setAttribute('class', 'cad-selection-window-blue');
+          } else {
+            selBox.setAttribute('class', 'cad-selection-window-green');
+          }
+          selBox.classList.remove('hidden');
+        }
+        return;
+      }
+
       if (plotMoveState.isDragging) {
         handlePlotMove(e);
         return;
@@ -8929,6 +9513,85 @@ const ribbonTemplates = {
     });
 
     window.addEventListener('mouseup', (e) => {
+      // AutoCAD Selection Window Finalization
+      if (state.selectionWindowState && state.selectionWindowState.isSelecting) {
+        state.selectionWindowState.isSelecting = false;
+        const selBox = document.getElementById('cadSelectionBox');
+        if (selBox) selBox.classList.add('hidden');
+
+        const x1 = state.selectionWindowState.startX;
+        const y1 = state.selectionWindowState.startY;
+        const x2 = state.selectionWindowState.currentX;
+        const y2 = state.selectionWindowState.currentY;
+
+        const boxX = Math.min(x1, x2);
+        const boxY = Math.min(y1, y2);
+        const boxW = Math.abs(x2 - x1);
+        const boxH = Math.abs(y2 - y1);
+
+        if (boxW >= 5 && boxH >= 5 && state.plots) {
+          const isWindowSelection = (x2 >= x1);
+          let foundDag = null;
+
+          const ptInBox = (p) => (p.x >= boxX && p.x <= boxX + boxW && p.y >= boxY && p.y <= boxY + boxH);
+
+          const ccw = (A, B, C) => (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+          const testSegIntersect = (p1, p2, p3, p4) => (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+
+          const segIntersectsBox = (pA, pB) => {
+            if (ptInBox(pA) || ptInBox(pB)) return true;
+            if (Math.max(pA.x, pB.x) < boxX || Math.min(pA.x, pB.x) > boxX + boxW ||
+                Math.max(pA.y, pB.y) < boxY || Math.min(pA.y, pB.y) > boxY + boxH) return false;
+            const bEdges = [
+              [{ x: boxX, y: boxY }, { x: boxX + boxW, y: boxY }],
+              [{ x: boxX + boxW, y: boxY }, { x: boxX + boxW, y: boxY + boxH }],
+              [{ x: boxX + boxW, y: boxY + boxH }, { x: boxX, y: boxY + boxH }],
+              [{ x: boxX, y: boxY + boxH }, { x: boxX, y: boxY }]
+            ];
+            for (const [e1, e2] of bEdges) {
+              if (testSegIntersect(pA, pB, e1, e2)) return true;
+            }
+            return false;
+          };
+
+          for (const [dag, pData] of Object.entries(state.plots)) {
+            const verts = pData.vertices;
+            if (!verts || verts.length === 0) continue;
+
+            if (isWindowSelection) {
+              // Blue Window Selection: all vertices must be strictly inside the box
+              if (verts.every(v => ptInBox(v))) {
+                foundDag = dag;
+                break;
+              }
+            } else {
+              // Green Crossing Selection: any vertex inside or edge intersects
+              if (verts.some(v => ptInBox(v))) {
+                foundDag = dag;
+                break;
+              }
+              let edgeHits = false;
+              for (let i = 0; i < verts.length; i++) {
+                const nextV = verts[(i + 1) % verts.length];
+                if (segIntersectsBox(verts[i], nextV)) {
+                  edgeHits = true;
+                  break;
+                }
+              }
+              if (edgeHits) {
+                foundDag = dag;
+                break;
+              }
+            }
+          }
+
+          if (foundDag) {
+            selectPlot(foundDag);
+            logCommand(`SELECT: ${isWindowSelection ? 'Window (Blue)' : 'Crossing (Green)'} selection selected Plot ${foundDag}.`);
+          }
+        }
+      }
+
       if (moveDrawingsState.isDragging) {
         moveDrawingsState.isDragging = false;
         cadWorkspace.style.cursor = state.activeTool === 'move' ? 'grab' : 'none';
