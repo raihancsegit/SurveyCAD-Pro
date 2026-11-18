@@ -90,6 +90,14 @@
       startX: 0,
       startY: 0
     },
+    lastCommand: '',
+    selectedDags: [],
+    selectedDrawingElements: [],
+    filletRadius: 0,
+    zoomWindowState: {
+      active: false,
+      p1: null
+    },
     offsetDistFt: 10,
     offsetSelectedEdge: null,
     orthoTargetPt: null,
@@ -331,6 +339,7 @@
     y: 0,
     width: 1000,
     height: 650,
+    previous: null,
     isPanning: false,
     panStartX: 0,
     panStartY: 0,
@@ -582,12 +591,101 @@
   }
 
   function zoomExtents() {
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = 1000;
-    viewport.height = 650;
+    viewport.previous = { x: viewport.x, y: viewport.y, width: viewport.width, height: viewport.height };
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let hasBounds = false;
+
+    // 1. Raster Map bounds
+    if (rasterState.src && rasterState.width > 0 && rasterState.height > 0) {
+      minX = Math.min(minX, rasterState.x);
+      minY = Math.min(minY, rasterState.y);
+      maxX = Math.max(maxX, rasterState.x + rasterState.width);
+      maxY = Math.max(maxY, rasterState.y + rasterState.height);
+      hasBounds = true;
+    }
+
+    // 2. All Plots bounds
+    if (state.plots) {
+      for (const p of Object.values(state.plots)) {
+        if (p.vertices && p.vertices.length > 0) {
+          for (const v of p.vertices) {
+            minX = Math.min(minX, v.x);
+            minY = Math.min(minY, v.y);
+            maxX = Math.max(maxX, v.x);
+            maxY = Math.max(maxY, v.y);
+            hasBounds = true;
+          }
+        }
+      }
+    }
+
+    // 3. User Drawn Lines & Objects
+    document.querySelectorAll('#userDrawingsGroup line').forEach(l => {
+      const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+      const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+      if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+        minX = Math.min(minX, x1, x2);
+        minY = Math.min(minY, y1, y2);
+        maxX = Math.max(maxX, x1, x2);
+        maxY = Math.max(maxY, y1, y2);
+        hasBounds = true;
+      }
+    });
+
+    if (!hasBounds || !isFinite(minX) || !isFinite(maxX)) {
+      viewport.x = 0;
+      viewport.y = 0;
+      viewport.width = 1000;
+      viewport.height = 650;
+    } else {
+      const w = maxX - minX;
+      const h = maxY - minY;
+      const margin = Math.max(25, Math.max(w, h) * 0.08);
+      const boxW = Math.max(100, w + margin * 2);
+      const boxH = Math.max(70, h + margin * 2);
+      const svg = document.getElementById('cadSvgCanvas');
+      const aspect = svg && svg.clientWidth ? (svg.clientHeight / svg.clientWidth) : 0.65;
+
+      let finalW = boxW;
+      let finalH = boxH;
+      if (boxH / boxW > aspect) {
+        finalW = boxH / aspect;
+      } else {
+        finalH = boxW * aspect;
+      }
+
+      viewport.x = (minX + maxX) / 2 - finalW / 2;
+      viewport.y = (minY + maxY) / 2 - finalH / 2;
+      viewport.width = finalW;
+      viewport.height = finalH;
+    }
+
     updateViewBox();
-    logCommand('ZOOM: Extents 100% (Fit View)');
+    const pct = Math.round((1000 / viewport.width) * 100);
+    logCommand(`ZOOM: Extents (${pct}%)`);
+  }
+
+  function zoomPrevious() {
+    if (viewport.previous) {
+      const cur = { x: viewport.x, y: viewport.y, width: viewport.width, height: viewport.height };
+      viewport.x = viewport.previous.x;
+      viewport.y = viewport.previous.y;
+      viewport.width = viewport.previous.width;
+      viewport.height = viewport.previous.height;
+      viewport.previous = cur;
+      updateViewBox();
+      const pct = Math.round((1000 / viewport.width) * 100);
+      logCommand(`ZOOM: Restored Previous View (${pct}%)`);
+    } else {
+      logCommand('ZOOM: No previous view saved.');
+    }
+  }
+
+  function startZoomWindow() {
+    setActiveTool('zoom_window');
+    state.zoomWindowState = { active: true, p1: null };
+    logCommand('ZOOM WINDOW: Specify first corner point:');
   }
 
   let demoPlotsVisible = false;
@@ -2147,7 +2245,26 @@
         return;
       }
       e.stopPropagation();
-      selectPlot(String(dag));
+      if (e.shiftKey) {
+        const dagStr = String(dag);
+        if (state.selectedDags.includes(dagStr)) {
+          const idx = state.selectedDags.indexOf(dagStr);
+          if (idx !== -1) state.selectedDags.splice(idx, 1);
+          poly.classList.remove('selected');
+        } else {
+          state.selectedDags.push(dagStr);
+          poly.classList.add('selected');
+        }
+        if (state.selectedDags.length === 1) {
+          selectPlot(state.selectedDags[0]);
+        } else if (state.selectedDags.length > 1) {
+          updateMultiSelectionSidebar();
+        } else {
+          clearAllSelections();
+        }
+      } else {
+        selectPlot(String(dag));
+      }
     });
     poly.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
@@ -3214,6 +3331,235 @@
   }
 
   // =========================================================================
+  // AUTOCAD MULTI-SELECTION & DYNAMIC HUD MANAGEMENT
+  // =========================================================================
+  function selectPlotsAndElements(dags = [], elements = [], append = false) {
+    if (!append) {
+      document.querySelectorAll('.mouza-plot.selected, .user-plot-boundary.selected, #userDrawingsGroup .selected, .cad-dim-elem.selected, .cad-text-elem.selected').forEach(el => el.classList.remove('selected'));
+      state.selectedDags = [];
+      state.selectedDrawingElements = [];
+    }
+
+    dags.forEach(dag => {
+      const dagStr = String(dag);
+      if (!state.selectedDags.includes(dagStr)) {
+        state.selectedDags.push(dagStr);
+      }
+      document.querySelectorAll(`[data-dag="${dagStr}"]`).forEach(p => p.classList.add('selected'));
+    });
+
+    elements.forEach(el => {
+      if (!state.selectedDrawingElements.includes(el)) {
+        state.selectedDrawingElements.push(el);
+      }
+      el.classList.add('selected');
+    });
+
+    state.selectedDag = state.selectedDags[0] || null;
+
+    if (state.selectedDags.length === 1 && state.selectedDrawingElements.length === 0) {
+      selectPlot(state.selectedDags[0]);
+    } else if (state.selectedDags.length > 1 || state.selectedDrawingElements.length > 0) {
+      updateMultiSelectionSidebar();
+    } else {
+      clearSelectedPlotInfo();
+    }
+  }
+
+  function updateMultiSelectionSidebar() {
+    const emptyState = document.getElementById('propEmptyState');
+    const dataContainer = document.getElementById('propDataContainer');
+    if (emptyState) emptyState.classList.add('hidden');
+    if (dataContainer) dataContainer.classList.remove('hidden');
+
+    let totalSqFt = 0;
+    let totalPerimeter = 0;
+
+    state.selectedDags.forEach(d => {
+      const p = state.plots[d];
+      if (p) {
+        totalSqFt += Number(p.areaSqFt || 0);
+        totalPerimeter += Number(p.perimeter || 0);
+      }
+    });
+
+    const totalDec = totalSqFt / SQFT_PER_DECIMAL;
+    const totalKatha = totalSqFt / SQFT_PER_KATHA;
+    const totalBigha = totalSqFt / SQFT_PER_BIGHA;
+    const totalLinks = totalSqFt / 0.4356;
+    const periLinks = (totalPerimeter / FEET_PER_LINK).toFixed(1);
+
+    const propDagNo = document.getElementById('propDagNo');
+    const propMouzaJl = document.getElementById('propMouzaJl');
+    const propSheetNo = document.getElementById('propSheetNo');
+    const propArea = document.getElementById('propArea');
+    const propDecimal = document.getElementById('propDecimal');
+    const propKathaBigha = document.getElementById('propKathaBigha');
+    const propPerimeter = document.getElementById('propPerimeter');
+    const propObjectType = document.getElementById('propObjectType');
+    const propActiveLayer = document.getElementById('propActiveLayer');
+
+    const totalCount = state.selectedDags.length + state.selectedDrawingElements.length;
+    if (propDagNo) propDagNo.textContent = `${totalCount} Selected (${state.selectedDags.join(', ') || 'Drawings'})`;
+    if (propMouzaJl) propMouzaJl.textContent = 'Multi-Selection (AutoCAD)';
+    if (propSheetNo) propSheetNo.textContent = `${state.selectedDags.length} Plots, ${state.selectedDrawingElements.length} Items`;
+    if (propArea) propArea.textContent = totalSqFt > 0 ? `${totalSqFt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sq.ft` : '—';
+    if (propDecimal) propDecimal.textContent = totalDec > 0 ? `${totalDec.toFixed(2)} Decimal (${Math.round(totalLinks).toLocaleString()} Sq.Link)` : '—';
+    if (propKathaBigha) propKathaBigha.textContent = totalKatha > 0 ? `${totalKatha.toFixed(2)} Katha (${totalBigha.toFixed(2)} Bigha)` : '—';
+    if (propPerimeter) propPerimeter.textContent = totalPerimeter > 0 ? `${totalPerimeter.toFixed(2)} ft (${periLinks} Links)` : '—';
+    if (propObjectType) propObjectType.textContent = `${totalCount} AutoCAD Objects`;
+    if (propActiveLayer) propActiveLayer.textContent = 'Various Layers';
+
+    const centerNum = document.getElementById('selectedDagCenterNum');
+    const centerSqft = document.getElementById('selectedDagCenterSqft');
+    const centerDec = document.getElementById('selectedDagCenterDec');
+    if (centerNum) centerNum.textContent = `${totalCount} Objects`;
+    if (centerSqft) centerSqft.textContent = totalSqFt > 0 ? `${totalSqFt.toFixed(1)} sq.ft` : '';
+    if (centerDec) centerDec.textContent = totalDec > 0 ? `(${totalDec.toFixed(2)} Decimal)` : '';
+  }
+
+  function clearAllSelections() {
+    document.querySelectorAll('.mouza-plot.selected, .user-plot-boundary.selected, #userDrawingsGroup .selected, .cad-dim-elem.selected, .cad-text-elem.selected').forEach(el => el.classList.remove('selected'));
+    state.selectedDags = [];
+    state.selectedDag = null;
+    state.selectedDrawingElements = [];
+    clearSelectedPlotInfo();
+  }
+
+  function selectAllObjects() {
+    const allDags = Object.keys(state.plots || {});
+    const allLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line:not(#drawingGuideLine):not(#offsetEdgeHighlight)'));
+    selectPlotsAndElements(allDags, allLines);
+    logCommand(`SELECT: All objects selected (${allDags.length} plots, ${allLines.length} lines).`);
+  }
+
+  function nudgeSelectedPlots(dx, dy) {
+    const dags = (state.selectedDags && state.selectedDags.length > 0) ? state.selectedDags : (state.selectedDag ? [state.selectedDag] : []);
+    dags.forEach(d => {
+      nudgeSelectedPlot(d, dx, dy);
+    });
+  }
+
+  function updateDynInputBadge(text) {
+    const badge = document.getElementById('dynInputBadge');
+    const hud = document.getElementById('cadDynamicInput');
+    if (!badge) return;
+    if (text && text.trim().length > 0) {
+      badge.textContent = text.trim();
+      badge.classList.remove('hidden');
+      if (hud) hud.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+      badge.textContent = '';
+    }
+  }
+
+  function parseCadDistanceOrCoordinate(inputStr, basePt, currentCursorPt) {
+    const raw = (inputStr || '').trim();
+    if (!raw) return null;
+    const u = getUnitsPerPixel();
+    const avgUpp = (u.upp_svg_x + u.upp_svg_y) / 2;
+
+    // 1. Relative Polar: @100<45 or 100<45
+    const polarMatch = raw.match(/^@?([0-9.]+)\s*<\s*([0-9.-]+)$/);
+    if (polarMatch) {
+      const distFt = parseFloat(polarMatch[1]);
+      const angleDeg = parseFloat(polarMatch[2]);
+      if (!isNaN(distFt) && !isNaN(angleDeg) && basePt) {
+        const rad = angleDeg * Math.PI / 180;
+        const dxFt = distFt * Math.cos(rad);
+        const dyFt = distFt * Math.sin(rad);
+        const pt = {
+          x: basePt.x + (dxFt / (u.upp_svg_x || avgUpp)),
+          y: basePt.y - (dyFt / (u.upp_svg_y || avgUpp))
+        };
+        return { type: 'point', pt, distFt, angleDeg };
+      }
+    }
+
+    // 2. Relative Cartesian: @50,20 or @-20,-10
+    const relCartMatch = raw.match(/^@([0-9.-]+)\s*,\s*([0-9.-]+)$/);
+    if (relCartMatch) {
+      const dxFt = parseFloat(relCartMatch[1]);
+      const dyFt = parseFloat(relCartMatch[2]);
+      if (!isNaN(dxFt) && !isNaN(dyFt) && basePt) {
+        const pt = {
+          x: basePt.x + (dxFt / (u.upp_svg_x || avgUpp)),
+          y: basePt.y - (dyFt / (u.upp_svg_y || avgUpp))
+        };
+        const distFt = Math.hypot(dxFt, dyFt);
+        return { type: 'point', pt, distFt };
+      }
+    }
+
+    // 3. Absolute Coordinate: 1200,850
+    const absMatch = raw.match(/^([0-9.-]+)\s*,\s*([0-9.-]+)$/);
+    if (absMatch) {
+      const ax = parseFloat(absMatch[1]);
+      const ay = parseFloat(absMatch[2]);
+      if (!isNaN(ax) && !isNaN(ay)) {
+        return { type: 'point', pt: { x: ax, y: ay } };
+      }
+    }
+
+    // 4. Direct Distance Entry along cursor angle:
+    // Formats: 120, 120.5, 120', 120'6", 120-6, 100L, 100 links, 1.5C, 2 chains
+    let distFeet = null;
+    
+    // Gunter's Chain Links: e.g. 100L, 50 links, 120 lk
+    const linkMatch = raw.match(/^([0-9.]+)\s*(?:l|link|links|lk)$/i);
+    if (linkMatch) {
+      distFeet = parseFloat(linkMatch[1]) * FEET_PER_LINK; // 1 link = 0.66 ft
+    }
+
+    // Gunter's Chains: e.g. 1.5C, 2 chains, 1ch
+    const chainMatch = raw.match(/^([0-9.]+)\s*(?:c|ch|chain|chains)$/i);
+    if (!linkMatch && chainMatch) {
+      distFeet = parseFloat(chainMatch[1]) * 66.0; // 1 chain = 66 ft
+    }
+
+    // Feet and inches: 120'6", 120'-6", 120-6
+    const ftInMatch = raw.match(/^([0-9.]+)(?:'|-)\s*([0-9.]+)(?:"|'')?$/);
+    if (!linkMatch && !chainMatch && ftInMatch) {
+      distFeet = parseFloat(ftInMatch[1]) + parseFloat(ftInMatch[2]) / 12.0;
+    }
+
+    // Single number with feet / inches or bare number: 120, 120', 120ft
+    const bareMatch = raw.match(/^([0-9.]+)\s*(?:'|ft)?$/i);
+    if (!linkMatch && !chainMatch && !ftInMatch && bareMatch) {
+      distFeet = parseFloat(bareMatch[1]);
+    }
+
+    if (distFeet !== null && !isNaN(distFeet) && distFeet > 0 && basePt) {
+      const curPt = currentCursorPt || state.currentCursorPt || { x: basePt.x + 100, y: basePt.y };
+      let vx = curPt.x - basePt.x;
+      let vy = curPt.y - basePt.y;
+
+      if (state.orthoEnabled) {
+        if (Math.abs(vx) >= Math.abs(vy)) {
+          vy = 0;
+        } else {
+          vx = 0;
+        }
+      }
+
+      const len = Math.hypot(vx, vy);
+      const ux = len > 0.0001 ? (vx / len) : 1;
+      const uy = len > 0.0001 ? (vy / len) : 0;
+
+      const pxDist = distFeet / avgUpp;
+      const pt = {
+        x: basePt.x + ux * pxDist,
+        y: basePt.y + uy * pxDist
+      };
+      const angleDeg = Math.round((Math.atan2(-uy, ux) * 180 / Math.PI + 360) % 360);
+      return { type: 'distance', pt, distFt: distFeet, angleDeg };
+    }
+
+    return null;
+  }
+
+  // =========================================================================
   // AUTOCAD DISTANCE FORMATTING & SEGMENT MATH
   // =========================================================================
   function formatDistanceFeetInches(distFeet) {
@@ -3491,37 +3837,233 @@
       return true;
     }
 
-    // 2. If a CAD dimension is selected
-    const selectedDim = document.querySelector('.cad-dim-elem.selected') || state.selectedDim;
-    if (selectedDim) {
-      selectedDim.remove();
-      state.selectedDim = null;
-      pushUndo('Delete Dimension');
-      logCommand('ERASE: Dimension deleted.');
-      return true;
-    }
+    let deletedCount = 0;
 
-    // 3. If any user-drawn object in userDrawingsGroup is selected
-    const selectedDrawn = document.querySelector('#userDrawingsGroup .selected');
-    if (selectedDrawn) {
-      const dag = selectedDrawn.getAttribute('data-dag');
-      if (dag) {
-        deleteSelectedPlot(dag);
-      } else {
-        selectedDrawn.remove();
-        pushUndo('Delete Drawing');
-        logCommand('ERASE: Selected drawing object deleted.');
+    // 2. If multi-selection exists for plots
+    if (state.selectedDags && state.selectedDags.length > 0) {
+      const dagsToDelete = [...state.selectedDags];
+      for (const d of dagsToDelete) {
+        deleteSelectedPlot(d);
+        deletedCount++;
       }
-      return true;
+      state.selectedDags = [];
+      state.selectedDag = null;
+    } else if (state.selectedDag) {
+      deleteSelectedPlot(state.selectedDag);
+      deletedCount++;
+      state.selectedDag = null;
     }
 
-    // 4. If a plot is currently selected
-    if (state.selectedDag) {
-      deleteSelectedPlot(state.selectedDag);
+    // 3. If selected drawing elements exist
+    if (state.selectedDrawingElements && state.selectedDrawingElements.length > 0) {
+      state.selectedDrawingElements.forEach(el => {
+        el.remove();
+        deletedCount++;
+      });
+      state.selectedDrawingElements = [];
+    }
+
+    // 4. Any remaining selected objects in DOM
+    document.querySelectorAll('#userDrawingsGroup .selected, .cad-dim-elem.selected, .cad-text-elem.selected').forEach(el => {
+      el.remove();
+      deletedCount++;
+    });
+
+    if (deletedCount > 0) {
+      clearSelectedPlotInfo();
+      pushUndo(`Delete ${deletedCount} Object(s)`);
+      logCommand(`ERASE: ${deletedCount} object(s) deleted.`);
       return true;
     }
 
     return false;
+  }
+
+  function explodeSelectedPlot() {
+    const dags = (state.selectedDags && state.selectedDags.length > 0) ? state.selectedDags : (state.selectedDag ? [state.selectedDag] : []);
+    if (dags.length === 0) {
+      logCommand('EXPLODE: No plot selected. Select a closed parcel to explode.');
+      return;
+    }
+
+    const drawingsGroup = document.getElementById('userDrawingsGroup');
+    if (!drawingsGroup) return;
+
+    let totalExploded = 0;
+    let segCount = 0;
+
+    dags.forEach(dag => {
+      const pData = state.plots[dag];
+      if (pData && pData.vertices && pData.vertices.length >= 3) {
+        const verts = pData.vertices;
+        const n = verts.length;
+        const u = getUnitsPerPixel();
+
+        for (let i = 0; i < n; i++) {
+          const p1 = verts[i];
+          const p2 = verts[(i + 1) % n];
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', p1.x.toFixed(1));
+          line.setAttribute('y1', p1.y.toFixed(1));
+          line.setAttribute('x2', p2.x.toFixed(1));
+          line.setAttribute('y2', p2.y.toFixed(1));
+          line.setAttribute('stroke', '#38bdf8');
+          line.setAttribute('stroke-width', '2');
+          line.setAttribute('vector-effect', 'non-scaling-stroke');
+          line.setAttribute('class', 'user-drawn-line');
+          line.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+          drawingsGroup.appendChild(line);
+
+          const distFt = Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
+          const lineInfo = {
+            id: `Line (${p1.x.toFixed(0)},${p1.y.toFixed(0)})`,
+            mouza: pData.mouza || 'Chorbagh',
+            sheet: pData.sheet || '01 (CS)',
+            area: 'N/A (Linear)',
+            decimal: 'N/A',
+            kathaBigha: '—',
+            length: `${distFt.toFixed(2)} ft (${(distFt / FEET_PER_LINK).toFixed(1)} Links)`,
+            type: 'Exploded Line Segment',
+            layer: 'Plot Boundary'
+          };
+          line.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (e.shiftKey) {
+              line.classList.toggle('selected');
+            } else {
+              document.querySelectorAll('.cad-dim-elem.selected, .cad-text-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected, .user-drawn-line.selected').forEach(el => el.classList.remove('selected'));
+              line.classList.add('selected');
+              inspectGeometricObject(lineInfo);
+            }
+          });
+          segCount++;
+        }
+
+        deleteSelectedPlot(dag);
+        totalExploded++;
+      }
+    });
+
+    state.selectedDags = [];
+    state.selectedDag = null;
+    clearSelectedPlotInfo();
+    pushUndo(`Explode ${totalExploded} Plot(s)`);
+    logCommand(`EXPLODE: ${totalExploded} plot(s) exploded into ${segCount} individual line segments.`);
+  }
+
+  function joinSelectedLines() {
+    const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line:not(#drawingGuideLine):not(#offsetEdgeHighlight)'));
+    const selectedLines = userLines.filter(l => l.classList.contains('selected'));
+    const linesToProcess = selectedLines.length >= 3 ? selectedLines : userLines;
+
+    if (linesToProcess.length < 3) {
+      logCommand('JOIN: Select at least 3 connected line segments to join into a closed boundary.');
+      return;
+    }
+
+    const segments = linesToProcess.map(l => ({
+      el: l,
+      p1: { x: parseFloat(l.getAttribute('x1')), y: parseFloat(l.getAttribute('y1')) },
+      p2: { x: parseFloat(l.getAttribute('x2')), y: parseFloat(l.getAttribute('y2')) }
+    })).filter(s => !isNaN(s.p1.x) && !isNaN(s.p1.y) && !isNaN(s.p2.x) && !isNaN(s.p2.y));
+
+    if (segments.length < 3) {
+      logCommand('JOIN: Valid line segments count is less than 3.');
+      return;
+    }
+
+    const s2w = getScreenPixelToWorld();
+    const tol = 12 * s2w;
+    const used = new Set();
+    const ordered = [];
+
+    ordered.push(segments[0].p1, segments[0].p2);
+    used.add(0);
+    const consumedEls = [segments[0].el];
+
+    while (used.size < segments.length) {
+      const currentEnd = ordered[ordered.length - 1];
+      let foundIdx = -1;
+      let reverse = false;
+
+      for (let i = 0; i < segments.length; i++) {
+        if (used.has(i)) continue;
+        const seg = segments[i];
+        if (Math.hypot(seg.p1.x - currentEnd.x, seg.p1.y - currentEnd.y) <= tol) {
+          foundIdx = i;
+          reverse = false;
+          break;
+        } else if (Math.hypot(seg.p2.x - currentEnd.x, seg.p2.y - currentEnd.y) <= tol) {
+          foundIdx = i;
+          reverse = true;
+          break;
+        }
+      }
+
+      if (foundIdx !== -1) {
+        used.add(foundIdx);
+        consumedEls.push(segments[foundIdx].el);
+        const seg = segments[foundIdx];
+        ordered.push(reverse ? seg.p1 : seg.p2);
+      } else {
+        break;
+      }
+    }
+
+    const startPt = ordered[0];
+    const endPt = ordered[ordered.length - 1];
+    const isClosed = Math.hypot(startPt.x - endPt.x, startPt.y - endPt.y) <= tol;
+
+    if (ordered.length >= 4 && isClosed) {
+      ordered.pop();
+      consumedEls.forEach(el => el.remove());
+
+      const newDag = String(state.nextDagNumber++);
+      const m = recalculatePlotMetrics(ordered);
+      state.plots[newDag] = {
+        mouza: 'Chorbagh',
+        sheet: '01 (CS)',
+        dag: newDag,
+        vertices: ordered,
+        areaSqFt: m.areaSqFt,
+        areaDecimal: m.areaDecimal,
+        katha: m.katha,
+        bigha: m.bigha,
+        acre: m.acre,
+        perimeter: m.perimeter,
+        owners: '1 Person',
+        dims: { top: '', bottom: '', left: '', right: '' },
+        ownerList: [{ name: '1. Registered Plot Owner', share: `${m.areaDecimal.toFixed(2)} Decimal` }]
+      };
+
+      renderParcelPolygon(ordered, newDag, m.areaSqFt, m.areaDecimal, m.perimeter, false);
+      selectPlot(newDag);
+      pushUndo(`Join Lines to Plot ${newDag}`);
+      logCommand(`JOIN: ${consumedEls.length} line segments joined into Plot ${newDag} (Area = ${m.areaSqFt.toFixed(2)} sq.ft, ${m.areaDecimal.toFixed(2)} Decimal).`);
+    } else {
+      logCommand(`JOIN: Lines connected (${ordered.length} vertices), but endpoints do not form a closed loop.`);
+    }
+  }
+
+  let filletState = {
+    firstLine: null
+  };
+
+  function startFillet(radius = 0) {
+    state.filletRadius = radius;
+    filletState.firstLine = null;
+    setActiveTool('fillet');
+    logCommand(`FILLET: Radius = ${radius} ft. Select first line or edge:`);
+  }
+
+  function getInfiniteLineIntersection(p1, p2, p3, p4) {
+    const denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (Math.abs(denom) < 1e-6) return null;
+    const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    return {
+      x: p1.x + t * (p2.x - p1.x),
+      y: p1.y + t * (p2.y - p1.y)
+    };
   }
 
   // =========================================================================
@@ -4503,6 +5045,127 @@
     const isSnapValid = Boolean(state.snappedPoint && state.snappedPoint.x !== undefined && (Math.hypot(pt.x - state.snappedPoint.x, pt.y - state.snappedPoint.y) <= snapThresh * 1.5));
     const clickPt = isSnapValid ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : (state.orthoEnabled && state.orthoTargetPt ? { ...state.orthoTargetPt } : pt);
 
+    // 0.15 Zoom Window Tool (Z W)
+    if (state.activeTool === 'zoom_window' || (state.zoomWindowState && state.zoomWindowState.active)) {
+      if (!state.zoomWindowState.p1) {
+        state.zoomWindowState.p1 = clickPt;
+        logCommand(`ZOOM: Corner 1 specified at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Click opposite corner:`);
+      } else {
+        const p1 = state.zoomWindowState.p1;
+        const p2 = clickPt;
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        const boxW = Math.max(10, maxX - minX);
+        const boxH = Math.max(10, maxY - minY);
+        const svg = document.getElementById('cadSvgCanvas');
+        const aspect = svg && svg.clientWidth ? (svg.clientHeight / svg.clientWidth) : 0.65;
+        let finalW = boxW;
+        let finalH = boxH;
+        if (boxH / boxW > aspect) finalW = boxH / aspect; else finalH = boxW * aspect;
+
+        viewport.previous = { x: viewport.x, y: viewport.y, width: viewport.width, height: viewport.height };
+        viewport.x = (minX + maxX) / 2 - finalW / 2;
+        viewport.y = (minY + maxY) / 2 - finalH / 2;
+        viewport.width = finalW;
+        viewport.height = finalH;
+        updateViewBox();
+
+        state.zoomWindowState.active = false;
+        state.zoomWindowState.p1 = null;
+        setActiveTool('select');
+        logCommand('ZOOM: Window applied.');
+      }
+      return;
+    }
+
+    // 0.16 ID Point Tool
+    if (state.activeTool === 'id_point') {
+      const u = getUnitsPerPixel();
+      const xFt = clickPt.x * u.upp_svg_x;
+      const yFt = clickPt.y * u.upp_svg_y;
+      const xLinks = xFt / FEET_PER_LINK;
+      const yLinks = yFt / FEET_PER_LINK;
+      logCommand(`ID: Point Coordinates:`);
+      logCommand(`    X = ${xFt.toFixed(2)} ft (${xLinks.toFixed(1)} Links),  Y = ${yFt.toFixed(2)} ft (${yLinks.toFixed(1)} Links)`);
+      logCommand(`    SVG = (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)})`);
+      setActiveTool('select');
+      return;
+    }
+
+    // 0.17 Fillet Tool (F)
+    if (state.activeTool === 'fillet') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 24 * s2w;
+      const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line:not(#drawingGuideLine):not(#offsetEdgeHighlight)'));
+      let hitLine = null;
+      let minD = clickTol;
+
+      for (const l of userLines) {
+        const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+        const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) continue;
+        const d = distToSegment(clickPt, { x: x1, y: y1 }, { x: x2, y: y2 });
+        if (d < minD) {
+          minD = d;
+          hitLine = { el: l, p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 } };
+        }
+      }
+
+      if (!filletState.firstLine) {
+        if (hitLine) {
+          filletState.firstLine = hitLine;
+          hitLine.el.setAttribute('stroke', '#facc15');
+          logCommand('FILLET: First line selected. Click second line to fillet:');
+        } else {
+          logCommand('FILLET: Click directly on the first line:');
+        }
+        return;
+      } else {
+        if (!hitLine || hitLine.el === filletState.firstLine.el) {
+          logCommand('FILLET: Click a different second line:');
+          return;
+        }
+
+        const l1 = filletState.firstLine;
+        const l2 = hitLine;
+        l1.el.setAttribute('stroke', '#38bdf8');
+        filletState.firstLine = null;
+
+        const inter = getInfiniteLineIntersection(l1.p1, l1.p2, l2.p1, l2.p2);
+        if (!inter) {
+          logCommand('FILLET: Selected lines are parallel and do not intersect.');
+          return;
+        }
+
+        const d1_p1 = Math.hypot(l1.p1.x - inter.x, l1.p1.y - inter.y);
+        const d1_p2 = Math.hypot(l1.p2.x - inter.x, l1.p2.y - inter.y);
+        if (d1_p1 < d1_p2) {
+          l1.el.setAttribute('x1', inter.x.toFixed(1));
+          l1.el.setAttribute('y1', inter.y.toFixed(1));
+        } else {
+          l1.el.setAttribute('x2', inter.x.toFixed(1));
+          l1.el.setAttribute('y2', inter.y.toFixed(1));
+        }
+
+        const d2_p1 = Math.hypot(l2.p1.x - inter.x, l2.p1.y - inter.y);
+        const d2_p2 = Math.hypot(l2.p2.x - inter.x, l2.p2.y - inter.y);
+        if (d2_p1 < d2_p2) {
+          l2.el.setAttribute('x1', inter.x.toFixed(1));
+          l2.el.setAttribute('y1', inter.y.toFixed(1));
+        } else {
+          l2.el.setAttribute('x2', inter.x.toFixed(1));
+          l2.el.setAttribute('y2', inter.y.toFixed(1));
+        }
+
+        pushUndo('Fillet Lines');
+        logCommand(`FILLET: Lines joined at intersection (${inter.x.toFixed(1)}, ${inter.y.toFixed(1)}).`);
+        setActiveTool('select');
+        return;
+      }
+    }
+
     // 0.2 Straight Line Tool (L / LINE)
     if (state.activeTool === 'line') {
       if (!state.lineStartPoint) {
@@ -4842,7 +5505,28 @@
 
       if (hitPlot) {
         const dag = hitPlot.getAttribute('data-dag');
-        if (dag) selectPlot(dag);
+        if (dag) {
+          if (e.shiftKey) {
+            const dagStr = String(dag);
+            if (state.selectedDags.includes(dagStr)) {
+              const idx = state.selectedDags.indexOf(dagStr);
+              if (idx !== -1) state.selectedDags.splice(idx, 1);
+              hitPlot.classList.remove('selected');
+            } else {
+              state.selectedDags.push(dagStr);
+              hitPlot.classList.add('selected');
+            }
+            if (state.selectedDags.length === 1) {
+              selectPlot(state.selectedDags[0]);
+            } else if (state.selectedDags.length > 1) {
+              updateMultiSelectionSidebar();
+            } else {
+              clearAllSelections();
+            }
+          } else {
+            selectPlot(dag);
+          }
+        }
         return;
       } else if (hitDim) {
         document.querySelectorAll('.cad-dim-elem.selected').forEach(el => el.classList.remove('selected'));
@@ -4851,13 +5535,26 @@
         logCommand('DIMENSION: Selected dimension. Press Delete to remove.');
         return;
       } else if (hitOther) {
-        document.querySelectorAll('#userDrawingsGroup .selected').forEach(el => el.classList.remove('selected'));
-        hitOther.classList.add('selected');
+        if (e.shiftKey) {
+          hitOther.classList.toggle('selected');
+          if (hitOther.classList.contains('selected')) {
+            if (!state.selectedDrawingElements.includes(hitOther)) state.selectedDrawingElements.push(hitOther);
+          } else {
+            const idx = state.selectedDrawingElements.indexOf(hitOther);
+            if (idx !== -1) state.selectedDrawingElements.splice(idx, 1);
+          }
+        } else {
+          document.querySelectorAll('#userDrawingsGroup .selected').forEach(el => el.classList.remove('selected'));
+          hitOther.classList.add('selected');
+          state.selectedDrawingElements = [hitOther];
+        }
         return;
       }
 
       // Clicked on empty space -> deselect all
-      clearSelectedPlotInfo();
+      if (!e.shiftKey) {
+        clearAllSelections();
+      }
       return;
     }
 
@@ -4902,6 +5599,22 @@
         const p2 = state.dimensionPoints[1];
         createAlignedDimension(p1, p2);
         state.dimensionPoints = [];
+
+        const u = getUnitsPerPixel();
+        const dxFt = (p2.x - p1.x) * u.upp_svg_x;
+        const dyFt = -(p2.y - p1.y) * u.upp_svg_y; // Standard CAD North (+Y)
+        const distFt = Math.hypot(dxFt, dyFt);
+        const distLinks = distFt / FEET_PER_LINK;
+        const distChains = distLinks / 100;
+        const angleDeg = (Math.atan2(dyFt, dxFt) * 180 / Math.PI + 360) % 360;
+        const deg = Math.floor(angleDeg);
+        const min = Math.floor((angleDeg - deg) * 60);
+        const sec = ((angleDeg - deg) * 60 - min) * 60;
+        const dms = `${deg}° ${min}' ${sec.toFixed(1)}"`;
+
+        logCommand(`DIST: Distance = ${formatDistanceFeetInches(distFt)} (${distFt.toFixed(2)} ft = ${distLinks.toFixed(1)} Links = ${distChains.toFixed(3)} Chains)`);
+        logCommand(`      Angle in XY Plane = ${dms} (${angleDeg.toFixed(1)}°)`);
+        logCommand(`      Delta X = ${dxFt.toFixed(2)} ft, Delta Y = ${dyFt.toFixed(2)} ft`);
       }
       return;
     }
@@ -6880,60 +7593,314 @@ const ribbonTemplates = {
   }
 
   function handleCommandInput(cmdRaw) {
-    const cmd = cmdRaw.trim().toUpperCase();
-    if (!cmd) return;
+    const raw = (cmdRaw || '').trim();
+    if (!raw) return;
+    const cmd = raw.toUpperCase();
 
     logCommand(`Command: ${cmd}`);
+
+    // Check if drawing is actively underway and user entered direct distance, relative coordinate, or sub-options (Close/Undo)
+    const isDrawingTool = (state.activeTool === 'line' || state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline');
+    if (isDrawingTool) {
+      if (cmd === 'C' || cmd === 'CLOSE') {
+        if (state.activeTool === 'line') {
+          state.lineStartPoint = null;
+          logCommand('LINE: Finished line.');
+          return;
+        } else {
+          finishPolyline();
+          return;
+        }
+      }
+      if (cmd === 'U' || cmd === 'UNDO') {
+        undoLastDrawingPoint();
+        return;
+      }
+
+      const basePt = (state.activeTool === 'line') ? state.lineStartPoint : (state.drawingPoints.length > 0 ? state.drawingPoints[state.drawingPoints.length - 1] : null);
+      if (basePt) {
+        const parsed = parseCadDistanceOrCoordinate(raw, basePt, state.currentCursorPt);
+        if (parsed) {
+          if (state.activeTool === 'line') {
+            const p1 = basePt;
+            const p2 = parsed.pt;
+            const drawingsGroup = document.getElementById('userDrawingsGroup');
+            if (drawingsGroup) {
+              const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+              line.setAttribute('x1', p1.x.toFixed(1));
+              line.setAttribute('y1', p1.y.toFixed(1));
+              line.setAttribute('x2', p2.x.toFixed(1));
+              line.setAttribute('y2', p2.y.toFixed(1));
+              line.setAttribute('stroke', '#38bdf8');
+              line.setAttribute('stroke-width', '2');
+              line.setAttribute('vector-effect', 'non-scaling-stroke');
+              line.setAttribute('class', 'user-drawn-line');
+              line.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+              drawingsGroup.appendChild(line);
+
+              const u = getUnitsPerPixel();
+              const distFt = parsed.distFt || Math.hypot((p2.x - p1.x) * u.upp_svg_x, (p2.y - p1.y) * u.upp_svg_y);
+              pushUndo('Draw Line (DDE)');
+              logCommand(`LINE: Length = ${formatDistanceFeetInches(distFt)} (${distFt.toFixed(2)} ft). Specify next point or [Close/Undo]:`);
+            }
+            state.lineStartPoint = { x: p2.x, y: p2.y };
+            return;
+          } else {
+            state.drawingPoints.push(parsed.pt);
+            updateDrawingOverlay();
+            const u = getUnitsPerPixel();
+            const distFt = parsed.distFt || Math.hypot((parsed.pt.x - basePt.x) * u.upp_svg_x, (parsed.pt.y - basePt.y) * u.upp_svg_y);
+            logCommand(`PLINE: Point ${state.drawingPoints.length} added (${formatDistanceFeetInches(distFt)} = ${distFt.toFixed(2)} ft). Specify next point or [Close/Undo]:`);
+            return;
+          }
+        }
+      }
+    }
+
+    // Check if Circle tool is active and user entered radius
+    if (state.activeTool === 'circle' && state.circleCenterPoint) {
+      const bareRadius = parseFloat(raw);
+      if (!isNaN(bareRadius) && bareRadius > 0) {
+        const cp = state.circleCenterPoint;
+        const u = getUnitsPerPixel();
+        const avgUpp = (u.upp_svg_x + u.upp_svg_y) / 2;
+        const rPx = bareRadius / avgUpp;
+
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          c.setAttribute('cx', cp.x.toFixed(1));
+          c.setAttribute('cy', cp.y.toFixed(1));
+          c.setAttribute('r', rPx.toFixed(1));
+          c.setAttribute('stroke', '#38bdf8');
+          c.setAttribute('stroke-width', '2');
+          c.setAttribute('fill', 'rgba(56, 189, 248, 0.15)');
+          c.setAttribute('vector-effect', 'non-scaling-stroke');
+          drawingsGroup.appendChild(c);
+          pushUndo(`Draw Circle (R=${bareRadius}ft)`);
+          logCommand(`CIRCLE: Circle created at (${cp.x.toFixed(1)}, ${cp.y.toFixed(1)}) with Radius = ${formatDistanceFeetInches(bareRadius)}.`);
+        }
+        state.circleCenterPoint = null;
+        document.getElementById('drawingPreviewCircle')?.classList.add('hidden');
+        document.getElementById('drawingGuideLine')?.classList.add('hidden');
+        document.getElementById('toolGuidanceBanner')?.classList.add('hidden');
+        setActiveTool('select');
+        return;
+      }
+    }
+
+    // Check if Offset tool is awaiting distance
+    if (state.activeTool === 'offset' && !isNaN(parseFloat(raw))) {
+      state.offsetDistFt = parseFloat(raw);
+      logCommand(`OFFSET: Distance set to ${state.offsetDistFt} ft. Click line or boundary to offset:`);
+      return;
+    }
+
+    // Check if Fillet tool is awaiting radius
+    if (state.activeTool === 'fillet' && (cmd.startsWith('R') || !isNaN(parseFloat(raw)))) {
+      const partsF = cmd.split(' ');
+      const rVal = parseFloat(partsF[1] || partsF[0].replace('R', '') || raw);
+      if (!isNaN(rVal)) {
+        startFillet(rVal);
+        return;
+      }
+    }
 
     const parts = cmd.split(' ');
     const mainCmd = parts[0];
 
+    // Store last repeatable command
+    if (!['U', 'UNDO', 'REDO', 'HELP'].includes(mainCmd)) {
+      state.lastCommand = raw;
+    }
+
     switch(mainCmd) {
       case 'AREA':
       case 'AA':
-        if (state.selectedDag && state.plots[state.selectedDag]) {
-          const d = state.plots[state.selectedDag];
-          logCommand(`Select closed polyline: 1 found (Dag ${d.dag})`);
-          logCommand(`Area = ${d.areaSqFt.toFixed(3)} sq.ft  (${d.areaDecimal.toFixed(2)} Decimal)`);
-          logCommand(`Perimeter = ${d.perimeter.toFixed(3)} ft`);
+        const targetDags = (state.selectedDags && state.selectedDags.length > 0) ? state.selectedDags : (state.selectedDag ? [state.selectedDag] : []);
+        if (targetDags.length > 0) {
+          let totalSqFt = 0;
+          let totalPerimeter = 0;
+
+          logCommand('----------------------------------------------------');
+          logCommand(`AREA (AutoCAD Cadastral Standard — ${targetDags.length} Selected):`);
+
+          targetDags.forEach(dag => {
+            const d = state.plots[dag];
+            if (d) {
+              totalSqFt += Number(d.areaSqFt || 0);
+              totalPerimeter += Number(d.perimeter || 0);
+              const dec = Number(d.areaDecimal || 0);
+              const katha = Number(d.katha || (d.areaSqFt / SQFT_PER_KATHA));
+              const bigha = Number(d.bigha || (d.areaSqFt / SQFT_PER_BIGHA));
+              const acre = Number(d.acre || (d.areaSqFt / SQFT_PER_ACRE));
+              const sqLinks = d.areaSqFt / 0.4356;
+              const periLinks = d.perimeter / FEET_PER_LINK;
+
+              logCommand(`Plot / Dag ${d.dag}:`);
+              logCommand(`  • Area      = ${d.areaSqFt.toFixed(3)} sq.ft (${dec.toFixed(3)} Decimal / শতক)`);
+              logCommand(`                ${katha.toFixed(3)} Katha | ${bigha.toFixed(3)} Bigha | ${acre.toFixed(4)} Acre`);
+              logCommand(`                ${sqLinks.toFixed(1)} Sq.Links (বর্গ লিঙ্ক)`);
+              logCommand(`  • Perimeter = ${formatDistanceFeetInches(d.perimeter)} (${d.perimeter.toFixed(2)} ft = ${periLinks.toFixed(1)} Links)`);
+            }
+          });
+
+          if (targetDags.length > 1) {
+            const totDec = totalSqFt / SQFT_PER_DECIMAL;
+            const totKatha = totalSqFt / SQFT_PER_KATHA;
+            const totBigha = totalSqFt / SQFT_PER_BIGHA;
+            const totLinks = totalSqFt / 0.4356;
+            logCommand('----------------------------------------------------');
+            logCommand(`TOTAL COMBINED AREA:`);
+            logCommand(`  • Area      = ${totalSqFt.toFixed(3)} sq.ft (${totDec.toFixed(3)} Decimal / শতক)`);
+            logCommand(`                ${totKatha.toFixed(3)} Katha | ${totBigha.toFixed(3)} Bigha`);
+            logCommand(`                ${totLinks.toFixed(1)} Sq.Links (বর্গ লিঙ্ক)`);
+          }
+          logCommand('----------------------------------------------------');
         } else {
-          logCommand(`Specify first corner point or [Object]:`);
+          setActiveTool('polyline');
+          logCommand(`AREA: Specify first corner point or select an existing parcel [Esc to cancel]:`);
         }
         break;
+
       case 'DIST':
       case 'DI':
         setActiveTool('dimension');
-        logCommand(`Specify first point for distance measurement:`);
+        logCommand(`DIST: Specify first point for distance measurement:`);
         break;
+
+      case 'ID':
+        setActiveTool('id_point');
+        logCommand(`ID: Specify point on canvas to read coordinates:`);
+        break;
+
+      case 'LIST':
+      case 'LI':
+        const listDags = (state.selectedDags && state.selectedDags.length > 0) ? state.selectedDags : (state.selectedDag ? [state.selectedDag] : []);
+        if (listDags.length > 0) {
+          listDags.forEach(dag => {
+            const d = state.plots[dag];
+            if (d) {
+              logCommand(`---------------- LIST: Plot ${d.dag} ----------------`);
+              logCommand(`Type: Closed Polyline Parcel  |  Layer: Plot_Boundary`);
+              logCommand(`Area: ${d.areaSqFt.toFixed(2)} sq.ft (${d.areaDecimal.toFixed(2)} Decimal)`);
+              logCommand(`Perimeter: ${d.perimeter.toFixed(2)} ft (${(d.perimeter / FEET_PER_LINK).toFixed(1)} Links)`);
+              if (d.vertices) {
+                logCommand(`Vertices (${d.vertices.length}):`);
+                d.vertices.forEach((v, idx) => {
+                  logCommand(`  [${idx + 1}] X = ${v.x.toFixed(1)}, Y = ${v.y.toFixed(1)}`);
+                });
+              }
+            }
+          });
+        } else {
+          logCommand('LIST: No object selected. Select an object to list its properties.');
+        }
+        break;
+
       case 'PL':
       case 'POLYLINE':
+      case 'PLINE':
         setActiveTool('polyline');
-        logCommand(`PLINE: Click canvas to start drawing polyline (Enter to finish):`);
+        logCommand(`PLINE: Click canvas to specify start point [Enter to close]:`);
         break;
-      case 'C':
-      case 'CIRCLE':
-        setActiveTool('circle');
-        logCommand(`CIRCLE: Click canvas to place circle:`);
-        break;
-      case 'REC':
-      case 'RECTANGLE':
-        setActiveTool('rectangle');
-        logCommand(`RECTANG: Click canvas to place rectangle:`);
-        break;
-      case 'G':
-      case 'GUNIYA':
-        toggleVirtualGuniya();
-        break;
-      case 'CAL':
-      case 'CALIBRATE':
-      case 'ALIGN':
-        startScaleBarCalibration();
-        break;
+
       case 'L':
       case 'LINE':
         setActiveTool('line');
-        logCommand(`LINE: Click canvas to specify first point:`);
+        logCommand(`LINE: Click canvas to specify start point:`);
         break;
+
+      case 'C':
+      case 'CIRCLE':
+        setActiveTool('circle');
+        logCommand(`CIRCLE: Click canvas to specify center point:`);
+        break;
+
+      case 'REC':
+      case 'RECTANG':
+      case 'RECTANGLE':
+        setActiveTool('rectangle');
+        logCommand(`RECTANG: Click canvas to specify first corner:`);
+        break;
+
+      case 'A':
+      case 'ARC':
+        setActiveTool('polyline');
+        logCommand(`ARC: Select polyline drafting:`);
+        break;
+
+      case 'ZOOM':
+      case 'Z':
+        const subZ = parts[1] ? parts[1].toUpperCase() : '';
+        if (subZ === 'E' || subZ === 'EXTENTS') {
+          zoomExtents();
+        } else if (subZ === 'W' || subZ === 'WINDOW') {
+          startZoomWindow();
+        } else if (subZ === 'A' || subZ === 'ALL') {
+          zoomExtents();
+        } else if (subZ === 'P' || subZ === 'PREVIOUS') {
+          zoomPrevious();
+        } else if (subZ === 'C' || subZ === 'CENTER') {
+          zoomCenter(1.0);
+        } else if (subZ.endsWith('X')) {
+          const factor = parseFloat(subZ);
+          if (!isNaN(factor) && factor > 0) {
+            zoomCenter(1 / factor);
+          } else {
+            zoomExtents();
+          }
+        } else if (!isNaN(parseFloat(subZ)) && parseFloat(subZ) > 0) {
+          zoomCenter(1 / parseFloat(subZ));
+        } else {
+          logCommand(`ZOOM [All/Center/Extents/Previous/Window] <Extents>: Type 'Z E' for Extents, 'Z W' for Window, 'Z P' for Prev`);
+        }
+        break;
+
+      case 'P':
+      case 'PAN':
+        setActiveTool('pan');
+        logCommand(`PAN: Drag canvas to pan. Press Enter or Esc to exit.`);
+        break;
+
+      case 'E':
+      case 'ERASE':
+      case 'DEL':
+      case 'DELETE':
+        if (!deleteSelectedObject()) {
+          setActiveTool('select');
+          logCommand(`ERASE: Select objects to erase:`);
+        }
+        break;
+
+      case 'X':
+      case 'EXPLODE':
+        explodeSelectedPlot();
+        break;
+
+      case 'J':
+      case 'JOIN':
+        joinSelectedLines();
+        break;
+
+      case 'F':
+      case 'FILLET':
+        if (parts[1] === 'R' && parts[2]) {
+          startFillet(parseFloat(parts[2]) || 0);
+        } else if (parts[1] && !isNaN(parseFloat(parts[1]))) {
+          startFillet(parseFloat(parts[1]) || 0);
+        } else {
+          startFillet(state.filletRadius || 0);
+        }
+        break;
+
+      case 'BO':
+      case 'BPOLY':
+      case 'BOUNDARY':
+        setActiveTool('magic_wand');
+        logCommand(`BOUNDARY: Click internal point inside parcel to detect boundary:`);
+        break;
+
       case 'O':
       case 'OFFSET':
         if (parts[1]) {
@@ -6943,27 +7910,33 @@ const ribbonTemplates = {
           applyOffsetToSelectedPlot(state.offsetDistFt || 10);
         } else {
           setActiveTool('offset');
-          logCommand(`OFFSET: Specify offset distance <${state.offsetDistFt || 10} ft> or select edge to offset:`);
+          logCommand(`OFFSET: Specify offset distance <${state.offsetDistFt || 10} ft> or click edge to offset:`);
         }
         break;
+
       case 'TR':
       case 'TRIM':
         setActiveTool('trim');
-        logCommand(`TRIM: Click line segment to trim at intersection:`);
+        logCommand(`TRIM: Click line segment to trim at intersection [Esc to finish]:`);
         break;
+
       case 'EX':
       case 'EXTEND':
         setActiveTool('extend');
-        logCommand(`EXTEND: Click line near endpoint to extend to boundary:`);
+        logCommand(`EXTEND: Click line near endpoint to extend to boundary [Esc to finish]:`);
         break;
+
       case 'MI':
       case 'MIRROR':
         applyMirrorToSelectedPlot();
         break;
+
       case 'CO':
+      case 'CP':
       case 'COPY':
         applyCopyToSelectedPlot();
         break;
+
       case 'M':
       case 'MOVE':
         if (parts[1] && parts[2]) {
@@ -6973,6 +7946,7 @@ const ribbonTemplates = {
           logCommand(`MOVE: Drag to move drawings or select object:`);
         }
         break;
+
       case 'RO':
       case 'ROTATE':
         if (parts[1]) {
@@ -6981,32 +7955,31 @@ const ribbonTemplates = {
           applyRotateToSelectedPlot(45);
         }
         break;
+
+      case 'MA':
+      case 'MATCHPROP':
+        logCommand(`MATCHPROP: Select source object:`);
+        break;
+
       case 'ORTHO':
         toggleOrthoMode();
         break;
+
       case 'OSNAP':
         toggleOsnapMode();
         break;
-      case 'PARTITION':
-      case 'SPLIT':
-      case 'BATOARA':
-        drawPartitionOnCanvas(parts[1] || state.selectedDag || '126');
+
+      case 'G':
+      case 'GUNIYA':
+        toggleVirtualGuniya();
         break;
-      case 'U':
-      case 'UNDO':
-        if (undoLastDrawingPoint()) {
-          break;
-        }
-        undo();
+
+      case 'CAL':
+      case 'CALIBRATE':
+      case 'ALIGN':
+        startScaleBarCalibration();
         break;
-      case 'REDO':
-        redo();
-        break;
-      case 'E':
-      case 'ERASE':
-      case 'CLEAR':
-        clearUserDrawings();
-        break;
+
       case 'SCALE':
       case 'SC':
         if (parts[1]) {
@@ -7015,13 +7988,40 @@ const ribbonTemplates = {
           openModal('modalScaleCalculator');
         }
         break;
-      case 'ZOOM':
-      case 'Z':
-        logCommand(`ZOOM [All/Center/Dynamic/Extents/Window] <100%>`);
+
+      case 'PARTITION':
+      case 'SPLIT':
+      case 'BATOARA':
+        drawPartitionOnCanvas(parts[1] || state.selectedDag || '126');
         break;
+
+      case 'U':
+      case 'UNDO':
+        if (!undoLastDrawingPoint()) {
+          undo();
+        }
+        break;
+
+      case 'REDO':
+        redo();
+        break;
+
+      case 'RE':
+      case 'REGEN':
+        updateViewBox();
+        logCommand('REGEN: Regenerating drawing... Done.');
+        break;
+
+      case 'CLEAR':
+      case 'PURGE':
+        clearUserDrawings();
+        break;
+
       case 'HELP':
+      case '?':
         openModal('modalHelpShortcuts');
         break;
+
       default:
         logCommand(`Unknown command "${cmd}". Type HELP for available commands.`);
     }
@@ -8287,17 +9287,38 @@ const ribbonTemplates = {
     // 11. Command Line Input
     const cmdInput = document.getElementById('cmdInput');
     if (cmdInput) {
+      cmdInput.addEventListener('input', () => {
+        updateDynInputBadge(cmdInput.value);
+      });
       cmdInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          handleCommandInput(cmdInput.value);
+        if (e.key === 'Enter' || (e.code === 'Space' && !state.isSpacePressed)) {
+          e.preventDefault();
+          const val = cmdInput.value.trim();
           cmdInput.value = '';
+          updateDynInputBadge('');
+          if (val) {
+            handleCommandInput(val);
+          } else {
+            // Empty Enter / Space in AutoCAD
+            if (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline') {
+              finishPolyline();
+            } else if (state.activeTool === 'line') {
+              state.lineStartPoint = null;
+              logCommand('LINE: Finished drawing line.');
+            } else if (state.lastCommand) {
+              logCommand(`Repeat: ${state.lastCommand}`);
+              handleCommandInput(state.lastCommand);
+            }
+          }
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          cmdInput.value = '';
+          updateDynInputBadge('');
+          cmdInput.blur();
           if (undoLastDrawingPoint()) {
             return;
           }
           cancelActiveToolAndCommand();
-          cmdInput.blur();
         }
       });
     }
@@ -9146,76 +10167,28 @@ const ribbonTemplates = {
       });
     }
 
-    // Keyboard Shortcuts
+    // Keyboard Shortcuts & AutoCAD Heads-Up Canvas Typing Engine
     window.addEventListener('keydown', (e) => {
-      // Press L to quickly toggle plot badges / dimension labels on or off
-      if (e.code === 'KeyL' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
-        e.preventDefault();
-        togglePlotLabels();
-        logCommand(`LABELS: Plot badges ${state.showPlotLabels ? 'shown' : 'hidden'} (Hotkey L).`);
-      }
+      const inOtherInput = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) && e.target.id !== 'cmdInput';
+      if (inOtherInput) return;
 
-      // 1. Global Undo / Redo Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z, Cmd+Z)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-        const inOtherInput = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && e.target.id !== 'cmdInput';
-        if (!inOtherInput) {
-          e.preventDefault();
-          if (e.shiftKey) {
-            redo();
-          } else {
-            // If actively drawing polyline or line, undo last vertex first
-            if (undoLastDrawingPoint()) {
-              return;
-            }
-            undo();
-          }
-          return;
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
-        const inOtherInput = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && e.target.id !== 'cmdInput';
-        if (!inOtherInput) {
-          e.preventDefault();
-          redo();
-          return;
-        }
-      }
+      const hasOpenModal = !!document.querySelector('.cad-modal-backdrop.show');
+      if (hasOpenModal) return;
 
-      // 2. Global File Shortcuts (Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+N, Ctrl+P, Ctrl+I)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        if (e.shiftKey) {
-          saveProjectAs();
-        } else {
-          saveCurrentProject();
-        }
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) {
-        e.preventDefault();
-        openModal('modalOpenProject');
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
-        e.preventDefault();
-        openModal('modalNewProject');
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
-        e.preventDefault();
-        exportPDFReport();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) {
-        e.preventDefault();
-        openModal('modalMouzaImport');
-        return;
-      }
+      const cmdInput = document.getElementById('cmdInput');
 
-      // ESCAPE KEY: In AutoCAD, if drawing a polyline/line, Esc removes the last point!
+      // 1. ESCAPE KEY (AutoCAD Cancel Hierarchy)
       if (e.key === 'Escape') {
         e.preventDefault();
         hideGripMenu();
+
+        if (cmdInput && cmdInput.value) {
+          cmdInput.value = '';
+          updateDynInputBadge('');
+          cmdInput.blur();
+          logCommand('*Cancel*');
+          return;
+        }
 
         if (vertexDragState.isDragging) {
           const dag = vertexDragState.dag;
@@ -9239,14 +10212,13 @@ const ribbonTemplates = {
           return;
         }
 
-        const openModalEl = document.querySelector('.cad-modal-backdrop.show');
-        if (openModalEl) {
-          openModalEl.classList.remove('show');
+        if (undoLastDrawingPoint()) {
           return;
         }
 
-        // AutoCAD System: Undo last placed point while drawing
-        if (undoLastDrawingPoint()) {
+        if ((state.selectedDags && state.selectedDags.length > 0) || state.selectedDag || (state.selectedDrawingElements && state.selectedDrawingElements.length > 0)) {
+          clearAllSelections();
+          logCommand('SELECT: Deselected all objects.');
           return;
         }
 
@@ -9254,8 +10226,83 @@ const ribbonTemplates = {
         return;
       }
 
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      // 2. ENTER / SPACE KEY (AutoCAD Execute & Repeat Last Command)
+      if (e.key === 'Enter' || (e.code === 'Space' && !state.isSpacePressed)) {
+        if (cmdInput && cmdInput.value.trim().length > 0) {
+          e.preventDefault();
+          const val = cmdInput.value.trim();
+          cmdInput.value = '';
+          updateDynInputBadge('');
+          handleCommandInput(val);
+          return;
+        } else if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
+          e.preventDefault();
+          finishPolyline();
+          return;
+        } else if (e.key === 'Enter' && state.activeTool === 'line') {
+          e.preventDefault();
+          state.lineStartPoint = null;
+          logCommand('LINE: Finished drawing line.');
+          return;
+        } else if ((e.key === 'Enter' || e.code === 'Space') && (!state.activeTool || state.activeTool === 'select') && state.lastCommand) {
+          e.preventDefault();
+          logCommand(`Repeat: ${state.lastCommand}`);
+          handleCommandInput(state.lastCommand);
+          return;
+        }
+      }
 
+      // 3. Global Shortcuts with Ctrl / Meta
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            if (undoLastDrawingPoint()) return;
+            undo();
+          }
+          return;
+        }
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          if (e.shiftKey) saveProjectAs(); else saveCurrentProject();
+          return;
+        }
+        if (e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          selectAllObjects();
+          return;
+        }
+        if (e.key === 'o' || e.key === 'O') {
+          e.preventDefault();
+          openModal('modalOpenProject');
+          return;
+        }
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          openModal('modalNewProject');
+          return;
+        }
+        if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          exportPDFReport();
+          return;
+        }
+        if (e.key === 'i' || e.key === 'I') {
+          e.preventDefault();
+          openModal('modalMouzaImport');
+          return;
+        }
+        return;
+      }
+
+      // 4. Function Keys
       if (e.key === 'F8' || e.code === 'F8') {
         e.preventDefault();
         toggleOrthoMode();
@@ -9266,13 +10313,27 @@ const ribbonTemplates = {
         toggleOsnapMode();
         return;
       }
+      if (e.key === 'F1') {
+        e.preventDefault();
+        openModal('modalHelpShortcuts');
+        return;
+      }
 
-      if (e.key === 'Enter' && (state.activeTool === 'polyline' || state.activeTool === 'polygon' || state.activeTool === 'autopolyline')) {
-        finishPolyline();
-      } else if (e.key === 'Enter' && state.activeTool === 'line') {
-        state.lineStartPoint = null;
-        logCommand('LINE: Finished drawing line.');
-      } else if (state.selectedDag && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      // 5. Delete / Backspace Keys
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        deleteSelectedObject();
+        return;
+      }
+      if (e.key === 'Backspace' && document.activeElement !== cmdInput) {
+        if (undoLastDrawingPoint()) {
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // 6. Arrow Keys (Nudge selected objects)
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && (state.selectedDag || (state.selectedDags && state.selectedDags.length > 0))) {
         e.preventDefault();
         const step = e.shiftKey ? 5 : 1;
         let dx = 0, dy = 0;
@@ -9280,27 +10341,23 @@ const ribbonTemplates = {
         if (e.key === 'ArrowRight') dx = step;
         if (e.key === 'ArrowUp') dy = -step;
         if (e.key === 'ArrowDown') dy = step;
-        nudgeSelectedPlot(state.selectedDag, dx, dy);
+        nudgeSelectedPlots(dx, dy);
         return;
-      } else if (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'u' || e.key === 'U') {
-        if (e.key === 'u' || e.key === 'U') {
-          if (undoLastDrawingPoint()) {
-            e.preventDefault();
-            return;
-          }
-        } else {
+      }
+
+      // 7. DIRECT HEADS-UP CANVAS TYPING (AutoCAD Standard)
+      // Any alphanumeric or coordinate character automatically routes into #cmdInput and DYN HUD
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.code !== 'Space') {
+        if (cmdInput && document.activeElement !== cmdInput) {
+          cmdInput.focus();
+          cmdInput.value += e.key;
           e.preventDefault();
-          deleteSelectedObject();
+          updateDynInputBadge(cmdInput.value);
+        } else if (cmdInput && document.activeElement === cmdInput) {
+          setTimeout(() => {
+            updateDynInputBadge(cmdInput.value);
+          }, 0);
         }
-      } else if (e.key === 'g' || e.key === 'G') {
-        toggleVirtualGuniya();
-      } else if (e.key === 'l' || e.key === 'L') {
-        togglePlotLabels();
-      } else if (e.key === ' ') {
-        setActiveTool('select');
-      } else if (e.key === 'F1') {
-        e.preventDefault();
-        openModal('modalHelpShortcuts');
       }
     });
 
@@ -9554,6 +10611,9 @@ const ribbonTemplates = {
             return false;
           };
 
+          const foundDags = [];
+          const foundElements = [];
+
           for (const [dag, pData] of Object.entries(state.plots)) {
             const verts = pData.vertices;
             if (!verts || verts.length === 0) continue;
@@ -9561,14 +10621,13 @@ const ribbonTemplates = {
             if (isWindowSelection) {
               // Blue Window Selection: all vertices must be strictly inside the box
               if (verts.every(v => ptInBox(v))) {
-                foundDag = dag;
-                break;
+                foundDags.push(dag);
               }
             } else {
               // Green Crossing Selection: any vertex inside or edge intersects
               if (verts.some(v => ptInBox(v))) {
-                foundDag = dag;
-                break;
+                foundDags.push(dag);
+                continue;
               }
               let edgeHits = false;
               for (let i = 0; i < verts.length; i++) {
@@ -9579,15 +10638,34 @@ const ribbonTemplates = {
                 }
               }
               if (edgeHits) {
-                foundDag = dag;
-                break;
+                foundDags.push(dag);
               }
             }
           }
 
-          if (foundDag) {
-            selectPlot(foundDag);
-            logCommand(`SELECT: ${isWindowSelection ? 'Window (Blue)' : 'Crossing (Green)'} selection selected Plot ${foundDag}.`);
+          // Also check user drawn lines and elements
+          document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line:not(#drawingGuideLine):not(#offsetEdgeHighlight)').forEach(line => {
+            const x1 = parseFloat(line.getAttribute('x1')), y1 = parseFloat(line.getAttribute('y1'));
+            const x2 = parseFloat(line.getAttribute('x2')), y2 = parseFloat(line.getAttribute('y2'));
+            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+              const pA = { x: x1, y: y1 }, pB = { x: x2, y: y2 };
+              if (isWindowSelection) {
+                if (ptInBox(pA) && ptInBox(pB)) {
+                  foundElements.push(line);
+                }
+              } else {
+                if (segIntersectsBox(pA, pB)) {
+                  foundElements.push(line);
+                }
+              }
+            }
+          });
+
+          if (foundDags.length > 0 || foundElements.length > 0) {
+            selectPlotsAndElements(foundDags, foundElements, e.shiftKey);
+            logCommand(`SELECT: ${isWindowSelection ? 'Window (Blue)' : 'Crossing (Green)'} selection: ${foundDags.length + foundElements.length} object(s) selected.`);
+          } else if (!e.shiftKey) {
+            clearAllSelections();
           }
         }
       }
@@ -9947,12 +11025,27 @@ const ribbonTemplates = {
     toggleGrid,
     zoomCenter,
     zoomExtents,
-    updateViewBox
+    zoomPrevious,
+    startZoomWindow,
+    updateViewBox,
+    handleCommandInput,
+    explodeSelectedPlot,
+    joinSelectedLines,
+    selectAllObjects,
+    clearAllSelections,
+    selectPlotsAndElements
   };
 
   // Global top-level convenience aliases
   window.zoomCenter = zoomCenter;
   window.zoomExtents = zoomExtents;
+  window.zoomPrevious = zoomPrevious;
+  window.startZoomWindow = startZoomWindow;
+  window.handleCommandInput = handleCommandInput;
+  window.explodeSelectedPlot = explodeSelectedPlot;
+  window.joinSelectedLines = joinSelectedLines;
+  window.selectAllObjects = selectAllObjects;
+  window.clearAllSelections = clearAllSelections;
   window.toggleVirtualGuniya = toggleVirtualGuniya;
   window.saveCurrentProject = saveCurrentProject;
   window.saveProjectAs = saveProjectAs;

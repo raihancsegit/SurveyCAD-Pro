@@ -969,6 +969,27 @@ polygon.user-polyline-boundary:hover {
   gap: 4px;
 }
 
+.dyn-input {
+  background: #090d16;
+  color: #facc15;
+  border: 1.5px solid #eab308;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.9);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.5px;
+}
+
+.dyn-input::before {
+  content: '▶';
+  font-size: 9px;
+  color: #38bdf8;
+}
+
 /* AutoCAD Canvas Inline Text Editor (MTEXT) */
 .cad-inline-text-box {
   position: absolute;
