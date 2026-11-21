@@ -101,6 +101,12 @@
     offsetDistFt: 10,
     offsetSelectedEdge: null,
     orthoTargetPt: null,
+    arcState: { step: 0, p1: null, p2: null },
+    alignState: { active: false, step: 0, s1: null, d1: null, s2: null, d2: null, targetDag: null },
+    matchPropState: { active: false, sourceStyle: null },
+    divideState: { active: false, targetEdge: null, mode: 'divide', count: null, interval: null },
+    breakState: { active: false, targetLine: null },
+    chamferDist: 10,
     guniya: {
       enabled: false,
       x: 340,
@@ -1071,8 +1077,348 @@
     if (banner) banner.classList.add('hidden');
   }
 
+  
+  // =========================================================================
+  // AutoCAD Cursor Modes & 3-Point Arc / Partition Engine
+  // =========================================================================
+  
+  function scaleSelectedPlotOrDrawings(factor, basePt = null) {
+    if (!factor || factor <= 0) return;
+    const targetDag = state.selectedDag;
+    if (targetDag && state.plots[targetDag] && state.plots[targetDag].vertices) {
+      const pData = state.plots[targetDag];
+      const verts = pData.vertices;
+      let cx = 0, cy = 0;
+      if (basePt) {
+        cx = basePt.x; cy = basePt.y;
+      } else {
+        verts.forEach(v => { cx += v.x; cy += v.y; });
+        cx /= verts.length; cy /= verts.length;
+      }
+      pData.vertices = verts.map(v => ({
+        x: cx + (v.x - cx) * factor,
+        y: cy + (v.y - cy) * factor
+      }));
+      const metrics = recalculatePlotMetrics(pData.vertices);
+      Object.assign(pData, metrics);
+      const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"].magic-wand-detected`);
+      renderParcelPolygon(pData.vertices, targetDag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+      selectPlot(targetDag);
+      pushUndo(`Scale Plot ${targetDag} (${factor.toFixed(3)}x)`);
+      logCommand(`SCALE: Plot ${targetDag} scaled by factor ${factor.toFixed(3)}x. Area = ${metrics.areaSqFt.toFixed(2)} sq.ft (${metrics.areaDecimal.toFixed(2)} Decimal).`);
+    } else {
+      const userLines = document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line');
+      if (userLines.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        userLines.forEach(l => {
+          const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+          const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+          if (!isNaN(x1)) {
+            minX = Math.min(minX, x1, x2);
+            minY = Math.min(minY, y1, y2);
+            maxX = Math.max(maxX, x1, x2);
+            maxY = Math.max(maxY, y1, y2);
+          }
+        });
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        userLines.forEach(l => {
+          const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+          const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+          if (!isNaN(x1)) {
+            l.setAttribute('x1', (cx + (x1 - cx) * factor).toFixed(1));
+            l.setAttribute('y1', (cy + (y1 - cy) * factor).toFixed(1));
+            l.setAttribute('x2', (cx + (x2 - cx) * factor).toFixed(1));
+            l.setAttribute('y2', (cy + (y2 - cy) * factor).toFixed(1));
+          }
+        });
+        pushUndo(`Scale User Drawings (${factor.toFixed(3)}x)`);
+        logCommand(`SCALE: User drawings scaled by factor ${factor.toFixed(3)}x.`);
+      } else {
+        openModal('modalScaleCalculator');
+      }
+    }
+  }
+
+  function updateCrosshairMode() {
+    const crosshair = document.getElementById('crosshairCursor');
+    if (!crosshair) return;
+    crosshair.classList.remove('mode-idle', 'mode-draw', 'mode-select');
+
+    const drawTools = ['line', 'polyline', 'polygon', 'autopolyline', 'arc', 'circle', 'rectangle', 'dimension', 'id_point'];
+    const selectTools = ['erase', 'trim', 'extend', 'move', 'copy', 'rotate', 'mirror', 'offset', 'fillet', 'chamfer', 'align', 'divide', 'measure', 'matchprop', 'break'];
+
+    if (drawTools.includes(state.activeTool)) {
+      crosshair.classList.add('mode-draw');
+    } else if (selectTools.includes(state.activeTool) || state.matchPropState?.active || state.alignState?.active || state.divideState?.active || state.breakState?.active) {
+      crosshair.classList.add('mode-select');
+    } else {
+      crosshair.classList.add('mode-idle');
+    }
+  }
+
+  function compute3PointArc(p1, p2, p3) {
+    const d = 2 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
+    if (Math.abs(d) < 1e-5) {
+      const chord = Math.hypot(p3.x - p1.x, p3.y - p1.y);
+      return {
+        isCollinear: true,
+        cx: (p1.x + p3.x) / 2,
+        cy: (p1.y + p3.y) / 2,
+        r: chord / 2,
+        pathD: `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)}`,
+        largeArcFlag: 0,
+        sweepFlag: 1,
+        includedAngle: Math.PI,
+        arcLength: chord,
+        chordLength: chord
+      };
+    }
+
+    const p1Sq = p1.x * p1.x + p1.y * p1.y;
+    const p2Sq = p2.x * p2.x + p2.y * p2.y;
+    const p3Sq = p3.x * p3.x + p3.y * p3.y;
+
+    const cx = (p1Sq * (p2.y - p3.y) + p2Sq * (p3.y - p1.y) + p3Sq * (p1.y - p2.y)) / d;
+    const cy = (p1Sq * (p3.x - p2.x) + p2Sq * (p1.x - p3.x) + p3Sq * (p2.x - p1.x)) / d;
+    const r = Math.hypot(p1.x - cx, p1.y - cy);
+
+    const norm = a => (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    const n1 = norm(Math.atan2(p1.y - cy, p1.x - cx));
+    const n2 = norm(Math.atan2(p2.y - cy, p2.x - cx));
+    const n3 = norm(Math.atan2(p3.y - cy, p3.x - cx));
+
+    const sweepAngleCCW = (n3 - n1 + 2 * Math.PI) % (2 * Math.PI);
+    const midAngleCCW = (n2 - n1 + 2 * Math.PI) % (2 * Math.PI);
+
+    let sweepFlag = 0;
+    let includedAngle = 0;
+    if (midAngleCCW > 0 && midAngleCCW < sweepAngleCCW) {
+      sweepFlag = 1;
+      includedAngle = sweepAngleCCW;
+    } else {
+      sweepFlag = 0;
+      includedAngle = (2 * Math.PI - sweepAngleCCW) % (2 * Math.PI);
+    }
+
+    const largeArcFlag = includedAngle > Math.PI ? 1 : 0;
+    const pathD = `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 ${largeArcFlag} ${sweepFlag} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)}`;
+    const arcLength = r * includedAngle;
+    const chordLength = Math.hypot(p3.x - p1.x, p3.y - p1.y);
+
+    return {
+      isCollinear: false,
+      cx,
+      cy,
+      r,
+      pathD,
+      largeArcFlag,
+      sweepFlag,
+      includedAngle,
+      arcLength,
+      chordLength
+    };
+  }
+
+  function startDivideTool(countParam = null) {
+    state.activeTool = 'divide';
+    state.divideState = { active: true, targetEdge: null, mode: 'divide', count: countParam ? parseInt(countParam, 10) : null, interval: null };
+    updateCrosshairMode();
+    logCommand('DIVIDE: Select line or boundary edge to divide into equal segments:');
+  }
+
+  function startMeasureTool(intervalParam = null) {
+    state.activeTool = 'measure';
+    state.divideState = { active: true, targetEdge: null, mode: 'measure', count: null, interval: intervalParam ? parseFloat(intervalParam) : null };
+    updateCrosshairMode();
+    logCommand('MEASURE: Select line or boundary edge to measure by fixed distance:');
+  }
+
+  function startAlignTool() {
+    state.activeTool = 'align';
+    state.alignState = { active: true, step: 1, s1: null, d1: null, s2: null, d2: null, targetDag: state.selectedDag };
+    updateCrosshairMode();
+    logCommand('ALIGN: Specify first source point:');
+  }
+
+  function startMatchPropTool() {
+    state.activeTool = 'matchprop';
+    state.matchPropState = { active: true, sourceStyle: null };
+    updateCrosshairMode();
+    logCommand('MATCHPROP: Select source object to copy properties:');
+  }
+
+  function startBreakTool() {
+    state.activeTool = 'break';
+    state.breakState = { active: true, targetLine: null };
+    updateCrosshairMode();
+    logCommand('BREAK: Select line or boundary to break at point:');
+  }
+
+  function startChamferTool(dist = 10) {
+    state.activeTool = 'chamfer';
+    state.chamferDist = dist;
+    updateCrosshairMode();
+    logCommand(`CHAMFER: Distance set to ${dist} ft. Select first line to chamfer:`);
+  }
+
+  function toggleSnapMode() {
+    state.snapEnabled = !state.snapEnabled;
+    const btn = document.getElementById('btnToggleSnap');
+    if (btn) btn.classList.toggle('active', state.snapEnabled);
+    logCommand(state.snapEnabled ? '<Snap on (F9)>' : '<Snap off (F9)>');
+  }
+
+  function togglePolarMode() {
+    state.polarEnabled = !state.polarEnabled;
+    const btn = document.getElementById('btnTogglePolar');
+    if (btn) btn.classList.toggle('active', state.polarEnabled);
+    logCommand(state.polarEnabled ? '<Polar tracking on (F10)>' : '<Polar tracking off (F10)>');
+  }
+
+  function toggleOtrackMode() {
+    state.otrackEnabled = !state.otrackEnabled;
+    const btn = document.getElementById('btnToggleOtrack');
+    if (btn) btn.classList.toggle('active', state.otrackEnabled);
+    logCommand(state.otrackEnabled ? '<Object Snap Tracking on (F11)>' : '<Object Snap Tracking off (F11)>');
+  }
+
+  function toggleDynMode() {
+    state.dynEnabled = !state.dynEnabled;
+    const btn = document.getElementById('btnToggleDyn');
+    if (btn) btn.classList.toggle('active', state.dynEnabled);
+    const hud = document.getElementById('cadDynamicInput');
+    if (hud && !state.dynEnabled) hud.classList.add('hidden');
+    logCommand(state.dynEnabled ? '<Dynamic Input on (F12)>' : '<Dynamic Input off (F12)>');
+  }
+
+  const AUTOCAD_COMMANDS = [
+    { cmd: 'LINE', alias: 'L', desc: 'Draw 2D straight line segments' },
+    { cmd: 'PLINE', alias: 'PL', desc: 'Draw 2D polyline boundary' },
+    { cmd: 'ARC', alias: 'A', desc: 'Draw 3-point circular curve' },
+    { cmd: 'CIRCLE', alias: 'C', desc: 'Draw center-radius circle' },
+    { cmd: 'RECTANG', alias: 'REC', desc: 'Draw rectangular parcel' },
+    { cmd: 'DIST', alias: 'DI', desc: 'Measure distance, bearing & links' },
+    { cmd: 'AREA', alias: 'AA', desc: 'Calculate area (Decimal, Katha, Bigha, Links)' },
+    { cmd: 'OFFSET', alias: 'O', desc: 'Offset parallel boundary setback' },
+    { cmd: 'TRIM', alias: 'TR', desc: 'Trim line at cutting intersection' },
+    { cmd: 'EXTEND', alias: 'EX', desc: 'Extend line to boundary edge' },
+    { cmd: 'FILLET', alias: 'F', desc: 'Fillet / join corner lines' },
+    { cmd: 'CHAMFER', alias: 'CHA', desc: 'Chamfer / bevel corner lines' },
+    { cmd: 'ALIGN', alias: 'AL', desc: '2-point coordinate align with scale' },
+    { cmd: 'DIVIDE', alias: 'DIV', desc: 'Divide line into N equal segments' },
+    { cmd: 'MEASURE', alias: 'ME', desc: 'Place markers at fixed length intervals' },
+    { cmd: 'MATCHPROP', alias: 'MA', desc: 'Match properties from source object' },
+    { cmd: 'BREAK', alias: 'BR', desc: 'Break line at picked point' },
+    { cmd: 'MOVE', alias: 'M', desc: 'Move selected objects' },
+    { cmd: 'COPY', alias: 'CO', desc: 'Copy selected objects' },
+    { cmd: 'ROTATE', alias: 'RO', desc: 'Rotate selected objects by angle' },
+    { cmd: 'MIRROR', alias: 'MI', desc: 'Mirror objects across axis' },
+    { cmd: 'SCALE', alias: 'SC', desc: 'Scale by factor or reference length' },
+    { cmd: 'ZOOM', alias: 'Z', desc: 'Zoom Extents (Z E), Window (Z W), Prev (Z P)' },
+    { cmd: 'PAN', alias: 'P', desc: 'Pan canvas workspace' },
+    { cmd: 'ERASE', alias: 'E', desc: 'Erase selected objects' },
+    { cmd: 'EXPLODE', alias: 'X', desc: 'Explode plot into individual lines' },
+    { cmd: 'JOIN', alias: 'J', desc: 'Join lines into closed boundary' },
+    { cmd: 'BOUNDARY', alias: 'BO', desc: 'Detect closed boundary parcel' },
+    { cmd: 'GUNIYA', alias: 'G', desc: 'Toggle virtual Guniya scale (16"/64"/80")' },
+    { cmd: 'ID', alias: 'ID', desc: 'Read BTM / WGS84 point coordinates' },
+    { cmd: 'LIST', alias: 'LI', desc: 'List geometric properties & vertices' },
+    { cmd: 'ORTHO', alias: 'ORTHO', desc: 'Toggle Orthogonal drafting (F8)' },
+    { cmd: 'OSNAP', alias: 'OSNAP', desc: 'Toggle Object Snap mode (F3)' },
+    { cmd: 'DYN', alias: 'DYN', desc: 'Toggle Dynamic Input HUD (F12)' },
+    { cmd: 'GRID', alias: 'GRID', desc: 'Toggle CAD background grid (F7)' },
+    { cmd: 'POLAR', alias: 'POLAR', desc: 'Toggle Polar tracking (F10)' },
+    { cmd: 'SNAP', alias: 'SNAP', desc: 'Toggle Grid Snap (F9)' },
+    { cmd: 'PURGE', alias: 'CLEAR', desc: 'Clear all user drawings' },
+    { cmd: 'REGEN', alias: 'RE', desc: 'Regenerate view and coordinates' },
+    { cmd: 'HELP', alias: '?', desc: 'AutoCAD shortcuts & command manual' }
+  ];
+
+  let currentAutocompleteIndex = -1;
+
+  function setupCmdAutocomplete() {
+    const cmdInput = document.getElementById('cmdInput');
+    const popup = document.getElementById('cmdAutocompleteList');
+    if (!cmdInput || !popup) return;
+
+    cmdInput.addEventListener('input', () => {
+      const val = cmdInput.value.trim().toUpperCase();
+      if (!val) {
+        popup.classList.add('hidden');
+        popup.innerHTML = '';
+        currentAutocompleteIndex = -1;
+        return;
+      }
+
+      const matches = AUTOCAD_COMMANDS.filter(item => 
+        item.cmd.startsWith(val) || item.alias.startsWith(val) || item.cmd.includes(val)
+      ).slice(0, 7);
+
+      if (matches.length === 0) {
+        popup.classList.add('hidden');
+        popup.innerHTML = '';
+        currentAutocompleteIndex = -1;
+        return;
+      }
+
+      popup.innerHTML = matches.map((m, idx) => `
+        <div class="cmd-autocomplete-item ${idx === 0 ? 'active' : ''}" data-cmd="${m.cmd}">
+          <div>
+            <span class="cmd-name">${m.cmd}</span>
+            <span class="text-slate-400 font-mono text-[10px] ml-1">(${m.alias})</span>
+          </div>
+          <span class="cmd-desc">${m.desc}</span>
+        </div>
+      `).join('');
+
+      currentAutocompleteIndex = 0;
+      popup.classList.remove('hidden');
+
+      popup.querySelectorAll('.cmd-autocomplete-item').forEach((el, idx) => {
+        el.addEventListener('click', () => {
+          const c = el.getAttribute('data-cmd');
+          cmdInput.value = '';
+          popup.classList.add('hidden');
+          popup.innerHTML = '';
+          handleCommandInput(c);
+        });
+      });
+    });
+
+    cmdInput.addEventListener('keydown', (e) => {
+      if (popup.classList.contains('hidden')) return;
+      const items = popup.querySelectorAll('.cmd-autocomplete-item');
+      if (items.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        items[currentAutocompleteIndex]?.classList.remove('active');
+        currentAutocompleteIndex = (currentAutocompleteIndex + 1) % items.length;
+        items[currentAutocompleteIndex]?.classList.add('active');
+        items[currentAutocompleteIndex]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[currentAutocompleteIndex]?.classList.remove('active');
+        currentAutocompleteIndex = (currentAutocompleteIndex - 1 + items.length) % items.length;
+        items[currentAutocompleteIndex]?.classList.add('active');
+        items[currentAutocompleteIndex]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        const activeItem = items[currentAutocompleteIndex];
+        if (activeItem) {
+          const c = activeItem.getAttribute('data-cmd');
+          cmdInput.value = c;
+          popup.classList.add('hidden');
+          popup.innerHTML = '';
+        }
+      }
+    });
+  }
+
   function setActiveTool(toolName) {
     state.activeTool = toolName;
+    updateCrosshairMode();
 
     const ws = document.getElementById('cadWorkspace');
     if (ws) {
@@ -1122,6 +1468,13 @@
     state.isCalibratingScale = false;
     state.calibrationPoints = [];
     state.drawingPoints = [];
+    state.arcState = { step: 0, p1: null, p2: null };
+    state.alignState = { active: false, step: 0, s1: null, d1: null, s2: null, d2: null, targetDag: null };
+    state.matchPropState = { active: false, sourceStyle: null };
+    state.divideState = { active: false, targetEdge: null, mode: 'divide', count: null, interval: null };
+    state.breakState = { active: false, targetLine: null };
+    const pArc = document.getElementById('drawingPreviewArc');
+    if (pArc) pArc.classList.add('hidden');
     state.dimensionPoints = [];
     state.autoPolylinePoints = [];
     state.lineStartPoint = null;
@@ -5044,6 +5397,477 @@
     const snapThresh = 22 * s2w;
     const isSnapValid = Boolean(state.snappedPoint && state.snappedPoint.x !== undefined && (Math.hypot(pt.x - state.snappedPoint.x, pt.y - state.snappedPoint.y) <= snapThresh * 1.5));
     const clickPt = isSnapValid ? { x: state.snappedPoint.x, y: state.snappedPoint.y } : (state.orthoEnabled && state.orthoTargetPt ? { ...state.orthoTargetPt } : pt);
+    // 0.14 Authentic 3-Point ARC Tool (A / ARC)
+    if (state.activeTool === 'arc') {
+      if (!state.arcState || state.arcState.step === 0) {
+        state.arcState = { step: 1, p1: clickPt, p2: null };
+        logCommand(`ARC: Start point set at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify second point of arc:`);
+      } else if (state.arcState.step === 1) {
+        state.arcState.step = 2;
+        state.arcState.p2 = clickPt;
+        logCommand(`ARC: Second point set at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify end point of arc:`);
+      } else if (state.arcState.step === 2) {
+        const p1 = state.arcState.p1;
+        const p2 = state.arcState.p2;
+        const p3 = clickPt;
+        const arcData = compute3PointArc(p1, p2, p3);
+
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          pathEl.setAttribute('d', arcData.pathD);
+          pathEl.setAttribute('stroke', '#38bdf8');
+          pathEl.setAttribute('stroke-width', '2');
+          pathEl.setAttribute('fill', 'none');
+          pathEl.setAttribute('vector-effect', 'non-scaling-stroke');
+          pathEl.setAttribute('class', 'user-drawn-arc');
+          pathEl.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+
+          const u = getUnitsPerPixel();
+          const rFt = arcData.r * u.upp_svg_x;
+          const rLinks = rFt / FEET_PER_LINK;
+          const arcLenFt = arcData.arcLength * u.upp_svg_x;
+          const arcLenLinks = arcLenFt / FEET_PER_LINK;
+          const chordFt = arcData.chordLength * u.upp_svg_x;
+          const incDeg = (arcData.includedAngle * 180 / Math.PI).toFixed(1);
+
+          const arcInfo = {
+            id: `Arc (${p1.x.toFixed(0)},${p1.y.toFixed(0)})`,
+            mouza: 'Chorbagh (CAD Arc)',
+            sheet: '01 (CS)',
+            area: 'N/A (Curved Edge)',
+            decimal: 'N/A',
+            kathaBigha: '—',
+            length: `Arc Len = ${arcLenFt.toFixed(2)} ft (${arcLenLinks.toFixed(1)} Links), Chord = ${chordFt.toFixed(2)} ft`,
+            type: `3-Point Arc (R = ${rFt.toFixed(2)} ft, Angle = ${incDeg}°)`,
+            layer: 'Plot_Boundary'
+          };
+
+          pathEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.cad-dim-elem.selected, .cad-text-elem.selected, .mouza-plot.selected, .user-plot-boundary.selected, .user-drawn-line.selected, .user-drawn-arc.selected').forEach(el => el.classList.remove('selected'));
+            pathEl.classList.add('selected');
+            inspectGeometricObject(arcInfo);
+          });
+
+          drawingsGroup.appendChild(pathEl);
+          inspectGeometricObject(arcInfo);
+          pushUndo('Draw Arc (3-Point)');
+          logCommand(`ARC: 3-point Arc created! Radius = ${formatDistanceFeetInches(rFt)} (${rFt.toFixed(2)} ft = ${rLinks.toFixed(1)} Links), Arc Length = ${arcLenFt.toFixed(2)} ft, Chord = ${chordFt.toFixed(2)} ft, Angle = ${incDeg}°.`);
+        }
+
+        state.arcState = { step: 0, p1: null, p2: null };
+        document.getElementById('drawingPreviewArc')?.classList.add('hidden');
+        document.getElementById('drawingGuideLine')?.classList.add('hidden');
+        setActiveTool('select');
+      }
+      return;
+    }
+
+    // 0.18 Cadastral Partition DIVIDE & MEASURE Tools (DIV / ME)
+    if (state.activeTool === 'divide' || state.activeTool === 'measure') {
+      const isDivide = (state.activeTool === 'divide');
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 24 * s2w;
+
+      const candidateSegments = getAllBoundarySegments();
+      let bestSeg = null;
+      let minD = clickTol;
+
+      for (const seg of candidateSegments) {
+        const d = distToSegment(clickPt, seg.p1, seg.p2);
+        if (d < minD) {
+          minD = d;
+          bestSeg = seg;
+        }
+      }
+
+      if (!bestSeg) {
+        logCommand(`${isDivide ? 'DIVIDE' : 'MEASURE'}: No line or edge detected. Click directly on a line or parcel boundary.`);
+        return;
+      }
+
+      const p1 = bestSeg.p1;
+      const p2 = bestSeg.p2;
+      const u = getUnitsPerPixel();
+      const segLenPx = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const segLenFt = segLenPx * u.upp_svg_x;
+      const segLenLinks = segLenFt / FEET_PER_LINK;
+
+      const runPartition = (paramValue) => {
+        let count = 4;
+        let intervalFt = 0;
+
+        if (isDivide) {
+          count = parseInt(paramValue, 10) || 4;
+          if (count < 2) count = 2;
+          intervalFt = segLenFt / count;
+        } else {
+          intervalFt = parseFloat(paramValue) || 33;
+          if (intervalFt <= 0) intervalFt = 33;
+          count = Math.floor(segLenFt / intervalFt);
+        }
+
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (!drawingsGroup) return;
+
+        const gStations = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        gStations.setAttribute('class', 'user-drawn-stations cad-station-group');
+
+        logCommand('----------------------------------------------------');
+        logCommand(`${isDivide ? 'DIVIDE' : 'MEASURE'} (Cadastral Land Partition Summary):`);
+        logCommand(`  • Total Edge Length: ${segLenFt.toFixed(2)} ft (${segLenLinks.toFixed(1)} Links = ${(segLenLinks / 100).toFixed(3)} Chains)`);
+        logCommand(`  • Segment Length: ${intervalFt.toFixed(2)} ft (${(intervalFt / FEET_PER_LINK).toFixed(1)} Links)`);
+        logCommand(`  • Number of Divisions: ${count} parts`);
+
+        const vx = (p2.x - p1.x) / segLenPx;
+        const vy = (p2.y - p1.y) / segLenPx;
+        const intervalPx = intervalFt / u.upp_svg_x;
+
+        const pointsToPlace = isDivide ? (count - 1) : count;
+        for (let k = 1; k <= pointsToPlace; k++) {
+          const curDistPx = k * intervalPx;
+          if (curDistPx >= segLenPx - 0.5) break;
+
+          const sx = p1.x + vx * curDistPx;
+          const sy = p1.y + vy * curDistPx;
+          const distFromStart = k * intervalFt;
+          const distFromStartLinks = distFromStart / FEET_PER_LINK;
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', sx.toFixed(1));
+          circle.setAttribute('cy', sy.toFixed(1));
+          circle.setAttribute('r', (3.5 * s2w).toFixed(1));
+          circle.setAttribute('fill', '#38bdf8');
+          circle.setAttribute('stroke', '#ffffff');
+          circle.setAttribute('stroke-width', (1.2 * s2w).toFixed(1));
+          gStations.appendChild(circle);
+
+          const cross = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          const arm = 5.0 * s2w;
+          cross.setAttribute('d', `M${(sx - arm).toFixed(1)},${(sy - arm).toFixed(1)} L${(sx + arm).toFixed(1)},${(sy + arm).toFixed(1)} M${(sx - arm).toFixed(1)},${(sy + arm).toFixed(1)} L${(sx + arm).toFixed(1)},${(sy - arm).toFixed(1)}`);
+          cross.setAttribute('stroke', '#ffffff');
+          cross.setAttribute('stroke-width', (1.2 * s2w).toFixed(1));
+          gStations.appendChild(cross);
+
+          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          text.setAttribute('x', (sx + 7 * s2w).toFixed(1));
+          text.setAttribute('y', (sy - 5 * s2w).toFixed(1));
+          text.setAttribute('fill', '#e2e8f0');
+          text.setAttribute('font-size', (11 * s2w).toFixed(1));
+          text.setAttribute('font-family', 'monospace');
+          text.setAttribute('font-weight', 'bold');
+          text.textContent = `Stn ${k} (${distFromStart.toFixed(1)}')`;
+          gStations.appendChild(text);
+
+          logCommand(`    Station ${k}: X=${sx.toFixed(1)}, Y=${sy.toFixed(1)} | Distance=${distFromStart.toFixed(1)} ft (${distFromStartLinks.toFixed(1)} Links)`);
+        }
+
+        drawingsGroup.appendChild(gStations);
+        pushUndo(`${isDivide ? 'Divide' : 'Measure'} Boundary Edge`);
+        logCommand('----------------------------------------------------');
+        setActiveTool('select');
+      };
+
+      if (isDivide && state.divideState?.count) {
+        runPartition(state.divideState.count);
+      } else if (!isDivide && state.divideState?.interval) {
+        runPartition(state.divideState.interval);
+      } else {
+        showCadPrompt({
+          title: isDivide ? '📐 DIVIDE: Equal Plot Segments' : '📏 MEASURE: Fixed Distance Interval',
+          message: isDivide ? 'Enter number of segments (e.g. 4 for 4 equal parts):' : 'Enter segment distance in feet (or e.g. 20 links = 13.2 ft):',
+          defaultValue: isDivide ? '4' : '33'
+        }).then(val => {
+          if (!val) {
+            setActiveTool('select');
+            return;
+          }
+          runPartition(val);
+        });
+      }
+      return;
+    }
+
+    // 0.19 AutoCAD 2-Point ALIGN Tool (AL / ALIGN)
+    if (state.activeTool === 'align' || (state.alignState && state.alignState.active)) {
+      const al = state.alignState;
+      if (al.step === 1) {
+        al.s1 = clickPt;
+        al.step = 2;
+        logCommand(`ALIGN: 1st source point set at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify 1st destination point:`);
+      } else if (al.step === 2) {
+        al.d1 = clickPt;
+        al.step = 3;
+        logCommand(`ALIGN: 1st destination point set at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify 2nd source point:`);
+      } else if (al.step === 3) {
+        al.s2 = clickPt;
+        al.step = 4;
+        logCommand(`ALIGN: 2nd source point set at (${clickPt.x.toFixed(1)}, ${clickPt.y.toFixed(1)}). Specify 2nd destination point:`);
+      } else if (al.step === 4) {
+        al.d2 = clickPt;
+        const s1 = al.s1;
+        const d1 = al.d1;
+        const s2 = al.s2;
+        const d2 = al.d2;
+        const targetDag = al.targetDag || state.selectedDag;
+
+        showCadPrompt({
+          title: '🔄 ALIGN: Coordinate Alignment',
+          message: 'Scale objects based on alignment points? [Y/N]:',
+          defaultValue: 'N'
+        }).then(ans => {
+          const doScale = ans && ans.trim().toUpperCase().startsWith('Y');
+          const svx = s2.x - s1.x;
+          const svy = s2.y - s1.y;
+          const slen = Math.hypot(svx, svy);
+          const dvx = d2.x - d1.x;
+          const dvy = d2.y - d1.y;
+          const dlen = Math.hypot(dvx, dvy);
+
+          if (slen < 1 || dlen < 1) {
+            logCommand('ALIGN: Source or destination points too close. Canceled.');
+            al.active = false;
+            setActiveTool('select');
+            return;
+          }
+
+          const sAngle = Math.atan2(svy, svx);
+          const dAngle = Math.atan2(dvy, dvx);
+          const rotAngle = dAngle - sAngle;
+          const scale = (doScale && slen > 0) ? (dlen / slen) : 1.0;
+          const cos = Math.cos(rotAngle);
+          const sin = Math.sin(rotAngle);
+
+          const transformPt = (p) => {
+            const rx = p.x - s1.x;
+            const ry = p.y - s1.y;
+            return {
+              x: d1.x + scale * (rx * cos - ry * sin),
+              y: d1.y + scale * (rx * sin + ry * cos)
+            };
+          };
+
+          if (targetDag && state.plots[targetDag] && state.plots[targetDag].vertices) {
+            const pData = state.plots[targetDag];
+            pData.vertices = pData.vertices.map(v => transformPt(v));
+            const metrics = recalculatePlotMetrics(pData.vertices);
+            Object.assign(pData, metrics);
+            const isMW = !!document.querySelector(`.user-plot-boundary[data-dag="${targetDag}"].magic-wand-detected`);
+            renderParcelPolygon(pData.vertices, targetDag, metrics.areaSqFt, metrics.areaDecimal, metrics.perimeter, isMW);
+            selectPlot(targetDag);
+            pushUndo(`Align Plot ${targetDag}`);
+            logCommand(`ALIGN: Plot ${targetDag} aligned! Rotation = ${(rotAngle * 180 / Math.PI).toFixed(1)}°, Scale = ${scale.toFixed(4)}.`);
+          } else {
+            const userLines = document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line');
+            userLines.forEach(l => {
+              const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+              const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+              if (!isNaN(x1) && !isNaN(y1)) {
+                const np1 = transformPt({ x: x1, y: y1 });
+                const np2 = transformPt({ x: x2, y: y2 });
+                l.setAttribute('x1', np1.x.toFixed(1));
+                l.setAttribute('y1', np1.y.toFixed(1));
+                l.setAttribute('x2', np2.x.toFixed(1));
+                l.setAttribute('y2', np2.y.toFixed(1));
+              }
+            });
+            pushUndo('Align User Drawings');
+            logCommand(`ALIGN: User drawings aligned! Rotation = ${(rotAngle * 180 / Math.PI).toFixed(1)}°, Scale = ${scale.toFixed(4)}.`);
+          }
+
+          al.active = false;
+          setActiveTool('select');
+        });
+      }
+      return;
+    }
+
+    // 0.20 AutoCAD MATCHPROP Tool (MA)
+    if (state.activeTool === 'matchprop' || (state.matchPropState && state.matchPropState.active)) {
+      const mp = state.matchPropState;
+      if (!mp.sourceStyle) {
+        const hitTarget = e.target;
+        if (hitTarget && hitTarget.tagName) {
+          mp.sourceStyle = {
+            stroke: hitTarget.getAttribute('stroke') || '#38bdf8',
+            strokeWidth: hitTarget.getAttribute('stroke-width') || '2',
+            strokeDasharray: hitTarget.getAttribute('stroke-dasharray') || '',
+            fill: hitTarget.getAttribute('fill') || 'none'
+          };
+          logCommand(`MATCHPROP: Source properties captured (${mp.sourceStyle.stroke}, ${mp.sourceStyle.strokeWidth}px). Click destination objects [Esc to exit]:`);
+        }
+      } else {
+        const hitTarget = e.target;
+        if (hitTarget && hitTarget.tagName && hitTarget.id !== 'cadSvgCanvas' && hitTarget.id !== 'cadGridBackgroundRect') {
+          if (mp.sourceStyle.stroke) hitTarget.setAttribute('stroke', mp.sourceStyle.stroke);
+          if (mp.sourceStyle.strokeWidth) hitTarget.setAttribute('stroke-width', mp.sourceStyle.strokeWidth);
+          if (mp.sourceStyle.strokeDasharray) {
+            hitTarget.setAttribute('stroke-dasharray', mp.sourceStyle.strokeDasharray);
+          } else {
+            hitTarget.removeAttribute('stroke-dasharray');
+          }
+          if (mp.sourceStyle.fill && mp.sourceStyle.fill !== 'none') hitTarget.setAttribute('fill', mp.sourceStyle.fill);
+          pushUndo('Match Properties');
+          logCommand('MATCHPROP: Properties applied to object.');
+        }
+      }
+      return;
+    }
+
+    // 0.21 AutoCAD BREAK Tool (BR)
+    if (state.activeTool === 'break') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 24 * s2w;
+      const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line'));
+      let hitLine = null;
+      let minD = clickTol;
+
+      for (const l of userLines) {
+        if (l.id === 'drawingGuideLine' || l.id === 'offsetEdgeHighlight') continue;
+        const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+        const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) continue;
+        const d = distToSegment(clickPt, { x: x1, y: y1 }, { x: x2, y: y2 });
+        if (d < minD) {
+          minD = d;
+          hitLine = { el: l, p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 } };
+        }
+      }
+
+      if (!hitLine) {
+        logCommand('BREAK: Click directly on a line to break at point.');
+        return;
+      }
+
+      const p1 = hitLine.p1;
+      const p2 = hitLine.p2;
+      const brPt = clickPt;
+
+      hitLine.el.remove();
+      const drawingsGroup = document.getElementById('userDrawingsGroup');
+      if (drawingsGroup) {
+        const l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l1.setAttribute('x1', p1.x.toFixed(1));
+        l1.setAttribute('y1', p1.y.toFixed(1));
+        l1.setAttribute('x2', brPt.x.toFixed(1));
+        l1.setAttribute('y2', brPt.y.toFixed(1));
+        l1.setAttribute('stroke', '#38bdf8');
+        l1.setAttribute('stroke-width', '2');
+        l1.setAttribute('vector-effect', 'non-scaling-stroke');
+        l1.setAttribute('class', 'user-drawn-line');
+        drawingsGroup.appendChild(l1);
+
+        const l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l2.setAttribute('x1', brPt.x.toFixed(1));
+        l2.setAttribute('y1', brPt.y.toFixed(1));
+        l2.setAttribute('x2', p2.x.toFixed(1));
+        l2.setAttribute('y2', p2.y.toFixed(1));
+        l2.setAttribute('stroke', '#38bdf8');
+        l2.setAttribute('stroke-width', '2');
+        l2.setAttribute('vector-effect', 'non-scaling-stroke');
+        l2.setAttribute('class', 'user-drawn-line');
+        drawingsGroup.appendChild(l2);
+
+        pushUndo('Break Line');
+        logCommand(`BREAK: Line split at (${brPt.x.toFixed(1)}, ${brPt.y.toFixed(1)}) into two segments.`);
+      }
+      setActiveTool('select');
+      return;
+    }
+
+    // 0.22 AutoCAD CHAMFER Tool (CHA)
+    if (state.activeTool === 'chamfer') {
+      const s2w = getScreenPixelToWorld();
+      const clickTol = 24 * s2w;
+      const userLines = Array.from(document.querySelectorAll('#userDrawingsGroup line.user-drawn-line, #userDrawingsGroup line:not(#drawingGuideLine):not(#offsetEdgeHighlight)'));
+      let hitLine = null;
+      let minD = clickTol;
+
+      for (const l of userLines) {
+        const x1 = parseFloat(l.getAttribute('x1')), y1 = parseFloat(l.getAttribute('y1'));
+        const x2 = parseFloat(l.getAttribute('x2')), y2 = parseFloat(l.getAttribute('y2'));
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) continue;
+        const d = distToSegment(clickPt, { x: x1, y: y1 }, { x: x2, y: y2 });
+        if (d < minD) {
+          minD = d;
+          hitLine = { el: l, p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 } };
+        }
+      }
+
+      if (!state.chamferFirstLine) {
+        if (hitLine) {
+          state.chamferFirstLine = hitLine;
+          hitLine.el.setAttribute('stroke', '#facc15');
+          logCommand('CHAMFER: First line selected. Click second line to chamfer:');
+        } else {
+          logCommand('CHAMFER: Click directly on the first line:');
+        }
+        return;
+      } else {
+        if (!hitLine || hitLine.el === state.chamferFirstLine.el) {
+          logCommand('CHAMFER: Click a different second line:');
+          return;
+        }
+
+        const l1 = state.chamferFirstLine;
+        const l2 = hitLine;
+        l1.el.setAttribute('stroke', '#38bdf8');
+        state.chamferFirstLine = null;
+
+        const inter = getInfiniteLineIntersection(l1.p1, l1.p2, l2.p1, l2.p2);
+        if (!inter) {
+          logCommand('CHAMFER: Lines are parallel and do not intersect.');
+          return;
+        }
+
+        const u = getUnitsPerPixel();
+        const dPx = (state.chamferDist || 10) / (u.upp_svg_x || 1.1);
+
+        const trimEndPoint = (l) => {
+          const d_p1 = Math.hypot(l.p1.x - inter.x, l.p1.y - inter.y);
+          const d_p2 = Math.hypot(l.p2.x - inter.x, l.p2.y - inter.y);
+          const farPt = d_p1 > d_p2 ? l.p1 : l.p2;
+          const vx = farPt.x - inter.x;
+          const vy = farPt.y - inter.y;
+          const len = Math.hypot(vx, vy);
+          const cutX = inter.x + (vx / len) * Math.min(dPx, len * 0.4);
+          const cutY = inter.y + (vy / len) * Math.min(dPx, len * 0.4);
+
+          if (d_p1 < d_p2) {
+            l.el.setAttribute('x1', cutX.toFixed(1));
+            l.el.setAttribute('y1', cutY.toFixed(1));
+          } else {
+            l.el.setAttribute('x2', cutX.toFixed(1));
+            l.el.setAttribute('y2', cutY.toFixed(1));
+          }
+          return { x: cutX, y: cutY };
+        };
+
+        const c1 = trimEndPoint(l1);
+        const c2 = trimEndPoint(l2);
+
+        const drawingsGroup = document.getElementById('userDrawingsGroup');
+        if (drawingsGroup) {
+          const chamLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          chamLine.setAttribute('x1', c1.x.toFixed(1));
+          chamLine.setAttribute('y1', c1.y.toFixed(1));
+          chamLine.setAttribute('x2', c2.x.toFixed(1));
+          chamLine.setAttribute('y2', c2.y.toFixed(1));
+          chamLine.setAttribute('stroke', '#38bdf8');
+          chamLine.setAttribute('stroke-width', '2');
+          chamLine.setAttribute('vector-effect', 'non-scaling-stroke');
+          chamLine.setAttribute('class', 'user-drawn-line chamfer-line');
+          drawingsGroup.appendChild(chamLine);
+        }
+
+        pushUndo('Chamfer Lines');
+        logCommand(`CHAMFER: Lines beveled with distance ${state.chamferDist || 10} ft.`);
+        setActiveTool('select');
+        return;
+      }
+    }
+
 
     // 0.15 Zoom Window Tool (Z W)
     if (state.activeTool === 'zoom_window' || (state.zoomWindowState && state.zoomWindowState.active)) {
@@ -6484,6 +7308,13 @@ const ribbonTemplates = {
       'rbArc': () => setActiveTool('arc'),
       'rbRectangle': () => setActiveTool('rectangle'),
       'rbHatch': () => applyHatchToSelectedPlot(),
+      'rbDivide': () => handleCommandInput('DIVIDE'),
+      'rbMeasure': () => handleCommandInput('MEASURE'),
+      'rbFillet': () => handleCommandInput('FILLET'),
+      'rbChamfer': () => handleCommandInput('CHAMFER'),
+      'rbAlign': () => handleCommandInput('ALIGN'),
+      'rbBreak': () => handleCommandInput('BREAK'),
+      'rbMatchProp': () => handleCommandInput('MATCHPROP'),
       'rbMove': () => setActiveTool('move'),
       'rbRotate': () => applyRotateToSelectedPlot(45),
       'rbTrim': () => setActiveTool('trim'),
@@ -7826,8 +8657,28 @@ const ribbonTemplates = {
 
       case 'A':
       case 'ARC':
-        setActiveTool('polyline');
-        logCommand(`ARC: Select polyline drafting:`);
+        setActiveTool('arc');
+        logCommand('ARC: Specify start point of arc:');
+        break;
+
+      case 'DIV':
+      case 'DIVIDE':
+        startDivideTool(parts[1]);
+        break;
+
+      case 'ME':
+      case 'MEASURE':
+        startMeasureTool(parts[1]);
+        break;
+
+      case 'CHA':
+      case 'CHAMFER':
+        startChamferTool(parseFloat(parts[1]) || 10);
+        break;
+
+      case 'BR':
+      case 'BREAK':
+        startBreakTool();
         break;
 
       case 'ZOOM':
@@ -7958,7 +8809,7 @@ const ribbonTemplates = {
 
       case 'MA':
       case 'MATCHPROP':
-        logCommand(`MATCHPROP: Select source object:`);
+        startMatchPropTool();
         break;
 
       case 'ORTHO':
@@ -7969,6 +8820,19 @@ const ribbonTemplates = {
         toggleOsnapMode();
         break;
 
+      case 'DYN':
+      case 'DYNMODE':
+        toggleDynMode();
+        break;
+
+      case 'POLAR':
+        togglePolarMode();
+        break;
+
+      case 'SNAP':
+        toggleSnapMode();
+        break;
+
       case 'G':
       case 'GUNIYA':
         toggleVirtualGuniya();
@@ -7976,14 +8840,45 @@ const ribbonTemplates = {
 
       case 'CAL':
       case 'CALIBRATE':
-      case 'ALIGN':
         startScaleBarCalibration();
+        break;
+
+      case 'AL':
+      case 'ALIGN':
+        startAlignTool();
         break;
 
       case 'SCALE':
       case 'SC':
-        if (parts[1]) {
-          applyMouzaScale(parseInt(parts[1], 10));
+        if (parts[1] === 'R' || parts[1] === 'REFERENCE') {
+          showCadPrompt({
+            title: '📐 SCALE: Reference',
+            message: 'Enter known reference length on drawing (ft):',
+            defaultValue: '100'
+          }).then(refVal => {
+            if (!refVal) return;
+            const refL = parseFloat(refVal);
+            showCadPrompt({
+              title: '📐 SCALE: Reference',
+              message: 'Enter new real ground length (ft):',
+              defaultValue: '66'
+            }).then(newVal => {
+              if (!newVal) return;
+              const newL = parseFloat(newVal);
+              if (refL > 0 && newL > 0) {
+                const factor = newL / refL;
+                scaleSelectedPlotOrDrawings(factor);
+                logCommand(`SCALE: Scaled by reference factor ${factor.toFixed(4)} (${refL} ft -> ${newL} ft).`);
+              }
+            });
+          });
+        } else if (parts[1] && !isNaN(parseFloat(parts[1]))) {
+          const num = parseFloat(parts[1]);
+          if ([16, 32, 64, 80, 3960, 1980, 990, 792].includes(num)) {
+            applyMouzaScale(num);
+          } else {
+            scaleSelectedPlotOrDrawings(num);
+          }
         } else {
           openModal('modalScaleCalculator');
         }
@@ -9285,6 +10180,7 @@ const ribbonTemplates = {
     if (btnSidePrintMap) btnSidePrintMap.addEventListener('click', () => window.print());
 
     // 11. Command Line Input
+    setupCmdAutocomplete();
     const cmdInput = document.getElementById('cmdInput');
     if (cmdInput) {
       cmdInput.addEventListener('input', () => {
@@ -9500,6 +10396,55 @@ const ribbonTemplates = {
 
         const hudPosX = snapScreen ? snapScreen.x : (state.orthoTargetPt ? svgPointToScreen(state.orthoTargetPt.x, state.orthoTargetPt.y).x : mouseX);
         const hudPosY = snapScreen ? snapScreen.y : (state.orthoTargetPt ? svgPointToScreen(state.orthoTargetPt.x, state.orthoTargetPt.y).y : mouseY);
+
+        // 3-Point Arc (A / ARC) Live Dynamic Preview
+        if (state.activeTool === 'arc' && state.arcState) {
+          if (state.arcState.step === 1 && state.arcState.p1) {
+            const p1 = state.arcState.p1;
+            if (guide) {
+              guide.setAttribute('x1', p1.x.toFixed(1));
+              guide.setAttribute('y1', p1.y.toFixed(1));
+              guide.setAttribute('x2', targetPt.x.toFixed(1));
+              guide.setAttribute('y2', targetPt.y.toFixed(1));
+              guide.classList.remove('hidden');
+            }
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify second point of arc:';
+            if (dynHud) {
+              dynHud.style.left = `${hudPosX}px`;
+              dynHud.style.top = `${hudPosY}px`;
+              dynHud.classList.remove('hidden');
+            }
+          } else if (state.arcState.step === 2 && state.arcState.p1 && state.arcState.p2) {
+            const p1 = state.arcState.p1;
+            const p2 = state.arcState.p2;
+            const liveArc = compute3PointArc(p1, p2, targetPt);
+            const previewArc = document.getElementById('drawingPreviewArc');
+            if (previewArc) {
+              previewArc.setAttribute('d', liveArc.pathD);
+              previewArc.classList.remove('hidden');
+            }
+            if (guide) guide.classList.add('hidden');
+
+            const u = getUnitsPerPixel();
+            const rFt = liveArc.r * u.upp_svg_x;
+            const incDeg = Math.round(liveArc.includedAngle * 180 / Math.PI);
+
+            if (dynDistBadge) {
+              dynDistBadge.textContent = `R = ${formatDistanceFeetInches(rFt)}`;
+              dynDistBadge.style.display = 'block';
+            }
+            if (dynAngBadge) {
+              dynAngBadge.textContent = `${incDeg}°`;
+              dynAngBadge.style.display = 'block';
+            }
+            if (dynPromptBadge) dynPromptBadge.textContent = 'Specify end point of arc:';
+            if (dynHud) {
+              dynHud.style.left = `${hudPosX}px`;
+              dynHud.style.top = `${hudPosY}px`;
+              dynHud.classList.remove('hidden');
+            }
+          }
+        }
 
         // Straight Line Tool (L) Live Preview Guide
         if (state.activeTool === 'line' && state.lineStartPoint) {
@@ -10169,6 +11114,43 @@ const ribbonTemplates = {
 
     // Keyboard Shortcuts & AutoCAD Heads-Up Canvas Typing Engine
     window.addEventListener('keydown', (e) => {
+      // AutoCAD Function Key Global Toggles
+      if (e.key === 'F3') {
+        e.preventDefault();
+        toggleOsnapMode();
+        return;
+      }
+      if (e.key === 'F7') {
+        e.preventDefault();
+        toggleGrid();
+        return;
+      }
+      if (e.key === 'F8') {
+        e.preventDefault();
+        toggleOrthoMode();
+        return;
+      }
+      if (e.key === 'F9') {
+        e.preventDefault();
+        toggleSnapMode();
+        return;
+      }
+      if (e.key === 'F10') {
+        e.preventDefault();
+        togglePolarMode();
+        return;
+      }
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleOtrackMode();
+        return;
+      }
+      if (e.key === 'F12') {
+        e.preventDefault();
+        toggleDynMode();
+        return;
+      }
+
       const inOtherInput = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) && e.target.id !== 'cmdInput';
       if (inOtherInput) return;
 

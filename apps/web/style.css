@@ -1141,3 +1141,68 @@ polygon.user-polyline-boundary:hover {
 }
 
 
+
+/* ==========================================================================
+   AutoCAD Dynamic Crosshair Modes & Command Autocomplete
+   ========================================================================== */
+.crosshair-cursor.mode-idle .cursor-pickbox { display: block; }
+.crosshair-cursor.mode-idle .cursor-arms { display: block; }
+.crosshair-cursor.mode-idle .cursor-center-dot { display: none; }
+
+.crosshair-cursor.mode-draw .cursor-pickbox { display: none; }
+.crosshair-cursor.mode-draw .cursor-arms { display: block; }
+.crosshair-cursor.mode-draw .cursor-center-dot { display: block; }
+
+.crosshair-cursor.mode-select .cursor-pickbox { display: block; }
+.crosshair-cursor.mode-select .cursor-arms { display: none; }
+.crosshair-cursor.mode-select .cursor-center-dot { display: none; }
+
+/* AutoCAD Command Autocomplete Popup */
+.cmd-autocomplete-popup {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(10px);
+  border: 1px solid #334155;
+  border-radius: 4px;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.8);
+  z-index: 100;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+}
+.cmd-autocomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+  transition: background 0.15s ease;
+}
+.cmd-autocomplete-item:hover, .cmd-autocomplete-item.active {
+  background: rgba(2, 132, 199, 0.35);
+  color: #ffffff;
+}
+.cmd-autocomplete-item .cmd-name {
+  font-weight: 700;
+  color: #38bdf8;
+}
+.cmd-autocomplete-item .cmd-desc {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+/* Cadastral Partition Station Nodes */
+.cad-station-node {
+  cursor: pointer;
+  pointer-events: auto;
+}
+.cad-station-node:hover circle {
+  fill: #facc15;
+  r: 3.5;
+}
